@@ -92,3 +92,13 @@
                                         :test-cases (list tc)))))
            (r (run-cell nb 0 '("(define (double x) (+ x x x))"))))
       (ok (eq :fail (recurya/game/notebook:notebook-cell-result-status r))))))
+
+(deftest run-cell-fuel-exhaustion
+  (testing "an infinite loop yields an error or limit status"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :c :kind :code-eval
+                                        :body "(define (f) (f)) (f)"))))
+           (r (run-cell nb 0 '("(define (f) (f)) (f)"))))
+      (ok (member (recurya/game/notebook:notebook-cell-result-status r)
+                  '(:error :limit-exceeded))))))
