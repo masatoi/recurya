@@ -14,6 +14,7 @@
     :recurya/tests/db/posts
     :recurya/tests/web/auth
     :recurya/tests/web/routes
+    :recurya/tests/web/learn-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests
