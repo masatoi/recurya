@@ -34,6 +34,7 @@
                ;; Notebook
                "recurya/game/notebook"
                "recurya/game/notebooks/sicp-1-1-1"
+               "recurya/game/notebooks/registry"
                ;; Arena
                "recurya/game/arena"
                "recurya/game/scenario"
