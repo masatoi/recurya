@@ -19,6 +19,9 @@
                 #:notebook-cell-result-error-message
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
+  (:import-from #:recurya/web/ui/editor
+                #:editor-head-tags
+                #:editor-textarea)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -80,7 +83,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 
 (defun render-code-cell (cell index nb-id exercise-p)
   (let ((result-id (format nil "cell-~D-result" index))
-        (textarea-id (format nil "code-~D" index)))
+        (id-suffix (format nil "-~D" index)))
     (spinneret:with-html
       (:div :class (if exercise-p
                        "cell cell--code cell--exercise"
@@ -93,11 +96,11 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                    :hx-target (format nil "#~A" result-id)
                    :hx-include ".notebook-code"
                    :hx-swap "innerHTML"
-                   (:textarea :class "notebook-code"
-                              :name "codes[]"
-                              :id textarea-id
-                              :rows 4
-                              (cell-body cell))
+                   (:raw (editor-textarea
+                          "codes[]"
+                          (or (cell-body cell) "")
+                          :id-suffix id-suffix
+                          :textarea-class "notebook-code"))
                    (:button :type "submit" :class "btn-run" "Run"))
             (:div :class "result-panel" :id result-id)))))
 
@@ -119,7 +122,8 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                       (notebook-title notebook)
                       (notebook-chapter notebook)))
       (:style (:raw *styles*))
-      (:script :src "https://unpkg.com/htmx.org@1.9.10"))
+      (:script :src "https://unpkg.com/htmx.org@1.9.10")
+      (:raw (editor-head-tags)))
      (:body :data-notebook-id (notebook-url-id notebook)
       (:main
        (:div :class "breadcrumb"

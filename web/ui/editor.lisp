@@ -75,21 +75,35 @@ Uses esm.sh bundle mode (*) so each package is self-contained."
     (:script :type "importmap" (:raw *importmap*))
     (:style (:raw *editor-styles*))))
 
-(defun editor-textarea (name initial-value &key (placeholder ""))
+(defun editor-textarea (name initial-value &key (placeholder "")
+                                                (id-suffix "")
+                                                (textarea-class nil))
   "Return HTML string with a hidden textarea, CodeMirror mount div, and init script.
 
 NAME is the form field name for the hidden textarea.
 INITIAL-VALUE is the starting content of the editor.
 PLACEHOLDER, when non-empty, sets an aria-placeholder attribute on the editor.
+ID-SUFFIX disambiguates DOM ids when multiple editors appear on one page.
+  Ids become 'editor-source<suffix>' and 'editor-mount<suffix>'; pass \"\"
+  (the default) for single-editor pages to keep legacy ids.
+TEXTAREA-CLASS, when non-nil, is set as the class attribute of the hidden
+  textarea so HTMX hx-include selectors (e.g. '.notebook-code') can collect it.
+
 Uses esm.sh bundle mode (*) for fast single-request loading."
-  (let ((escaped-value (escape-string initial-value))
-        (escaped-placeholder (escape-string placeholder))
-        (has-placeholder
-         (and placeholder (stringp placeholder) (> (length placeholder) 0))))
+  (let* ((escaped-value (escape-string initial-value))
+         (escaped-placeholder (escape-string placeholder))
+         (has-placeholder
+          (and placeholder (stringp placeholder) (> (length placeholder) 0)))
+         (source-id (format nil "editor-source~A" id-suffix))
+         (mount-id (format nil "editor-mount~A" id-suffix)))
     (with-html-string
-      (:textarea :id "editor-source" :name name :style "display:none"
-       (:raw escaped-value))
-      (:div :id "editor-mount")
+      (if textarea-class
+          (:textarea :id source-id :name name :class textarea-class
+                     :style "display:none"
+                     (:raw escaped-value))
+          (:textarea :id source-id :name name :style "display:none"
+                     (:raw escaped-value)))
+      (:div :id mount-id)
       (:script :type "module"
        (:raw
         (format nil "
@@ -101,8 +115,8 @@ try {
   const { scheme } = await import('@codemirror/legacy-modes/mode/scheme');
   const { oneDark } = await import('@codemirror/theme-one-dark');
 
-  const textarea = document.getElementById('editor-source');
-  const mount = document.getElementById('editor-mount');
+  const textarea = document.getElementById('~A');
+  const mount = document.getElementById('~A');
 
   const extensions = [
     basicSetup,
@@ -124,13 +138,17 @@ try {
   });
 } catch (e) {
   console.error('CodeMirror failed to load:', e);
-  const textarea = document.getElementById('editor-source');
-  const mount = document.getElementById('editor-mount');
+  const textarea = document.getElementById('~A');
+  const mount = document.getElementById('~A');
   textarea.style.display = '';
   mount.style.display = 'none';
 }
 "
+          source-id
+          mount-id
           (if has-placeholder
               (format nil ",~%    EditorView.contentAttributes.of({\"aria-placeholder\": \"~A\"})"
                       escaped-placeholder)
-              "")))))))
+              "")
+          source-id
+          mount-id))))))
