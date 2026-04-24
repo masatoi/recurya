@@ -91,24 +91,25 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 (defun render-code-cell (cell index nb-id exercise-p)
   (let ((result-id (format nil "cell-~D-result" index))
         (id-suffix (format nil "-~D" index)))
-    (spinneret:with-html
-      (:div :class (if exercise-p
-                       "cell cell--code cell--exercise"
-                       "cell cell--code")
+    (with-html
+      (:div :class
+            (if exercise-p
+                "cell cell--code cell--exercise"
+                "cell cell--code")
             :data-cell-id (string-downcase (symbol-name (cell-id cell)))
-            (when exercise-p
-              (:div :class "cell__desc" (cell-description cell)))
-            (:form :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
-                                    nb-id index)
-                   :hx-target (format nil "#~A" result-id)
-                   :hx-include ".notebook-code"
-                   :hx-swap "innerHTML"
-                   (:raw (editor-textarea
-                          "codes[]"
-                          (or (cell-body cell) "")
-                          :id-suffix id-suffix
-                          :textarea-class "notebook-code"))
-                   (:button :type "submit" :class "btn-run" "Run"))
+            (when exercise-p (:div :class "cell__desc" (cell-description cell)))
+            (:form :class "notebook-form"
+                   (:raw
+                    (editor-textarea "codes[]" (or (cell-body cell) "")
+                                     :id-suffix id-suffix
+                                     :textarea-class "notebook-code"))
+                   (:button :type "button" :class "btn-run"
+                            :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
+                                             nb-id index)
+                            :hx-target (format nil "#~A" result-id)
+                            :hx-include ".notebook-code"
+                            :hx-swap "innerHTML"
+                            "Run"))
             (:div :class "result-panel" :id result-id)))))
 
 (defun render-cell (cell index nb-id)
@@ -129,7 +130,9 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                       (notebook-title notebook)
                       (notebook-chapter notebook)))
       (:style (:raw *styles*))
-      (:script :src "https://unpkg.com/htmx.org@1.9.10")
+      (:script :src "https://unpkg.com/htmx.org@2.0.4"
+                :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+                :crossorigin "anonymous")
       (:raw (editor-head-tags)))
      (:body :data-notebook-id (notebook-url-id notebook)
       (:main
