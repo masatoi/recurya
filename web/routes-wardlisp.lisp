@@ -24,6 +24,17 @@
   (:import-from #:wardlisp
                 #:evaluate
                 #:print-value)
+  (:import-from #:recurya/game/notebook
+                #:run-cell
+                #:notebook-cells
+                #:cell-kind
+                #:notebook-cell-result-cell-id
+                #:notebook-cell-result-status)
+  (:import-from #:recurya/game/notebooks/registry
+                #:get-notebook
+                #:all-notebooks)
+  (:import-from #:recurya/web/ui/learn-home)
+  (:import-from #:recurya/web/ui/notebook)
   (:export #:setup-wardlisp-routes))
 
 (in-package #:recurya/web/routes-wardlisp)
@@ -33,6 +44,16 @@
 (defun html-response (body &key (status 200))
   "Create an HTML response."
   (list status '(:content-type "text/html; charset=utf-8") (list body)))
+
+(defun html-response-with-headers (body headers &key (status 200))
+  "Like HTML-RESPONSE but also includes HEADERS (alist of (name . value))
+   in the response. Returns a Clack/Lack ring-style response list."
+  (list status
+        (append '(:content-type "text/html; charset=utf-8")
+                (loop for (k . v) in headers
+                      collect (intern (string-upcase k) :keyword)
+                      collect v))
+        (list body)))
 
 (defun get-param (params key)
   "Get a parameter value from the alist."
@@ -123,6 +144,64 @@
 
 ;;; --- Route Setup ---
 
+(defun %coerce-notebook-id (raw)
+  "Normalize an incoming :id path-param value to a keyword.
+   Ningle supplies path params as strings; direct test calls may pass keywords."
+  (typecase raw
+    (keyword raw)
+    (string (and (plusp (length raw)) (intern (string-upcase raw) :keyword)))
+    (symbol (intern (string-upcase (symbol-name raw)) :keyword))
+    (t nil)))
+
+(defun learn-home-handler (params)
+  "GET /wardlisp/learn - SICP course index."
+  (declare (ignore params))
+  (html-response (recurya/web/ui/learn-home:render (all-notebooks))))
+
+(defun notebook-page-handler (params)
+  "GET /wardlisp/learn/:id - Notebook page."
+  (let* ((id (%coerce-notebook-id (get-path-param params :id)))
+         (nb (and id (get-notebook id))))
+    (if nb
+        (html-response (recurya/web/ui/notebook:render nb))
+        (html-response "<h1>404</h1>" :status 404))))
+
+(defun notebook-cell-run-handler (params)
+  "POST /wardlisp/learn/:id/cells/:index/run — HTMX fragment."
+  (let* ((id (%coerce-notebook-id (get-path-param params :id)))
+         (nb (and id (get-notebook id)))
+         (index-str (get-path-param params :index))
+         (index (and index-str
+                     (typecase index-str
+                       (string (parse-integer index-str :junk-allowed t))
+                       (integer index-str)
+                       (t nil))))
+         (raw-codes (cdr (assoc "codes[]" params :test #'string=)))
+         (codes-list (cond ((listp raw-codes) raw-codes)
+                           ((stringp raw-codes) (list raw-codes))
+                           (t '()))))
+    (cond
+      ((not nb) (html-response "Notebook not found" :status 404))
+      ((not index) (html-response "Invalid index" :status 400))
+      ((or (< index 0) (>= index (length (notebook-cells nb))))
+       (html-response "Index out of range" :status 400))
+      ((eq (cell-kind (nth index (notebook-cells nb))) :prose)
+       (html-response "Cannot run a prose cell" :status 400))
+      (t
+       (let* ((result (run-cell nb index codes-list))
+              (body (recurya/web/ui/notebook:render-cell-result result)))
+         (if (eq (notebook-cell-result-status result) :pass)
+             (html-response-with-headers
+              body
+              `(("HX-Trigger"
+                 . ,(format nil
+                            "{\"cell-passed\":{\"notebook\":\"~A\",\"cell\":\"~A\"}}"
+                            (string-downcase (symbol-name id))
+                            (string-downcase
+                             (symbol-name
+                              (notebook-cell-result-cell-id result)))))))
+             (html-response body)))))))
+
 (defun setup-wardlisp-routes (app)
   "Register all WardLisp routes on the Ningle app."
   (setf (ningle/app:route app "/wardlisp/")
@@ -137,6 +216,12 @@
         (make-dynamic-handler 'arena-run-handler))
   (setf (ningle/app:route app "/wardlisp/reference")
         (make-dynamic-handler 'reference-page-handler))
+  (setf (ningle/app:route app "/wardlisp/learn")
+        (make-dynamic-handler 'learn-home-handler))
+  (setf (ningle/app:route app "/wardlisp/learn/:id")
+        (make-dynamic-handler 'notebook-page-handler))
+  (setf (ningle/app:route app "/wardlisp/learn/:id/cells/:index/run" :method :post)
+        (make-dynamic-handler 'notebook-cell-run-handler))
   (setf (ningle/app:route app "/wardlisp/playground")
         (make-dynamic-handler 'playground-handler))
   (setf (ningle/app:route app "/wardlisp/playground/run" :method :post)
