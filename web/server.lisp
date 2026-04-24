@@ -39,10 +39,14 @@
   (let ((app (make-recurya-app)))
     (setup-routes app)
     ;; Lack middleware stack (outermost listed first):
-    ;; 1. :session  — cookie-based session (provides ningle/context:*session*)
-    ;; 2. :backtrace — renders a debug backtrace page on unhandled errors
-    ;; 3. app       — the Ningle router with all route handlers
+    ;; 1. :static    — serves /static/* from resources/static/ on disk
+    ;; 2. :session   — cookie-based session (provides ningle/context:*session*)
+    ;; 3. :backtrace — renders a debug backtrace page on unhandled errors
+    ;; 4. app        — the Ningle router with all route handlers
     (lack/builder:builder
+     (:static :path "/static/"
+              :root (asdf:system-relative-pathname
+                     :recurya "resources/static/"))
      :session
      :backtrace
      app)))
