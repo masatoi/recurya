@@ -31,6 +31,9 @@
                "recurya/game/puzzles/choose-action"
                "recurya/game/puzzles/sqrt2-newton"
                "recurya/game/puzzles/registry"
+               ;; Notebook
+               "recurya/game/notebook"
+               "recurya/game/notebooks/sicp-1-1-1"
                ;; Arena
                "recurya/game/arena"
                "recurya/game/scenario"
@@ -94,6 +97,7 @@
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
+               "recurya/tests/game/notebooks/sicp-1-1-1"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner

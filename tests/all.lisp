@@ -19,7 +19,8 @@
     ;; Game tests
     :recurya/tests/game/puzzle
     :recurya/tests/game/arena
-    :recurya/tests/game/notebook)
+    :recurya/tests/game/notebook
+    :recurya/tests/game/notebooks/sicp-1-1-1)
   "List of all test packages to run.")
 
 (defun run-all-tests ()
