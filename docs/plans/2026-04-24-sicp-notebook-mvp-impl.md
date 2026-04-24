@@ -1681,17 +1681,36 @@ EOF
 
 ---
 
-## スパイク結果メモ(Task 0 で記入)
+## スパイク結果メモ(Task 0 実行済み 2026-04-24)
 
-Task 0 実行時にここに追記する:
+- `(define (f x) ...)` — **動く**(SICP形式の関数定義サポート)
+- `(define size 2) (* 5 size)` → `"10"`
+- `(/ 10 5)` → `"2"`(整数のまま、`"2.0"` にはならない)
+- `(/ 10 3)` → `"3.3333333333333335"`(浮動小数)
+- `(* 3.14 10 10)` → `"314.0"`
+- `(define pi 3.14) (define (circle-area r) (* pi r r)) (circle-area 10)` → `"314.0"`
+- `(define pi 3.14) (define (cube x) (* x x x)) (* 4 (/ pi 3) (cube 2))` → `"33.49333333333333"`
+- SICP 1.1.3 例: `(define (f a b c d e) (/ (+ a (* b c)) (- d e))) (f 2 3 4 10 5)` → `"2.8"`
+- `(+ 137 349 22)` → `"508"`
+- `(+ 137 349)` → `"486"` / `486` → `"486"`
+- `(- 1000 334)` → `"666"` / `(* 5 99)` → `"495"`
+- `(+ (* 3 5) (- 10 6))` → `"19"`
+- `(+ (* 2 (+ 4 6)) (* 3 5 7))` → `"125"`
 
-- `(define (f x) ...)` — ☐ 動く / ☐ 動かない(動かない場合は `(define f (lambda (x) ...))` へ)
-- `(/ 10 5)` → `"?"`
-- `(/ 10 3)` → `"?"`
-- `(* 3.14 10 10)` → `"?"`
-- `(/ (+ 2 (* 3 4)) (- 10 5))` → `"?"`
+### `wardlisp:evaluate` 返り値形状
 
-以降の各演習の `expected` 値は上記の print-value に合わせる。
+`(values result metrics)` で metrics は plist:
+- `:steps-used`, `:max-depth-reached`, `:cons-allocated`, `:output`,
+  `:fuel-remaining`, `:error-type`, `:error-message`
+- 通常成功時は `:error-type nil :error-message nil`
+- Fuel 超過: `:error-type 'wardlisp/src/types:wardlisp-step-limit-exceeded` + `:error-message "Step limit exceeded after N steps"`
+- パースエラー: `:error-type 'wardlisp/src/types:wardlisp-parse-error` + `:error-message "..."`
+- **`wardlisp:evaluate` は条件を投げない**。すべて metrics 経由で返る
+
+### 実装への反映
+
+- `run-cell` 内で `(getf metrics :error-message)` が non-nil なら `:error`(本 MVP では `:limit-exceeded` との区別はしない — UI で error-message 本文を表示)
+- `(getf metrics :output)` は空文字列が返ってくる(null ではない)ので `or` ガードだけで十分
 
 ---
 
