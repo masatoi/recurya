@@ -176,10 +176,9 @@
                        (string (parse-integer index-str :junk-allowed t))
                        (integer index-str)
                        (t nil))))
-         (raw-codes (cdr (assoc "codes[]" params :test #'string=)))
-         (codes-list (cond ((listp raw-codes) raw-codes)
-                           ((stringp raw-codes) (list raw-codes))
-                           (t '()))))
+         (codes-list (loop for (k . v) in params
+                           when (and (stringp k) (string= k "codes[]"))
+                             collect v)))
     (cond
       ((not nb) (html-response "Notebook not found" :status 404))
       ((not index) (html-response "Invalid index" :status 400))

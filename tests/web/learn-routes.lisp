@@ -37,10 +37,11 @@
   (loop for (k v) on kv by #'cddr
         collect (cons k v)))
 
-(defun make-codes-params (codes-list)
-  "Given a list of code strings, return params with a (\"codes[]\" . (...)) entry.
-   The notebook-cell-run-handler reads this via (assoc \"codes[]\" ...)."
-  (list (cons "codes[]" codes-list)))
+(defun make-codes-params (codes)
+  "Build the params alist with one (\"codes[]\" . value) cons per code string,
+   matching what quri:url-decode-params produces for repeated form fields."
+  (loop for v in codes
+        collect (cons "codes[]" v)))
 
 (defun combine-params (&rest alists)
   "Concatenate several alists into one."
@@ -127,3 +128,20 @@
                     (make-codes-params (list ""))))
            (response (notebook-cell-run-handler params)))
       (ok (= 400 (response-status response))))))
+
+(deftest cell-run-params-repeated-keys
+  (testing "handler consumes repeated codes[] cons cells (real HTTP alist shape)"
+    (let* ((raw-params `((:id . "sicp-1-1-1")
+                         (:index . "7")
+                         ("codes[]" . "")
+                         ("codes[]" . "486")
+                         ("codes[]" . "")
+                         ("codes[]" . "(+ 137 349)")
+                         ("codes[]" . ,(format nil "(- 1000 334)~%(* 5 99)~%(/ 10 5)"))
+                         ("codes[]" . "")
+                         ("codes[]" . "(+ (* 3 5) (- 10 6))")
+                         ("codes[]" . "(+ 137 349 22)")))
+           (response (notebook-cell-run-handler raw-params))
+           (body (first (response-body response))))
+      (ok (= 200 (response-status response)))
+      (ok (or (search "PASS" body) (search "全テスト合格" body))))))

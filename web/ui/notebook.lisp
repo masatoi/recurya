@@ -77,9 +77,16 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
   (with-html-string (spinneret:interpret-html-tree tree)))
 
 (defun render-prose-cell (cell)
-  (spinneret:with-html
+  (with-html
     (:div :class "cell cell--prose"
-          (:raw (render-prose-tree (cell-body cell))))))
+          (:raw (render-prose-tree (cell-body cell))))
+    ;; Positional placeholder so codes[] on the wire stays index-aligned
+    ;; with notebook-cells. The value is always empty; prose cells carry
+    ;; no user code.
+    (:input :type "hidden"
+            :class "notebook-code"
+            :name "codes[]"
+            :value "")))
 
 (defun render-code-cell (cell index nb-id exercise-p)
   (let ((result-id (format nil "cell-~D-result" index))
@@ -155,22 +162,24 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 (defun render-cell-result (result)
   "Render one cell's result as an HTMX fragment (no html/head wrappers)."
   (with-html-string
-    (ecase (notebook-cell-result-status result)
-      (:ok
-       (:div :class "result-ok"
-             (:code "=> " (notebook-cell-result-value result))))
-      (:pass
-       (:div :class "result-ok"
-             (:span :class "badge-pass" "PASS")
-             " 全テスト合格")
-       (render-test-results (notebook-cell-result-test-results result)))
-      (:fail
-       (:div :class "result-fail"
-             "一部のテストが失敗しました")
-       (render-test-results (notebook-cell-result-test-results result)))
-      (:error
-       (:pre :class "result-error"
-             (notebook-cell-result-error-message result))))
+    ;; Normalize :limit-exceeded to :error for rendering: both surface to
+    ;; the user as an error message, and Spinneret's HTML walker mangles
+    ;; hyphenated keywords in case/ecase clauses (treats them as custom
+    ;; elements), so we flatten to plain keywords before dispatching.
+    (let ((raw-status (notebook-cell-result-status result)))
+      (let ((status (if (eq raw-status :limit-exceeded) :error raw-status)))
+        (ecase status
+          (:ok
+           (:div :class "result-ok"
+                 (:code "=> " (notebook-cell-result-value result))))
+          (:pass
+           (:div :class "result-ok" (:span :class "badge-pass" "PASS") " 全テスト合格")
+           (render-test-results (notebook-cell-result-test-results result)))
+          (:fail
+           (:div :class "result-fail" "一部のテストが失敗しました")
+           (render-test-results (notebook-cell-result-test-results result)))
+          (:error
+           (:pre :class "result-error"
+                 (notebook-cell-result-error-message result))))))
     (let ((out (notebook-cell-result-print-output result)))
-      (when (and out (plusp (length out)))
-        (:pre :class "print-output" out)))))
+      (when (and out (plusp (length out))) (:pre :class "print-output" out)))))
