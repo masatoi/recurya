@@ -93,6 +93,7 @@
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
+               "recurya/tests/game/notebook"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner

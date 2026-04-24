@@ -32,4 +32,14 @@
 
 (in-package #:recurya/game/notebook)
 
-(defun __stub () nil)
+(defstruct notebook
+  "A SICP-style notebook: a list of cells rendered top-down."
+  id chapter title summary cells)
+
+(defstruct cell
+  "A single notebook cell. KIND is one of :prose, :code-eval, :code-exercise."
+  id kind body description test-cases)
+
+(defstruct notebook-cell-result
+  "Result of running one cell."
+  cell-id kind status value print-output error-message metrics test-results)
