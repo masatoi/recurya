@@ -76,11 +76,11 @@
   "Default wall-clock timeout (seconds) for a notebook cell evaluation.")
 
 (defun run-cell (notebook cell-index submitted-codes)
-  "Execute the cell at CELL-INDEX in NOTEBOOK by concatenating the first
-   (CELL-INDEX + 1) entries of SUBMITTED-CODES and evaluating them once.
-   Returns a NOTEBOOK-CELL-RESULT. Signals an error for :prose cells and
-   out-of-range indices. Exercise grading (test-case support) is added
-   in a later task."
+  "Execute the cell at CELL-INDEX in NOTEBOOK.
+   For :code-eval cells, concatenate SUBMITTED-CODES[0..CELL-INDEX] and
+   evaluate once. For :code-exercise cells, additionally run each
+   test-case by appending its input. Returns a NOTEBOOK-CELL-RESULT.
+   Signals an error for :prose cells and out-of-range indices."
   (let* ((cells (notebook-cells notebook))
          (cell (nth cell-index cells)))
     (unless cell
@@ -90,28 +90,76 @@
       (error "Cannot run a prose cell (id=~A)" (cell-id cell)))
     (let* ((codes (subseq submitted-codes 0 (1+ cell-index)))
            (combined (format nil "~{~A~^~%~}" codes)))
-      (multiple-value-bind (result metrics)
-          (evaluate combined
-                    :fuel *notebook-fuel*
-                    :max-cons *notebook-max-cons*
-                    :max-depth *notebook-max-depth*
-                    :max-output *notebook-max-output*
-                    :timeout *notebook-timeout*)
-        (let ((err (getf metrics :error-message)))
-          (if err
-              (make-notebook-cell-result
-               :cell-id (cell-id cell) :kind (cell-kind cell)
-               :status :error
-               :value nil
-               :print-output (or (getf metrics :output) "")
-               :error-message err
-               :metrics metrics
-               :test-results nil)
-              (make-notebook-cell-result
-               :cell-id (cell-id cell) :kind (cell-kind cell)
-               :status :ok
-               :value (print-value result)
-               :print-output (or (getf metrics :output) "")
-               :error-message nil
-               :metrics metrics
-               :test-results nil)))))))
+      (if (eq (cell-kind cell) :code-exercise)
+          (run-exercise-cell cell combined)
+          (run-eval-cell cell combined)))))
+
+(defun run-eval-cell (cell combined)
+  "Evaluate COMBINED as a :code-eval cell, returning a cell result."
+  (multiple-value-bind (result metrics)
+      (evaluate combined
+                :fuel *notebook-fuel* :max-cons *notebook-max-cons*
+                :max-depth *notebook-max-depth* :max-output *notebook-max-output*
+                :timeout *notebook-timeout*)
+    (let ((err (getf metrics :error-message)))
+      (if err
+          (make-notebook-cell-result
+           :cell-id (cell-id cell) :kind (cell-kind cell)
+           :status :error :value nil
+           :print-output (or (getf metrics :output) "")
+           :error-message err :metrics metrics :test-results nil)
+          (make-notebook-cell-result
+           :cell-id (cell-id cell) :kind (cell-kind cell)
+           :status :ok :value (print-value result)
+           :print-output (or (getf metrics :output) "")
+           :error-message nil :metrics metrics :test-results nil)))))
+
+(defun run-exercise-cell (cell combined)
+  "Grade a :code-exercise cell against its TEST-CASES.
+   Returns a NOTEBOOK-CELL-RESULT with status :pass, :fail, or :error."
+  (multiple-value-bind (user-result user-metrics)
+      (evaluate combined
+                :fuel *notebook-fuel* :max-cons *notebook-max-cons*
+                :max-depth *notebook-max-depth* :max-output *notebook-max-output*
+                :timeout *notebook-timeout*)
+    (declare (ignore user-result))
+    (let ((user-error (getf user-metrics :error-message)))
+      (if user-error
+          (make-notebook-cell-result
+           :cell-id (cell-id cell) :kind :code-exercise
+           :status :error :value nil
+           :print-output (or (getf user-metrics :output) "")
+           :error-message user-error
+           :metrics user-metrics
+           :test-results nil)
+          (let ((test-results nil)
+                (all-pass t))
+            (dolist (tc (cell-test-cases cell))
+              (let ((full-code (format nil "~A~%~A" combined (test-case-input tc))))
+                (multiple-value-bind (result metrics)
+                    (evaluate full-code
+                              :fuel *notebook-fuel* :max-cons *notebook-max-cons*
+                              :max-depth *notebook-max-depth*
+                              :max-output *notebook-max-output*
+                              :timeout *notebook-timeout*)
+                  (let* ((terr (getf metrics :error-message))
+                         (expected-str (test-case-expected tc))
+                         (actual-str (unless terr (print-value result)))
+                         (passed (and (not terr)
+                                      (string= actual-str expected-str))))
+                    (unless passed (setf all-pass nil))
+                    (push (list :input (test-case-input tc)
+                                :description (test-case-description tc)
+                                :expected expected-str
+                                :actual actual-str
+                                :passed passed
+                                :error terr)
+                          test-results)))))
+            (make-notebook-cell-result
+             :cell-id (cell-id cell) :kind :code-exercise
+             :status (if all-pass :pass :fail)
+             :value nil
+             :print-output (or (getf user-metrics :output) "")
+             :error-message nil
+             :metrics user-metrics
+             :test-results (nreverse test-results)))))))

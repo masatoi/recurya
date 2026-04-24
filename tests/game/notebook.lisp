@@ -66,3 +66,29 @@
            (r (run-cell nb 1 '("(define x 10)" "(* x 5)"))))
       (ok (eq :ok (recurya/game/notebook:notebook-cell-result-status r)))
       (ok (string= "50" (recurya/game/notebook:notebook-cell-result-value r))))))
+
+(deftest run-cell-exercise-pass
+  (testing "exercise cell passes when expected matches"
+    (let* ((tc (recurya/game/puzzle:make-test-case
+                :input "(double 3)" :expected "6" :description "simple"))
+           (nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :ex :kind :code-exercise
+                                        :body "(define (double x) (* x 2))"
+                                        :description "write double"
+                                        :test-cases (list tc)))))
+           (r (run-cell nb 0 '("(define (double x) (* x 2))"))))
+      (ok (eq :pass (recurya/game/notebook:notebook-cell-result-status r))))))
+
+(deftest run-cell-exercise-fail
+  (testing "exercise cell fails when expected does not match"
+    (let* ((tc (recurya/game/puzzle:make-test-case
+                :input "(double 3)" :expected "6" :description "simple"))
+           (nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :ex :kind :code-exercise
+                                        :body "(define (double x) (+ x x x))"
+                                        :description "wrong"
+                                        :test-cases (list tc)))))
+           (r (run-cell nb 0 '("(define (double x) (+ x x x))"))))
+      (ok (eq :fail (recurya/game/notebook:notebook-cell-result-status r))))))
