@@ -11,7 +11,9 @@
                 #:cell-kind
                 #:cell-body
                 #:cell-test-cases
-                #:run-cell))
+                #:run-cell
+                #:notebook-cell-result-status
+                #:notebook-cell-result-value))
 
 (in-package #:recurya/tests/game/notebook)
 
@@ -42,3 +44,25 @@
                 :cells (list (make-cell :id :p :kind :prose :body '(:p "x"))))))
       (ok (signals (run-cell nb 0 '(""))
                    'error)))))
+
+(deftest run-cell-code-eval-basic
+  (testing "code-eval cell evaluates and returns value"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :c1 :kind :code-eval
+                                        :body "(+ 1 2)"))))
+           (r (run-cell nb 0 '("(+ 1 2)"))))
+      (ok (eq :ok (recurya/game/notebook:notebook-cell-result-status r)))
+      (ok (string= "3" (recurya/game/notebook:notebook-cell-result-value r))))))
+
+(deftest run-cell-code-eval-shares-state-with-prior-cells
+  (testing "a code cell sees defines from earlier cells"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :c1 :kind :code-eval
+                                        :body "(define x 10)")
+                             (make-cell :id :c2 :kind :code-eval
+                                        :body "(* x 5)"))))
+           (r (run-cell nb 1 '("(define x 10)" "(* x 5)"))))
+      (ok (eq :ok (recurya/game/notebook:notebook-cell-result-status r)))
+      (ok (string= "50" (recurya/game/notebook:notebook-cell-result-value r))))))
