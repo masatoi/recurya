@@ -18,7 +18,8 @@
     :recurya/tests/wardlisp-integration
     ;; Game tests
     :recurya/tests/game/puzzle
-    :recurya/tests/game/arena)
+    :recurya/tests/game/arena
+    :recurya/tests/game/notebook)
   "List of all test packages to run.")
 
 (defun run-all-tests ()

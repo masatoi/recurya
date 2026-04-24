@@ -34,12 +34,28 @@
 
 (defstruct notebook
   "A SICP-style notebook: a list of cells rendered top-down."
-  id chapter title summary cells)
+  (id nil :type keyword)
+  (chapter "" :type string)
+  (title "" :type string)
+  (summary "" :type string)
+  (cells nil :type list))
 
 (defstruct cell
-  "A single notebook cell. KIND is one of :prose, :code-eval, :code-exercise."
-  id kind body description test-cases)
+  "A single notebook cell. KIND is one of :prose, :code-eval, :code-exercise.
+   BODY is a Spinneret DSL list for :prose cells, or a source string for code cells."
+  (id nil :type keyword)
+  (kind nil :type keyword)
+  body               ; untyped: list for prose, string for code cells
+  (description "" :type string)
+  (test-cases nil :type list))
 
 (defstruct notebook-cell-result
   "Result of running one cell."
-  cell-id kind status value print-output error-message metrics test-results)
+  (cell-id nil :type keyword)
+  (kind nil :type keyword)
+  (status nil :type keyword)
+  value              ; untyped: nil | string (print-value output)
+  (print-output "" :type string)
+  (error-message nil :type (or null string))
+  (metrics nil :type list)
+  (test-results nil :type list))
