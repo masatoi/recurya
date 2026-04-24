@@ -59,3 +59,18 @@
   (error-message nil :type (or null string))
   (metrics nil :type list)
   (test-results nil :type list))
+
+(defparameter *notebook-fuel* 20000
+  "Default fuel limit for a notebook cell evaluation.")
+
+(defparameter *notebook-max-cons* 10000
+  "Default cons allocation limit for a notebook cell evaluation.")
+
+(defparameter *notebook-max-depth* 200
+  "Default call-stack depth limit for a notebook cell evaluation.")
+
+(defparameter *notebook-max-output* 4096
+  "Default captured-output byte limit for a notebook cell evaluation.")
+
+(defparameter *notebook-timeout* 5
+  "Default wall-clock timeout (seconds) for a notebook cell evaluation.")
