@@ -167,7 +167,22 @@
 (defun learn-home-handler (params)
   "GET /wardlisp/learn - SICP course index."
   (declare (ignore params))
-  (html-response (recurya/web/ui/learn-home:render (all-notebooks))))
+  (let* ((session ningle/context:*session*)
+         (user (and session (gethash :user session)))
+         (uid (and user (getf user :id)))
+         (notebooks (all-notebooks))
+         (passed-counts
+          (and uid
+               (mapcar (lambda (nb)
+                         (cons (recurya/game/notebook:notebook-id nb)
+                               (length (recurya/db/learn:user-passed-cells
+                                        uid
+                                        (string-downcase
+                                         (symbol-name
+                                          (recurya/game/notebook:notebook-id nb)))))))
+                       notebooks))))
+    (html-response (recurya/web/ui/learn-home:render
+                    notebooks :user user :passed-counts passed-counts))))
 
 (defun notebook-page-handler (params)
   "GET /wardlisp/learn/:id - Notebook page."

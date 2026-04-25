@@ -75,7 +75,12 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 .print-output { background:#0f172a; padding:0.5rem;
                 border-radius: 4px; color: #94a3b8;
                 font-family: monospace; font-size: 0.85rem;
-                white-space: pre-wrap; margin-top: 0.5rem; }")
+                white-space: pre-wrap; margin-top: 0.5rem; }
+.user-banner { background: #1e293b; padding: 0.5rem 1rem; border-radius: 6px;
+               margin-bottom: 1rem; font-size: 0.85rem; color: #94a3b8; }
+.user-banner.anon { background: #1e2530; }
+.user-banner a { color: #38bdf8; text-decoration: none; margin-left: 0.5rem; }
+.user-banner strong { color: #f8fafc; }")
 
 (defun notebook-url-id (notebook)
   "Lowercase symbol-name of the notebook ID, for use in URLs."
@@ -135,9 +140,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
    USER is the logged-in user plist or nil.
    SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
    PASSED-CELLS is a list of cell-id strings this user has passed."
-  (let ((*saved-codes* saved-codes)
-        (*passed-cells* passed-cells)
-        (*user* user))
+  (let ((*saved-codes* saved-codes) (*passed-cells* passed-cells) (*user* user))
     (with-html-string
       (:doctype)
       (:html
@@ -147,12 +150,28 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
          (format nil "~A — SICP ~A" (notebook-title notebook)
                  (notebook-chapter notebook)))
         (:style (:raw *styles*))
-        (:script :src "https://unpkg.com/htmx.org@2.0.4"
-         :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+        (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
+         "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
          :crossorigin "anonymous")
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
+        :data-logged-in (if *user* "true" "false")
         (:main
+         (cond
+           (*user*
+            (:div :class "user-banner"
+                  "ログイン中: "
+                  (:strong (or (getf *user* :name) "User"))
+                  " · " (:form :method "post" :action "/logout"
+                               :style "display:inline;"
+                               (:button :type "submit" :class "user-banner__logout"
+                                        :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
+                                        "ログアウト"))))
+           (t
+            (:div :class "user-banner anon"
+                  "進捗を端末を超えて保存するには "
+                  (:a :href "/login" "ログイン")
+                  " してください。")))
          (:div :class "breadcrumb" (:a :href "/wardlisp/" "WardLisp") " > "
           (:a :href "/wardlisp/learn" "SICPコース") " > "
           (notebook-chapter notebook))
