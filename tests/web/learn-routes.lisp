@@ -145,3 +145,12 @@
            (body (first (response-body response))))
       (ok (= 200 (response-status response)))
       (ok (or (search "PASS" body) (search "全テスト合格" body))))))
+
+(deftest sync-handler-anonymous-rejects
+  (testing "POST /wardlisp/learn/sync without auth returns 401"
+    (let ((ningle/context:*session* nil)
+          (ningle/context:*request* nil))
+      (let ((response (recurya/web/routes-wardlisp::learn-sync-handler nil)))
+        (ok (= 401 (response-status response)))
+        (ok (search "auth required"
+                    (or (first (response-body response)) "")))))))

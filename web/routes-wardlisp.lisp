@@ -66,6 +66,25 @@
                       collect v))
         (list body)))
 
+(defun json-response (data &key (status 200))
+  "Return a Clack ring response with JSON content."
+  (list status
+        '(:content-type "application/json; charset=utf-8")
+        (list (recurya/utils/common:json->string data))))
+
+(defun %read-request-body ()
+  "Read the raw POST body as a UTF-8 string, or empty string if unavailable."
+  (let* ((env (lack/request:request-env ningle/context:*request*))
+         (stream (getf env :raw-body))
+         (content-length (or (getf env :content-length) 0)))
+    (cond
+      ((and stream (plusp content-length))
+       (ignore-errors (file-position stream 0))
+       (let ((buf (make-array content-length :element-type '(unsigned-byte 8))))
+         (read-sequence buf stream)
+         (babel:octets-to-string buf :encoding :utf-8)))
+      (t ""))))
+
 (defun get-param (params key)
   "Get a parameter value from the alist."
   (cdr (assoc key params :test #'string-equal)))
@@ -262,6 +281,53 @@
                               (notebook-cell-result-cell-id result)))))))
              (html-response body)))))))
 
+(defun %parse-sync-payload (raw-json)
+  "Convert JSON payload {\"notebooks\":[{...}]} into the plist shape
+   expected by recurya/db/learn:merge-localstorage. Tolerates missing or
+   JSON-null fields (jzon decodes JSON null as the symbol NULL)."
+  (let* ((parsed (recurya/utils/common:parse-json raw-json))
+         (notebooks (and (hash-table-p parsed) (gethash "notebooks" parsed))))
+    (when (and notebooks (vectorp notebooks))
+      (loop for nb across notebooks
+            when (hash-table-p nb)
+            collect (list :notebook-id (gethash "notebook_id" nb)
+                          :passed (let ((arr (gethash "passed" nb)))
+                                    (when (vectorp arr)
+                                      (loop for x across arr collect x)))
+                          :codes (let ((codes-ht (gethash "codes" nb)))
+                                   (when (hash-table-p codes-ht)
+                                     (let (acc)
+                                       (maphash (lambda (k v) (push (cons k v) acc))
+                                                codes-ht)
+                                       acc))))))))
+
+(defun learn-sync-handler (params)
+  "POST /wardlisp/learn/sync — merge localStorage payload into DB.
+   Auth required."
+  (declare (ignore params))
+  (let* ((session ningle/context:*session*)
+         (user (and session (gethash :user session)))
+         (uid (and user (getf user :id))))
+    (cond
+      ((null uid)
+       (let ((h (make-hash-table :test 'equal)))
+         (setf (gethash "error" h) "auth required")
+         (json-response h :status 401)))
+      (t
+       (handler-case
+           (let* ((raw (%read-request-body))
+                  (notebooks (%parse-sync-payload raw))
+                  (summary (recurya/db/learn:merge-localstorage uid notebooks))
+                  (out (make-hash-table :test 'equal)))
+             (loop for (k v) on summary by #'cddr
+                   do (setf (gethash (string-downcase (symbol-name k)) out) v))
+             (json-response out))
+         (error (e)
+           (log:warn "Failed /wardlisp/learn/sync: ~A" e)
+           (let ((h (make-hash-table :test 'equal)))
+             (setf (gethash "error" h) "server error")
+             (json-response h :status 500))))))))
+
 (defun setup-wardlisp-routes (app)
   "Register all WardLisp routes on the Ningle app."
   (setf (ningle/app:route app "/wardlisp/")
@@ -282,6 +348,8 @@
         (make-dynamic-handler 'notebook-page-handler))
   (setf (ningle/app:route app "/wardlisp/learn/:id/cells/:index/run" :method :post)
         (make-dynamic-handler 'notebook-cell-run-handler))
+  (setf (ningle/app:route app "/wardlisp/learn/sync" :method :post)
+        (make-dynamic-handler 'learn-sync-handler))
   (setf (ningle/app:route app "/wardlisp/playground")
         (make-dynamic-handler 'playground-handler))
   (setf (ningle/app:route app "/wardlisp/playground/run" :method :post)
