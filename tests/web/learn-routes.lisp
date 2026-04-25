@@ -6,7 +6,19 @@
   (:import-from #:recurya/web/routes-wardlisp
                 #:learn-home-handler
                 #:notebook-page-handler
-                #:notebook-cell-run-handler))
+                #:notebook-cell-run-handler)
+  (:import-from #:recurya/game/notebook
+                #:make-cell
+                #:make-notebook-cell-result)
+  (:import-from #:recurya/db/learn
+                #:user-cell-codes
+                #:user-passed-cells
+                #:cell-submissions)
+  (:import-from #:recurya/models/users
+                #:users-id)
+  (:import-from #:recurya/tests/support/db
+                #:with-test-db
+                #:create-test-user))
 
 (in-package #:recurya/tests/web/learn-routes)
 
@@ -154,3 +166,64 @@
         (ok (= 401 (response-status response)))
         (ok (search "auth required"
                     (or (first (response-body response)) "")))))))
+
+(deftest persist-cell-run-anonymous-no-write
+  (testing "%maybe-persist-cell-run with nil uid does nothing"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (uid (users-id u))
+             (cell (make-cell :id :ex-sum3 :kind :code-exercise :body ""))
+             (result (make-notebook-cell-result
+                      :cell-id :ex-sum3 :kind :code-exercise
+                      :status :pass :metrics nil :test-results nil)))
+        (recurya/web/routes-wardlisp::%maybe-persist-cell-run
+         nil :sicp-1-1-1 cell result "(+ 1 2)")
+        ;; Scope checks to the fresh user — global tables may contain leftover
+        ;; rows from prior runs, but no row should ever appear for this uid.
+        (ok (null (user-cell-codes uid "sicp-1-1-1")))
+        (ok (null (user-passed-cells uid "sicp-1-1-1")))
+        (ok (null (cell-submissions uid "sicp-1-1-1" "ex-sum3")))))))
+
+(deftest persist-cell-run-logged-in-saves-code
+  (testing "logged-in run saves code via upsert-cell-code"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (uid (users-id u))
+             (cell (make-cell :id :c1 :kind :code-eval :body ""))
+             (result (make-notebook-cell-result
+                      :cell-id :c1 :kind :code-eval :status :ok
+                      :metrics nil :test-results nil)))
+        (recurya/web/routes-wardlisp::%maybe-persist-cell-run
+         uid :sicp-1-1-1 cell result "(+ 1 2)")
+        (let ((rows (user-cell-codes uid "sicp-1-1-1")))
+          (ok (= 1 (length rows)))
+          (ok (string= "(+ 1 2)"
+                       (cdr (assoc "c1" rows :test #'string=)))))))))
+
+(deftest persist-cell-run-pass-marks-progress
+  (testing "logged-in :pass on exercise marks progress"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (uid (users-id u))
+             (cell (make-cell :id :ex-sum3 :kind :code-exercise :body ""))
+             (result (make-notebook-cell-result
+                      :cell-id :ex-sum3 :kind :code-exercise
+                      :status :pass :metrics nil :test-results nil)))
+        (recurya/web/routes-wardlisp::%maybe-persist-cell-run
+         uid :sicp-1-1-1 cell result "(+ 137 349 22)")
+        (ok (member "ex-sum3"
+                    (user-passed-cells uid "sicp-1-1-1")
+                    :test #'string=))))))
+
+(deftest persist-cell-run-records-submission
+  (testing "logged-in exercise run appends a submission row"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (uid (users-id u))
+             (cell (make-cell :id :ex-sum3 :kind :code-exercise :body ""))
+             (result (make-notebook-cell-result
+                      :cell-id :ex-sum3 :kind :code-exercise
+                      :status :fail :metrics nil :test-results nil)))
+        (recurya/web/routes-wardlisp::%maybe-persist-cell-run
+         uid :sicp-1-1-1 cell result "(bad)")
+        (ok (= 1 (length (cell-submissions uid "sicp-1-1-1" "ex-sum3"))))))))
