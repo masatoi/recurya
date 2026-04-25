@@ -51,6 +51,9 @@
                ;; Models
                "recurya/models/users"
                "recurya/models/post"
+               "recurya/models/learn-progress"
+               "recurya/models/learn-cell-code"
+               "recurya/models/learn-submission"
                ;; Web layer
                "recurya/web/app"
                "recurya/web/auth"
