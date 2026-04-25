@@ -110,3 +110,35 @@
                  (:= :cell-id cell-id)))
     (order-by (:desc :created-at))
     (sxql:limit limit)))
+
+(defun merge-localstorage (user-id notebooks)
+  "Merge localStorage payload into DB for USER-ID.
+   NOTEBOOKS is a list of plists:
+     (:notebook-id STRING :passed (CELL-ID...) :codes ((CELL-ID . CODE)...))
+   Rule: passed = OR (idempotent insert). codes = DB wins (insert only
+   if no existing row for that cell).
+   Returns plist (:passed-merged N :codes-merged M :codes-skipped K)."
+  (let ((passed-merged 0) (codes-merged 0) (codes-skipped 0))
+    (dolist (nb notebooks)
+      (let ((nb-id (getf nb :notebook-id)))
+        (dolist (cell-id (getf nb :passed))
+          (let ((existed (find-dao 'learn-progress
+                                   :user-id user-id
+                                   :notebook-id nb-id
+                                   :cell-id cell-id)))
+            (mark-cell-passed user-id nb-id cell-id)
+            (unless existed (incf passed-merged))))
+        (dolist (pair (getf nb :codes))
+          (let* ((cell-id (car pair))
+                 (code (cdr pair))
+                 (existing (find-dao 'learn-cell-code
+                                     :user-id user-id
+                                     :notebook-id nb-id
+                                     :cell-id cell-id)))
+            (cond
+              (existing (incf codes-skipped))
+              (t (upsert-cell-code user-id nb-id cell-id code)
+                 (incf codes-merged)))))))
+    (list :passed-merged passed-merged
+          :codes-merged codes-merged
+          :codes-skipped codes-skipped)))

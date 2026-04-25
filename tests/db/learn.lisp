@@ -90,4 +90,50 @@
                (codes (mapcar #'recurya/models/learn-submission:learn-submission-code rows)))
           (ok (equal codes '("v3" "v2" "v1"))))))))
 
+(deftest merge-localstorage-or-passed
+  (testing "merge unions passed cells (DB ∪ payload)"
+    (with-test-db
+      (let* ((u (create-test-user)) (uid (users-id u)))
+        (mark-cell-passed uid "sicp-1-1-1" "ex-old")
+        (let ((summary (merge-localstorage
+                        uid
+                        '((:notebook-id "sicp-1-1-1"
+                           :passed ("ex-new" "ex-old")
+                           :codes ())))))
+          (ok (= 1 (getf summary :passed-merged)))
+          (let ((cells (sort (copy-list (user-passed-cells uid "sicp-1-1-1"))
+                             #'string<)))
+            (ok (equal cells '("ex-new" "ex-old")))))))))
+
+(deftest merge-localstorage-keeps-existing-code
+  (testing "merge does not overwrite existing DB code (DB wins)"
+    (with-test-db
+      (let* ((u (create-test-user)) (uid (users-id u)))
+        (upsert-cell-code uid "sicp-1-1-1" "ex-sum3" "DB-code")
+        (let ((summary (merge-localstorage
+                        uid
+                        '((:notebook-id "sicp-1-1-1"
+                           :passed ()
+                           :codes (("ex-sum3" . "LOCAL-code")))))))
+          (ok (= 0 (getf summary :codes-merged)))
+          (ok (= 1 (getf summary :codes-skipped)))
+          (let ((codes (user-cell-codes uid "sicp-1-1-1")))
+            (ok (string= "DB-code"
+                         (cdr (assoc "ex-sum3" codes :test #'string=))))))))))
+
+(deftest merge-localstorage-inserts-new-code
+  (testing "merge inserts code when DB has no row for the cell"
+    (with-test-db
+      (let* ((u (create-test-user)) (uid (users-id u)))
+        (let ((summary (merge-localstorage
+                        uid
+                        '((:notebook-id "sicp-1-1-1"
+                           :passed ()
+                           :codes (("ex-sum3" . "LOCAL-code")))))))
+          (ok (= 1 (getf summary :codes-merged)))
+          (ok (= 0 (getf summary :codes-skipped)))
+          (let ((codes (user-cell-codes uid "sicp-1-1-1")))
+            (ok (string= "LOCAL-code"
+                         (cdr (assoc "ex-sum3" codes :test #'string=))))))))))
+
 ;; Tests follow in subsequent tasks.
