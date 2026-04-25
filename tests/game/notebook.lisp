@@ -102,3 +102,15 @@
            (r (run-cell nb 0 '("(define (f) (f)) (f)"))))
       (ok (member (recurya/game/notebook:notebook-cell-result-status r)
                   '(:error :limit-exceeded))))))
+
+(deftest run-cell-tolerates-short-submitted-codes
+  (testing "run-cell does not raise when submitted-codes is shorter than cell-index+1"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :a :kind :code-eval :body "1")
+                             (make-cell :id :b :kind :code-eval :body "2")
+                             (make-cell :id :c :kind :code-eval :body "3"))))
+           (r (run-cell nb 2 '("(+ 10 20)")))) ; only 1 code for index 2
+      (ok (eq :ok (recurya/game/notebook:notebook-cell-result-status r)))
+      (ok (string= "30"
+                   (recurya/game/notebook:notebook-cell-result-value r))))))
