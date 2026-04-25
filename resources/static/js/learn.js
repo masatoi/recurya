@@ -1,29 +1,44 @@
 // resources/static/js/learn.js
-// Progress tracking for SICP notebook course — local-only, no server state.
+// Progress tracking for SICP notebook course.
+// Anonymous: localStorage. Logged-in: server (this script syncs once on login).
 
 const STORAGE_KEY = 'recurya:learn:v1';
 
+function isLoggedIn() {
+  return document.body.dataset.loggedIn === 'true';
+}
+
 function loadProgress() {
-  try {
-    return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {};
-  } catch (_) {
-    return {};
-  }
+  try { return JSON.parse(localStorage.getItem(STORAGE_KEY)) || {}; }
+  catch (_) { return {}; }
 }
 
 function saveProgress(obj) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(obj));
 }
 
-function updateProgress(notebookId, cellId) {
+function ensureNotebookEntry(progress, notebookId) {
+  if (!progress[notebookId]) {
+    progress[notebookId] = { passed: [], codes: {}, last_visited_at: null };
+  }
+  if (!progress[notebookId].codes) progress[notebookId].codes = {};
+  if (!progress[notebookId].passed) progress[notebookId].passed = [];
+  return progress[notebookId];
+}
+
+function recordPass(notebookId, cellId) {
   const p = loadProgress();
-  if (!p[notebookId]) {
-    p[notebookId] = { passed: [], last_visited_at: null };
-  }
-  if (!p[notebookId].passed.includes(cellId)) {
-    p[notebookId].passed.push(cellId);
-  }
-  p[notebookId].last_visited_at = new Date().toISOString();
+  const entry = ensureNotebookEntry(p, notebookId);
+  if (!entry.passed.includes(cellId)) entry.passed.push(cellId);
+  entry.last_visited_at = new Date().toISOString();
+  saveProgress(p);
+}
+
+function recordCode(notebookId, cellId, code) {
+  const p = loadProgress();
+  const entry = ensureNotebookEntry(p, notebookId);
+  entry.codes[cellId] = code;
+  entry.last_visited_at = new Date().toISOString();
   saveProgress(p);
 }
 
@@ -45,7 +60,7 @@ function markCellBadge(cellNode) {
 function markCompletedCells(notebookId) {
   const nb = loadProgress()[notebookId];
   if (!nb) return;
-  for (const cellId of nb.passed) {
+  for (const cellId of nb.passed || []) {
     const cell = document.querySelector(
       `[data-cell-id="${CSS.escape(cellId.toLowerCase())}"]`);
     markCellBadge(cell);
@@ -57,37 +72,85 @@ function renderHomeCardProgress() {
   document.querySelectorAll('[data-notebook-id]').forEach((card) => {
     const nbId = card.dataset.notebookId;
     const nbProgress = progress[nbId];
-    if (!nbProgress || nbProgress.passed.length === 0) return;
-    const count = nbProgress.passed.length;
+    if (!nbProgress || !nbProgress.passed || nbProgress.passed.length === 0) return;
     const meta = card.querySelector('.nb-card__meta');
     if (meta) {
       const tag = document.createElement('span');
-      tag.textContent = ` · ${count} 完了`;
+      tag.textContent = ` · ${nbProgress.passed.length} 完了`;
       tag.style.color = '#4ade80';
       meta.appendChild(tag);
     }
   });
 }
 
+async function maybeSyncLocalProgress() {
+  if (!isLoggedIn()) return;
+  const raw = localStorage.getItem(STORAGE_KEY);
+  if (!raw) return;
+  let payload;
+  try { payload = JSON.parse(raw); } catch (_) { return; }
+  const notebooks = Object.entries(payload).map(([nbId, val]) => ({
+    notebook_id: nbId,
+    passed: val.passed || [],
+    codes: val.codes || {},
+  }));
+  if (notebooks.length === 0) return;
+  try {
+    const res = await fetch('/wardlisp/learn/sync', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({notebooks}),
+    });
+    if (res.ok) {
+      localStorage.removeItem(STORAGE_KEY);
+    }
+  } catch (_) {
+    // Network error — keep localStorage intact for retry on next load.
+  }
+}
+
 document.addEventListener('DOMContentLoaded', () => {
-  // On a notebook page, body has data-notebook-id
+  if (isLoggedIn()) {
+    // Logged-in: server provides SSR badges; sync any leftover local data.
+    maybeSyncLocalProgress();
+    return;
+  }
+  // Anonymous: read localStorage and decorate.
   const nbId = document.body.dataset.notebookId;
   if (nbId && document.body.dataset.page !== 'learn-home') {
     markCompletedCells(nbId);
   }
-  // On the home page, mark cards
   if (document.body.dataset.page === 'learn-home') {
     renderHomeCardProgress();
   }
 });
 
 document.body.addEventListener('cell-passed', (e) => {
+  // Logged-in: server already saved this; SSR badge will appear on next load.
+  // For both modes, surface the badge immediately for snappy UX.
   const detail = (e && e.detail) || {};
   const nb = detail.notebook;
   const cell = detail.cell;
   if (!nb || !cell) return;
-  updateProgress(nb, cell);
+  if (!isLoggedIn()) recordPass(nb, cell);
   const node = document.querySelector(
     `[data-cell-id="${CSS.escape(cell.toLowerCase())}"]`);
   markCellBadge(node);
+});
+
+// Capture textarea value into localStorage (anonymous only) on every Run.
+document.body.addEventListener('htmx:afterRequest', (e) => {
+  if (isLoggedIn()) return; // server saves logged-in cell code
+  const url = (e.detail && e.detail.requestConfig && e.detail.requestConfig.path) || '';
+  const m = url.match(/\/wardlisp\/learn\/([^\/]+)\/cells\/(\d+)\/run/);
+  if (!m) return;
+  const nbId = m[1];
+  const cellIdx = parseInt(m[2], 10);
+  // Per-cell textareas are class="notebook-code" in DOM order.
+  const tas = document.querySelectorAll('textarea.notebook-code');
+  const ta = tas[cellIdx];
+  if (!ta) return;
+  const cellId = ta.closest('[data-cell-id]')?.dataset?.cellId;
+  if (!cellId) return;
+  recordCode(nbId, cellId, ta.value);
 });
