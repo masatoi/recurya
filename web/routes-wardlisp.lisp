@@ -173,9 +173,20 @@
   "GET /wardlisp/learn/:id - Notebook page."
   (let* ((id (%coerce-notebook-id (get-path-param params :id)))
          (nb (and id (get-notebook id))))
-    (if nb
-        (html-response (recurya/web/ui/notebook:render nb))
-        (html-response "<h1>404</h1>" :status 404))))
+    (cond
+      ((not nb) (html-response "<h1>404</h1>" :status 404))
+      (t
+       (let* ((session ningle/context:*session*)
+              (user (and session (gethash :user session)))
+              (uid (and user (getf user :id)))
+              (nb-id-str (string-downcase (symbol-name id)))
+              (saved-codes (and uid (recurya/db/learn:user-cell-codes uid nb-id-str)))
+              (passed-cells (and uid (recurya/db/learn:user-passed-cells uid nb-id-str))))
+         (html-response (recurya/web/ui/notebook:render
+                         nb
+                         :user user
+                         :saved-codes saved-codes
+                         :passed-cells passed-cells)))))))
 
 (defun %maybe-persist-cell-run (uid nb-id-keyword cell result code)
   "If UID is non-nil (logged in), persist cell run state to DB.

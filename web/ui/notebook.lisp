@@ -26,6 +26,15 @@
 
 (in-package #:recurya/web/ui/notebook)
 
+(defparameter *saved-codes* nil
+  "Alist (cell-id-string . code-string) of DB-saved code, or nil for anonymous.")
+
+(defparameter *passed-cells* nil
+  "List of cell-id strings the current user has passed, or nil for anonymous.")
+
+(defparameter *user* nil
+  "Current user plist (with :id, :name, etc.), or nil for anonymous.")
+
 (defparameter *styles*
   "body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
          margin: 0; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
@@ -89,28 +98,31 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
             :value "")))
 
 (defun render-code-cell (cell index nb-id exercise-p)
-  (let ((result-id (format nil "cell-~D-result" index))
-        (id-suffix (format nil "-~D" index)))
+  (let* ((result-id (format nil "cell-~D-result" index))
+         (id-suffix (format nil "-~D" index))
+         (cid-str (string-downcase (symbol-name (cell-id cell))))
+         (saved (and *saved-codes*
+                     (cdr (assoc cid-str *saved-codes* :test #'string=))))
+         (initial-code (or saved (cell-body cell) ""))
+         (passed-p (and exercise-p
+                        (member cid-str *passed-cells* :test #'string=))))
     (with-html
       (:div :class
-            (if exercise-p
-                "cell cell--code cell--exercise"
-                "cell cell--code")
-            :data-cell-id (string-downcase (symbol-name (cell-id cell)))
-            (when exercise-p (:div :class "cell__desc" (cell-description cell)))
-            (:form :class "notebook-form"
-                   (:raw
-                    (editor-textarea "codes[]" (or (cell-body cell) "")
-                                     :id-suffix id-suffix
-                                     :textarea-class "notebook-code"))
-                   (:button :type "button" :class "btn-run"
-                            :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
-                                             nb-id index)
-                            :hx-target (format nil "#~A" result-id)
-                            :hx-include ".notebook-code"
-                            :hx-swap "innerHTML"
-                            "Run"))
-            (:div :class "result-panel" :id result-id)))))
+       (if exercise-p
+           "cell cell--code cell--exercise"
+           "cell cell--code")
+       :data-cell-id cid-str
+       (when exercise-p (:div :class "cell__desc" (cell-description cell)))
+       (when passed-p (:span :class "badge-pass" "✓ done"))
+       (:form :class "notebook-form"
+        (:raw
+         (editor-textarea "codes[]" initial-code :id-suffix
+                          id-suffix :textarea-class "notebook-code"))
+        (:button :type "button" :class "btn-run" :hx-post
+         (format nil "/wardlisp/learn/~A/cells/~D/run" nb-id index) :hx-target
+         (format nil "#~A" result-id) :hx-include ".notebook-code" :hx-swap
+         "innerHTML" "Run"))
+       (:div :class "result-panel" :id result-id)))))
 
 (defun render-cell (cell index nb-id)
   (ecase (cell-kind cell)
@@ -118,34 +130,38 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
     (:code-eval     (render-code-cell cell index nb-id nil))
     (:code-exercise (render-code-cell cell index nb-id t))))
 
-(defun render (notebook)
-  "Render the full notebook page as a complete HTML document."
-  (with-html-string
-    (:doctype)
-    (:html
-     (:head
-      (:meta :charset "utf-8")
-      (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-      (:title (format nil "~A — SICP ~A"
-                      (notebook-title notebook)
-                      (notebook-chapter notebook)))
-      (:style (:raw *styles*))
-      (:script :src "https://unpkg.com/htmx.org@2.0.4"
-                :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-                :crossorigin "anonymous")
-      (:raw (editor-head-tags)))
-     (:body :data-notebook-id (notebook-url-id notebook)
-      (:main
-       (:div :class "breadcrumb"
-             (:a :href "/wardlisp/" "WardLisp") " > "
-             (:a :href "/wardlisp/learn" "SICPコース") " > "
-             (notebook-chapter notebook))
-       (:h1 (notebook-title notebook))
-       (:p :class "summary" (notebook-summary notebook))
-       (loop for cell in (notebook-cells notebook)
-             for i from 0
-             do (render-cell cell i (notebook-url-id notebook))))
-      (:script :src "/static/js/learn.js")))))
+(defun render (notebook &key user saved-codes passed-cells)
+  "Render the full notebook page as a complete HTML document.
+   USER is the logged-in user plist or nil.
+   SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
+   PASSED-CELLS is a list of cell-id strings this user has passed."
+  (let ((*saved-codes* saved-codes)
+        (*passed-cells* passed-cells)
+        (*user* user))
+    (with-html-string
+      (:doctype)
+      (:html
+       (:head (:meta :charset "utf-8")
+        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
+        (:title
+         (format nil "~A — SICP ~A" (notebook-title notebook)
+                 (notebook-chapter notebook)))
+        (:style (:raw *styles*))
+        (:script :src "https://unpkg.com/htmx.org@2.0.4"
+         :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+         :crossorigin "anonymous")
+        (:raw (editor-head-tags)))
+       (:body :data-notebook-id (notebook-url-id notebook)
+        (:main
+         (:div :class "breadcrumb" (:a :href "/wardlisp/" "WardLisp") " > "
+          (:a :href "/wardlisp/learn" "SICPコース") " > "
+          (notebook-chapter notebook))
+         (:h1 (notebook-title notebook))
+         (:p :class "summary" (notebook-summary notebook))
+         (loop for cell in (notebook-cells notebook)
+               for i from 0
+               do (render-cell cell i (notebook-url-id notebook))))
+        (:script :src "/static/js/learn.js"))))))
 
 (defun render-test-results (results)
   (spinneret:with-html
