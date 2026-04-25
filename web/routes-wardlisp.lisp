@@ -27,9 +27,14 @@
   (:import-from #:recurya/game/notebook
                 #:run-cell
                 #:notebook-cells
+                #:cell-id
                 #:cell-kind
                 #:notebook-cell-result-cell-id
                 #:notebook-cell-result-status)
+  (:import-from #:recurya/db/learn
+                #:mark-cell-passed
+                #:upsert-cell-code
+                #:record-submission)
   (:import-from #:recurya/game/notebooks/registry
                 #:get-notebook
                 #:all-notebooks)
@@ -40,6 +45,12 @@
 (in-package #:recurya/web/routes-wardlisp)
 
 ;;; --- Response Helpers (same pattern as web/routes.lisp) ---
+
+(defun %current-user-id ()
+  "Return the current user's UUID from the Ningle session, or nil if anonymous."
+  (let* ((session ningle/context:*session*)
+         (user (and session (gethash :user session))))
+    (and user (getf user :id))))
 
 (defun html-response (body &key (status 200))
   "Create an HTML response."
@@ -166,6 +177,24 @@
         (html-response (recurya/web/ui/notebook:render nb))
         (html-response "<h1>404</h1>" :status 404))))
 
+(defun %maybe-persist-cell-run (uid nb-id-keyword cell result code)
+  "If UID is non-nil (logged in), persist cell run state to DB.
+   DB failures are logged and silenced — the user-facing response stays intact."
+  (when uid
+    (handler-case
+        (let* ((nb-id-str (string-downcase (symbol-name nb-id-keyword)))
+               (cell-id-str (string-downcase (symbol-name (cell-id cell))))
+               (status (notebook-cell-result-status result))
+               (kind (cell-kind cell)))
+          (upsert-cell-code uid nb-id-str cell-id-str (or code ""))
+          (when (eq kind :code-exercise)
+            (record-submission uid nb-id-str cell-id-str (or code "")
+                               (string-downcase (symbol-name status)))
+            (when (eq status :pass)
+              (mark-cell-passed uid nb-id-str cell-id-str))))
+      (error (e)
+        (log:warn "Failed to persist cell run: ~A" e)))))
+
 (defun notebook-cell-run-handler (params)
   "POST /wardlisp/learn/:id/cells/:index/run — HTMX fragment."
   (let* ((id (%coerce-notebook-id (get-path-param params :id)))
@@ -189,6 +218,12 @@
       (t
        (let* ((result (run-cell nb index codes-list))
               (body (recurya/web/ui/notebook:render-cell-result result)))
+         (%maybe-persist-cell-run
+          (%current-user-id)
+          id
+          (nth index (notebook-cells nb))
+          result
+          (nth index codes-list))
          (if (eq (notebook-cell-result-status result) :pass)
              (html-response-with-headers
               body
