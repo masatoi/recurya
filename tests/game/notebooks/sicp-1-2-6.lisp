@@ -65,3 +65,31 @@
                                       (t ""))))
            (result (run-cell nb ex-idx codes)))
       (ok (eq :pass (notebook-cell-result-status result))))))
+
+(deftest sicp-1-2-6-ex-fermat-passes
+  (testing "the ex-fermat exercise grades as :pass with canonical solution"
+    (let* ((nb (make-sicp-1-2-6-notebook))
+           (cells (notebook-cells nb))
+           (ex-idx (position :ex-fermat cells :key #'cell-id))
+           (codes (loop for c in cells
+                        for i from 0
+                        collect (cond ((= i ex-idx)
+                                       "(define (square x) (* x x))
+(define (even? n) (= (mod n 2) 0))
+(define (expmod base exp m)
+  (cond ((= exp 0) 1)
+        ((even? exp) (mod (square (expmod base (/ exp 2) m)) m))
+        (t (mod (* base (expmod base (- exp 1) m)) m))))
+(define (fermat-test n)
+  (define a (+ 1 (random (- n 1))))
+  (= (expmod a n n) a))
+(define (fast-prime? n times)
+  (cond ((= times 0) t)
+        ((fermat-test n) (fast-prime? n (- times 1)))
+        (t nil)))
+(fast-prime? 1009 5)")
+                                      ((eq (cell-kind c) :code-eval)
+                                       (cell-body c))
+                                      (t ""))))
+           (result (run-cell nb ex-idx codes)))
+      (ok (eq :pass (notebook-cell-result-status result))))))

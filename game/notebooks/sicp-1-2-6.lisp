@@ -16,7 +16,7 @@
    :id :sicp-1-2-6
    :chapter "1.2.6"
    :title "素数判定"
-   :summary "試し割り法で素数を判定し、Fermat テストの考え方も紹介する"
+   :summary "試し割り法で素数を判定し、Fermat テストを WardLisp の random で実装する"
    :cells
    (list
     (make-cell :id :intro :kind :prose
@@ -63,21 +63,37 @@
                            (:code "(t ...)") " と書きます。")))
     (make-cell :id :fermat-prose :kind :prose
                :body '(:div
-                       (:p (:strong "Fermat テスト (概念紹介)") ": "
+                       (:p (:strong "Fermat テスト") ": "
                            "フェルマーの小定理は "
                            (:code "n が素数なら、任意の a (1 ≤ a < n) について a^n ≡ a (mod n)")
                            " と主張します。")
                        (:p "この性質を使い、ランダムに " (:code "a")
                            " を選んで合同式を検査することで、"
                            (:strong "確率的に") " 素数判定する手法が "
-                           "Fermat テストです。Θ(log n) で動きます。")
+                           "Fermat テストです。1 回の試行は "
+                           (:code "Θ(log n)") " で動きます。")
                        (:p (:strong "WardLisp 注記") ": "
-                           "実装には乱数生成 (" (:code "random") ") が必要ですが、"
-                           "WardLisp には " (:code "random") " 関数が"
-                           (:strong "存在しない") " ため、"
-                           "本ノートでは概念紹介に留め、"
-                           (:strong "決定的な試し割り法のみ")
-                           " を実装します。")))
+                           "Fermat テストには乱数が必要ですが、"
+                           "WardLisp v0.2.0 から " (:code "(random n)")
+                           " が使えるようになりました。"
+                           (:code "0") " 以上 " (:code "n")
+                           " 未満の整数を返します。")))
+    (make-cell :id :fermat-impl :kind :code-eval
+               :body "(define (square x) (* x x))
+(define (even? n) (= (mod n 2) 0))
+(define (expmod base exp m)
+  (cond ((= exp 0) 1)
+        ((even? exp) (mod (square (expmod base (/ exp 2) m)) m))
+        (t (mod (* base (expmod base (- exp 1) m)) m))))
+(define (fermat-test n)
+  (define a (+ 1 (random (- n 1))))
+  (= (expmod a n n) a))
+(define (fast-prime? n times)
+  (cond ((= times 0) t)
+        ((fermat-test n) (fast-prime? n (- times 1)))
+        (t nil)))
+;; 1009 は素数。5 回試行すれば事実上常に t になる
+(list (fast-prime? 1009 5) (fast-prime? 100 5))")
     (make-cell :id :ex-prime-1009 :kind :code-exercise
                :description
                "試し割り法で (prime? 1009) の値を求めてください。
@@ -112,4 +128,21 @@ prime? を再利用し、n が素数ならそのまま、そうでなければ (
                :test-cases
                (list (make-test-case :input ""
                                      :expected "101"
-                                     :description "100 以上の最小の素数は 101"))))))
+                                     :description "100 以上の最小の素数は 101")))
+    (make-cell :id :ex-fermat :kind :code-exercise
+               :description
+               "Fermat テストで素数判定する (fast-prime? n times) を書いてください。
+square / even? / expmod / fermat-test / fast-prime? を上記 fermat-impl と同じに定義し、
+最終式として (fast-prime? 1009 5) を残します。
+答え: t (1009 は素数なので Fermat テストは決定的に t を返す)"
+               :body "; (define (square x) ...)
+; (define (even? n) ...)
+; (define (expmod base exp m) ...)
+; (define (fermat-test n) ...)
+; (define (fast-prime? n times) ...)
+; 最後に (fast-prime? 1009 5)
+"
+               :test-cases
+               (list (make-test-case :input ""
+                                     :expected "t"
+                                     :description "1009 を Fermat テストで判定"))))))
