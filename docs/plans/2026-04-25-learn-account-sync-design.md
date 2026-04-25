@@ -93,14 +93,15 @@ GET /wardlisp/learn/:id (cookie あり)
 
 ```lisp
 (deftable learn-progress ()
-  ((user-id :col-type :integer)
+  ((user-id :col-type :uuid)
    (notebook-id :col-type (:varchar 64))
    (cell-id :col-type (:varchar 64))
-   (passed-at :col-type :timestamp))
+   (passed-at :col-type :timestamptz))
   (:unique-keys (user-id notebook-id cell-id))
   (:keys (user-id notebook-id)))
 ```
 
+- `user-id` 型を `:uuid` に変更(既存 `users` テーブルが UUID PK のため)
 - 行が存在する = 合格済み
 - 同じセルを再度合格させても upsert(初回 `passed-at` で固定、`INSERT IGNORE` 相当)
 
@@ -108,7 +109,7 @@ GET /wardlisp/learn/:id (cookie あり)
 
 ```lisp
 (deftable learn-cell-code ()
-  ((user-id :col-type :integer)
+  ((user-id :col-type :uuid)
    (notebook-id :col-type (:varchar 64))
    (cell-id :col-type (:varchar 64))
    (code :col-type :text))
@@ -124,7 +125,7 @@ GET /wardlisp/learn/:id (cookie あり)
 
 ```lisp
 (deftable learn-submission ()
-  ((user-id :col-type :integer)
+  ((user-id :col-type :uuid)
    (notebook-id :col-type (:varchar 64))
    (cell-id :col-type (:varchar 64))
    (code :col-type :text)
