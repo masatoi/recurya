@@ -12,6 +12,7 @@
     :recurya/tests/db/jsonb
     :recurya/tests/db/users
     :recurya/tests/db/posts
+    :recurya/tests/db/learn
     :recurya/tests/web/auth
     :recurya/tests/web/routes
     :recurya/tests/web/learn-routes

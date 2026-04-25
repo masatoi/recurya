@@ -47,6 +47,7 @@
                "recurya/db/jsonb"
                "recurya/db/users"
                "recurya/db/posts"
+               "recurya/db/learn"
                "recurya/db"
                ;; Models
                "recurya/models/users"
@@ -98,6 +99,7 @@
                "recurya/tests/db/jsonb"
                "recurya/tests/db/users"
                "recurya/tests/db/posts"
+               "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/auth"
                "recurya/tests/web/routes"
