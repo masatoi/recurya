@@ -51,3 +51,42 @@
           (select-dao 'learn-progress
             (where (:and (:= :user-id user-id)
                          (:= :notebook-id notebook-id))))))
+
+(defun upsert-cell-code (user-id notebook-id cell-id code)
+  "Insert or update the saved code for (USER-ID, NOTEBOOK-ID, CELL-ID).
+   Returns the learn-cell-code instance."
+  (let ((existing (find-dao 'learn-cell-code
+                            :user-id user-id
+                            :notebook-id notebook-id
+                            :cell-id cell-id)))
+    (cond
+      (existing
+       (setf (learn-cell-code-code existing) code)
+       (save-dao existing)
+       existing)
+      (t
+       (handler-case
+           (insert-dao
+            (make-instance 'learn-cell-code
+                           :user-id user-id
+                           :notebook-id notebook-id
+                           :cell-id cell-id
+                           :code code))
+         (error ()
+           (let ((row (find-dao 'learn-cell-code
+                                :user-id user-id
+                                :notebook-id notebook-id
+                                :cell-id cell-id)))
+             (when row
+               (setf (learn-cell-code-code row) code)
+               (save-dao row))
+             row)))))))
+
+(defun user-cell-codes (user-id notebook-id)
+  "Return alist ((cell-id . code) ...) of saved codes for USER-ID in NOTEBOOK-ID."
+  (mapcar (lambda (row)
+            (cons (learn-cell-code-cell-id row)
+                  (learn-cell-code-code row)))
+          (select-dao 'learn-cell-code
+            (where (:and (:= :user-id user-id)
+                         (:= :notebook-id notebook-id))))))
