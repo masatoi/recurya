@@ -66,4 +66,28 @@
           (ok (string= "code-A" (cdr (assoc "ex-sum3" alist :test #'string=))))
           (ok (string= "code-B" (cdr (assoc "ex-square" alist :test #'string=)))))))))
 
+(deftest record-submission-appends-each-call
+  (testing "each call inserts a new row"
+    (with-test-db
+      (let* ((u (create-test-user)) (uid (users-id u)))
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "(bad)" "fail")
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "(+ 1)" "fail")
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "(+ 137 349 22)" "pass")
+        (let ((rows (mito:retrieve-dao 'recurya/models/learn-submission:learn-submission
+                                       :user-id uid)))
+          (ok (= 3 (length rows))))))))
+
+(deftest cell-submissions-newest-first
+  (testing "cell-submissions returns rows ordered newest-first"
+    (with-test-db
+      (let* ((u (create-test-user)) (uid (users-id u)))
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "v1" "fail")
+        (sleep 0.05)
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "v2" "fail")
+        (sleep 0.05)
+        (record-submission uid "sicp-1-1-1" "ex-sum3" "v3" "pass")
+        (let* ((rows (cell-submissions uid "sicp-1-1-1" "ex-sum3"))
+               (codes (mapcar #'recurya/models/learn-submission:learn-submission-code rows)))
+          (ok (equal codes '("v3" "v2" "v1"))))))))
+
 ;; Tests follow in subsequent tasks.

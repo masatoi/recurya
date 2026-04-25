@@ -90,3 +90,23 @@
           (select-dao 'learn-cell-code
             (where (:and (:= :user-id user-id)
                          (:= :notebook-id notebook-id))))))
+
+(defun record-submission (user-id notebook-id cell-id code status)
+  "Append an exercise submission to the history. STATUS is a string
+   among \"pass\" / \"fail\" / \"error\"."
+  (insert-dao
+   (make-instance 'learn-submission
+                  :user-id user-id
+                  :notebook-id notebook-id
+                  :cell-id cell-id
+                  :code code
+                  :status status)))
+
+(defun cell-submissions (user-id notebook-id cell-id &key (limit 50))
+  "Return list of learn-submission rows for the given cell, newest first."
+  (select-dao 'learn-submission
+    (where (:and (:= :user-id user-id)
+                 (:= :notebook-id notebook-id)
+                 (:= :cell-id cell-id)))
+    (order-by (:desc :created-at))
+    (sxql:limit limit)))
