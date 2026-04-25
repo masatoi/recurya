@@ -106,28 +106,31 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
   (let* ((result-id (format nil "cell-~D-result" index))
          (id-suffix (format nil "-~D" index))
          (cid-str (string-downcase (symbol-name (cell-id cell))))
-         (saved (and *saved-codes*
-                     (cdr (assoc cid-str *saved-codes* :test #'string=))))
+         (saved
+          (and *saved-codes*
+               (cdr (assoc cid-str *saved-codes* :test #'string=))))
          (initial-code (or saved (cell-body cell) ""))
-         (passed-p (and exercise-p
-                        (member cid-str *passed-cells* :test #'string=))))
+         (passed-p
+          (and exercise-p (member cid-str *passed-cells* :test #'string=))))
     (with-html
       (:div :class
-       (if exercise-p
-           "cell cell--code cell--exercise"
-           "cell cell--code")
-       :data-cell-id cid-str
-       (when exercise-p (:div :class "cell__desc" (cell-description cell)))
-       (when passed-p (:span :class "badge-pass" "✓ done"))
-       (:form :class "notebook-form"
-        (:raw
-         (editor-textarea "codes[]" initial-code :id-suffix
-                          id-suffix :textarea-class "notebook-code"))
-        (:button :type "button" :class "btn-run" :hx-post
-         (format nil "/wardlisp/learn/~A/cells/~D/run" nb-id index) :hx-target
-         (format nil "#~A" result-id) :hx-include ".notebook-code" :hx-swap
-         "innerHTML" "Run"))
-       (:div :class "result-panel" :id result-id)))))
+            (if exercise-p
+                "cell cell--code cell--exercise"
+                "cell cell--code")
+            :data-cell-id cid-str
+            (when exercise-p (:div :class "cell__desc" (cell-description cell)))
+            (when passed-p (:span :class "badge-pass" "✓ done"))
+            (:raw
+             (editor-textarea "codes[]" initial-code :id-suffix id-suffix
+                              :textarea-class "notebook-code"))
+            (:button :type "button" :class "btn-run"
+                     :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
+                                      nb-id index)
+                     :hx-target (format nil "#~A" result-id)
+                     :hx-include ".notebook-code"
+                     :hx-swap "innerHTML"
+                     "Run")
+            (:div :class "result-panel" :id result-id)))))
 
 (defun render-cell (cell index nb-id)
   (ecase (cell-kind cell)
