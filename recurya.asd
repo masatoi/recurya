@@ -81,6 +81,8 @@
                "recurya/game/notebooks/sicp-3-3-3"
                "recurya/game/notebooks/sicp-3-3-4"
                "recurya/game/notebooks/sicp-3-3-5"
+               "recurya/game/notebooks/sicp-3-4-1"
+               "recurya/game/notebooks/sicp-3-4-2"
                "recurya/game/notebooks/registry"
                ;; Arena
                "recurya/game/arena"
@@ -201,6 +203,8 @@
                "recurya/tests/game/notebooks/sicp-3-3-3"
                "recurya/tests/game/notebooks/sicp-3-3-4"
                "recurya/tests/game/notebooks/sicp-3-3-5"
+               "recurya/tests/game/notebooks/sicp-3-4-1"
+               "recurya/tests/game/notebooks/sicp-3-4-2"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner
