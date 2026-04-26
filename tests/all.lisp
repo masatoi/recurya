@@ -54,7 +54,10 @@
     :recurya/tests/game/notebooks/sicp-2-3-4
     :recurya/tests/game/notebooks/sicp-2-4-1
     :recurya/tests/game/notebooks/sicp-2-4-2
-    :recurya/tests/game/notebooks/sicp-2-4-3)
+    :recurya/tests/game/notebooks/sicp-2-4-3
+    :recurya/tests/game/notebooks/sicp-2-5-1
+    :recurya/tests/game/notebooks/sicp-2-5-2
+    :recurya/tests/game/notebooks/sicp-2-5-3)
   "List of all test packages to run.")
 
 (defun run-all-tests ()
