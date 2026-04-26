@@ -108,6 +108,10 @@
                 #:make-sicp-3-5-2-notebook)
   (:import-from #:recurya/game/notebooks/sicp-3-5-3
                 #:make-sicp-3-5-3-notebook)
+  (:import-from #:recurya/game/notebooks/sicp-3-5-4
+                #:make-sicp-3-5-4-notebook)
+  (:import-from #:recurya/game/notebooks/sicp-3-5-5
+                #:make-sicp-3-5-5-notebook)
   (:import-from #:recurya/game/notebook
                 #:notebook-id)
   (:export #:all-notebooks #:get-notebook))
@@ -167,7 +171,9 @@
         (make-sicp-3-4-2-notebook)
         (make-sicp-3-5-1-notebook)
         (make-sicp-3-5-2-notebook)
-        (make-sicp-3-5-3-notebook))
+        (make-sicp-3-5-3-notebook)
+        (make-sicp-3-5-4-notebook)
+        (make-sicp-3-5-5-notebook))
   "All available notebooks, in display order.")
 
 (defun get-notebook (id)

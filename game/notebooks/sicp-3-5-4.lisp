@@ -1,0 +1,135 @@
+;;;; game/notebooks/sicp-3-5-4.lisp --- SICP 3.5.4 Streams and Delayed Evaluation.
+
+(defpackage #:recurya/game/notebooks/sicp-3-5-4
+  (:use #:cl)
+  (:import-from #:recurya/game/notebook
+                #:make-notebook #:make-cell)
+  (:import-from #:recurya/game/puzzle
+                #:make-test-case)
+  (:export #:make-sicp-3-5-4-notebook))
+
+(in-package #:recurya/game/notebooks/sicp-3-5-4)
+
+(defun make-sicp-3-5-4-notebook ()
+  "SICP 3.5.4 - Streams and Delayed Evaluation."
+  (make-notebook
+   :id :sicp-3-5-4
+   :chapter "3.5.4"
+   :title "ストリームと遅延評価"
+   :summary "遅延評価で無限級数を表現する。π の Leibniz 級数を項のストリームとして書き、その部分和ストリームから精度を上げていく。partial-sums のような汎用ストリーム変換器も同じパラダイムで書ける。"
+   :cells
+   (list
+    (make-cell :id :intro :kind :prose
+               :body '(:div
+                       (:p (:strong "SICP 3.5.4")
+                           " はストリームによる"
+                           (:strong "無限級数")
+                           "の表現を扱います。π の Leibniz 級数 "
+                           (:code "π/4 = 1 - 1/3 + 1/5 - 1/7 + ...")
+                           " を"
+                           (:strong "項のストリーム")
+                           "として書き、その"
+                           (:strong "部分和ストリーム")
+                           "を取って精度を上げていきます。")
+                       (:p "WardLisp は分数を持たないので、結果は浮動小数になります。"
+                           "しかし級数の構造そのもの ― 「次の項を遅延で計算する」「部分和を遅延で蓄積する」― は SICP 原典と同じ形で書けます。")))
+    (make-cell :id :pi-terms-eval :kind :code-eval
+               :body "(define (stream-cons a thunk) (cons a thunk))
+(define (stream-car s) (car s))
+(define (stream-cdr s) ((cdr s)))
+(define (stream-take s n)
+  (if (= n 0) nil (cons (stream-car s) (stream-take (stream-cdr s) (- n 1)))))
+;; pi の Leibniz 級数の項: 1, -1/3, 1/5, -1/7, ...
+;; 第 n 項(0 始まり) = ((-1)^n) / (2n+1)
+(define (pi-terms n)
+  (stream-cons (/ (if (= 0 (mod n 2)) 1 -1) (+ 1 (* 2 n)))
+               (lambda () (pi-terms (+ n 1)))))
+(stream-take (pi-terms 0) 6)
+;; → (1 -0.333... 0.2 -0.142... 0.111... -0.0909...)")
+    (make-cell :id :partial-sums-prose :kind :prose
+               :body '(:div
+                       (:p (:strong "部分和ストリーム")
+                           ": 入力ストリーム " (:code "s") " に対して、出力 "
+                           (:code "i") " 番目 = "
+                           (:code "s[0]+s[1]+...+s[i]")
+                           " を返す。")
+                       (:p (:code "partial-sums-helper")
+                           " で「これまでの累積」"
+                           (:code "acc")
+                           " を引数に取り、各位置で次の累積を遅延で計算します。"
+                           "これも完全に遅延評価で、必要な項までしか計算されません。")))
+    (make-cell :id :pi-partial-eval :kind :code-eval
+               :body "(define (stream-cons a thunk) (cons a thunk))
+(define (stream-car s) (car s))
+(define (stream-cdr s) ((cdr s)))
+(define (stream-take s n)
+  (if (= n 0) nil (cons (stream-car s) (stream-take (stream-cdr s) (- n 1)))))
+(define (pi-terms n)
+  (stream-cons (/ (if (= 0 (mod n 2)) 1 -1) (+ 1 (* 2 n)))
+               (lambda () (pi-terms (+ n 1)))))
+(define (partial-sums-helper s acc)
+  (let ((next-acc (+ acc (stream-car s))))
+    (stream-cons next-acc (lambda () (partial-sums-helper (stream-cdr s) next-acc)))))
+(define (partial-sums s) (partial-sums-helper s 0))
+;; π/4 の部分和(× 4 で π の近似)
+(stream-take (partial-sums (pi-terms 0)) 4)
+;; → 1, 1-1/3=0.666..., +1/5=0.866..., -1/7=0.723..., (π/4 ≒ 0.7854 に振動収束)")
+    (make-cell :id :merit :kind :prose
+               :body '(:div
+                       (:p (:strong "観察")
+                           ": "
+                           (:code "(pi-terms 0)")
+                           " は無限ストリームのままで、"
+                           (:code "stream-take 4")
+                           " で 4 項目までしか実際には評価されない。")
+                       (:p "重要なのは、partial-sums のような"
+                           (:strong "汎用ストリーム変換器")
+                           "が、有限/無限を問わず同じ形で書けること。"
+                           "ストリームを「遅延された値の列」と見れば、リストと同じパターンで合成できます。")))
+    (make-cell :id :ex-triangular :kind :code-exercise
+               :description
+               "整数 1, 2, 3, ... の partial-sums(三角数 1, 1+2=3, 1+2+3=6, ...)の先頭 6 項を返してください。
+stream-cons / stream-car / stream-cdr / stream-take / integers-from / partial-sums を上で定義しておきます。
+最終式: (stream-take (partial-sums (integers-from 1)) 6) → (1 3 6 10 15 21)"
+               :body "(define (stream-cons a thunk) (cons a thunk))
+(define (stream-car s) (car s))
+(define (stream-cdr s) ((cdr s)))
+(define (stream-take s n)
+  (if (= n 0) nil (cons (stream-car s) (stream-take (stream-cdr s) (- n 1)))))
+(define (integers-from n) (stream-cons n (lambda () (integers-from (+ n 1)))))
+(define (partial-sums-helper s acc)
+  (let ((next-acc (+ acc (stream-car s))))
+    (stream-cons next-acc (lambda () (partial-sums-helper (stream-cdr s) next-acc)))))
+(define (partial-sums s) (partial-sums-helper s 0))
+;; 最終式を書いてください
+(stream-take (partial-sums (integers-from 1)) 6)"
+               :test-cases
+               (list (make-test-case
+                      :input ""
+                      :expected "(1 3 6 10 15 21)"
+                      :description "三角数 先頭 6 項")))
+    (make-cell :id :ex-square-sums :kind :code-exercise
+               :description
+               "整数 1, 2, 3, ... の二乗の累積和を計算してください。
+(integers-from 1)、stream-map で二乗、partial-sums を組み合わせ、先頭 5 項を取り出します。
+1, 1+4=5, 5+9=14, 14+16=30, 30+25=55。
+最終式: (stream-take (partial-sums (stream-map (lambda (x) (* x x)) (integers-from 1))) 5)"
+               :body "(define (stream-cons a thunk) (cons a thunk))
+(define (stream-car s) (car s))
+(define (stream-cdr s) ((cdr s)))
+(define (stream-take s n)
+  (if (= n 0) nil (cons (stream-car s) (stream-take (stream-cdr s) (- n 1)))))
+(define (integers-from n) (stream-cons n (lambda () (integers-from (+ n 1)))))
+(define (stream-map f s)
+  (if (null? s) nil (stream-cons (f (stream-car s)) (lambda () (stream-map f (stream-cdr s))))))
+(define (partial-sums-helper s acc)
+  (let ((next-acc (+ acc (stream-car s))))
+    (stream-cons next-acc (lambda () (partial-sums-helper (stream-cdr s) next-acc)))))
+(define (partial-sums s) (partial-sums-helper s 0))
+;; 最終式を書いてください
+(stream-take (partial-sums (stream-map (lambda (x) (* x x)) (integers-from 1))) 5)"
+               :test-cases
+               (list (make-test-case
+                      :input ""
+                      :expected "(1 5 14 30 55)"
+                      :description "平方数の累積和 先頭 5 項"))))))
