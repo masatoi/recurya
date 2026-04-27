@@ -17,6 +17,7 @@
                 #:notebook-cell-result-value
                 #:notebook-cell-result-print-output
                 #:notebook-cell-result-error-message
+                #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
   (:import-from #:recurya/web/ui/editor
@@ -59,6 +60,13 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
            margin-top: 0.5rem; }
 .btn-run:hover { background: #1d4ed8; }
 .btn-run.htmx-request { opacity: 0.7; cursor: wait; }
+.btn-reset { background: none; color: #94a3b8; border: 1px solid #334155;
+             padding: 0.4rem 0.9rem; border-radius: 8px; font-size: 0.8rem;
+             cursor: pointer; margin-top: 0.5rem; margin-left: 0.4rem; }
+.btn-reset:hover { color: #f8fafc; border-color: #64748b; }
+.error-hint { color: #fbbf24; font-size: 0.8rem; margin-top: 0.4rem;
+              padding: 0.3rem 0.6rem; background: #1e293b;
+              border-left: 3px solid #f59e0b; border-radius: 0 4px 4px 0; }
 .result-panel { min-height: 1.5rem; margin-top: 0.75rem; }
 .result-ok { color: #4ade80; font-family: monospace; }
 .result-fail { color: #f87171; font-family: monospace; }
@@ -109,7 +117,8 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
          (saved
           (and *saved-codes*
                (cdr (assoc cid-str *saved-codes* :test #'string=))))
-         (initial-code (or saved (cell-body cell) ""))
+         (original-code (or (cell-body cell) ""))
+         (initial-code (or saved original-code ""))
          (passed-p
           (and exercise-p (member cid-str *passed-cells* :test #'string=))))
     (with-html
@@ -118,6 +127,8 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                 "cell cell--code cell--exercise"
                 "cell cell--code")
             :data-cell-id cid-str
+            :data-original-code original-code
+            :data-textarea-id (format nil "editor-source~A" id-suffix)
             (when exercise-p (:div :class "cell__desc" (cell-description cell)))
             (when passed-p (:span :class "badge-pass" "✓ done"))
             (:raw
@@ -130,6 +141,9 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                      :hx-include ".notebook-code"
                      :hx-swap "innerHTML"
                      "Run")
+            (:button :type "button" :class "btn-reset"
+                     :title "セルを初期コードに戻す"
+                     "リセット")
             (:div :class "result-panel" :id result-id)))))
 
 (defun render-cell (cell index nb-id)
@@ -220,7 +234,16 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
            (:div :class "result-fail" "一部のテストが失敗しました")
            (render-test-results (notebook-cell-result-test-results result)))
           (:error
-           (:pre :class "result-error"
-                 (notebook-cell-result-error-message result))))))
+           (let ((origin (notebook-cell-result-error-cell-id result)))
+             (:pre :class "result-error"
+                   (if origin
+                       (format nil "セル「~A」でエラー: ~A"
+                               (string-downcase (symbol-name origin))
+                               (notebook-cell-result-error-message result))
+                       (notebook-cell-result-error-message result)))
+             (:div :class "error-hint"
+                   (if origin
+                       "💡 上のセル「リセット」ボタンで初期コードに戻せます。"
+                       "💡 上のセルを編集している場合、「リセット」ボタンで初期コードに戻せます。")))))))
     (let ((out (notebook-cell-result-print-output result)))
       (when (and out (plusp (length out))) (:pre :class "print-output" out)))))

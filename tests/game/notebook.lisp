@@ -114,3 +114,23 @@
       (ok (eq :ok (recurya/game/notebook:notebook-cell-result-status r)))
       (ok (string= "30"
                    (recurya/game/notebook:notebook-cell-result-value r))))))
+
+(deftest run-cell-attributes-parse-error-to-upstream-cell
+  (testing "a parse error in an upstream cell sets error-cell-id to that cell"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :first :kind :code-eval :body "1")
+                             (make-cell :id :broken :kind :code-eval :body "(unterminated")
+                             (make-cell :id :third :kind :code-eval :body "3"))))
+           (r (run-cell nb 2 '("1" "(unterminated" "(+ 1 2)"))))
+      (ok (eq :error (recurya/game/notebook:notebook-cell-result-status r)))
+      (ok (eq :broken (recurya/game/notebook:notebook-cell-result-error-cell-id r))))))
+
+(deftest run-cell-runtime-error-has-no-cell-attribution
+  (testing "a runtime error without line info leaves error-cell-id NIL"
+    (let* ((nb (make-notebook
+                :id :demo :chapter "0" :title "Demo" :summary ""
+                :cells (list (make-cell :id :a :kind :code-eval :body "(define (f) (f)) (f)"))))
+           (r (run-cell nb 0 '("(define (f) (f)) (f)"))))
+      (ok (eq :error (recurya/game/notebook:notebook-cell-result-status r)))
+      (ok (null (recurya/game/notebook:notebook-cell-result-error-cell-id r))))))

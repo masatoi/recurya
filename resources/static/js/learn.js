@@ -138,6 +138,26 @@ document.body.addEventListener('cell-passed', (e) => {
   markCellBadge(node);
 });
 
+// Reset button: restore the cell's textarea + CodeMirror view to the
+// notebook's original code (data-original-code on the cell wrapper).
+document.body.addEventListener('click', (e) => {
+  const btn = e.target.closest('.btn-reset');
+  if (!btn) return;
+  const cell = btn.closest('[data-cell-id]');
+  if (!cell) return;
+  const original = cell.dataset.originalCode || '';
+  const textareaId = cell.dataset.textareaId;
+  if (!textareaId) return;
+  const ta = document.getElementById(textareaId);
+  if (ta) ta.value = original;
+  const view = (window.cmEditors || {})[textareaId];
+  if (view) {
+    view.dispatch({
+      changes: {from: 0, to: view.state.doc.length, insert: original}
+    });
+  }
+});
+
 // Capture textarea value into localStorage (anonymous only) on every Run.
 document.body.addEventListener('htmx:afterRequest', (e) => {
   if (isLoggedIn()) return; // server saves logged-in cell code

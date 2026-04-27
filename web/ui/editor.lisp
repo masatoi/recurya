@@ -136,6 +136,9 @@ try {
     }),
     parent: mount
   });
+  // Expose view for external controls (reset button etc.)
+  window.cmEditors = window.cmEditors || {};
+  window.cmEditors[textarea.id] = view;
 } catch (e) {
   console.error('CodeMirror failed to load:', e);
   const textarea = document.getElementById('~A');
