@@ -23,6 +23,8 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
+  (:import-from #:recurya/game/notebooks/registry
+                #:all-notebooks)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -36,10 +38,60 @@
 (defparameter *user* nil
   "Current user plist (with :id, :name, etc.), or nil for anonymous.")
 
+(defparameter *chapter-titles*
+  '(("1" . "第1章 手続きによる抽象化")
+    ("2" . "第2章 データによる抽象化")
+    ("3" . "第3章 並行性、状態、ストリーム"))
+  "Top-level chapter labels for the sidebar TOC.")
+
+(defparameter *section-titles*
+  '(("1.1" . "1.1 言語の要素")
+    ("1.2" . "1.2 手続きと作りだすプロセス")
+    ("1.3" . "1.3 高階手続きでの抽象化の定式化")
+    ("2.1" . "2.1 データ抽象入門")
+    ("2.2" . "2.2 階層データと閉包性")
+    ("2.3" . "2.3 記号データ")
+    ("2.4" . "2.4 抽象データの複数表現")
+    ("2.5" . "2.5 ジェネリック演算系")
+    ("3.1" . "3.1 代入と局所状態")
+    ("3.2" . "3.2 評価の環境モデル")
+    ("3.3" . "3.3 可変データを用いたモデル化")
+    ("3.4" . "3.4 並行性")
+    ("3.5" . "3.5 ストリーム"))
+  "Section labels (e.g. 1.1) for the sidebar TOC.")
+
 (defparameter *styles*
   "body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
          margin: 0; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
-main { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; }
+main { max-width: 900px; margin: 0 auto; padding: 2rem 1.5rem; flex: 1; min-width: 0; }
+.layout { display: flex; align-items: flex-start; }
+.sidebar { width: 260px; flex-shrink: 0; background: #0a0f1a;
+           border-right: 1px solid #1e293b; padding: 1.5rem 1rem;
+           overflow-y: auto; max-height: 100vh; position: sticky; top: 0;
+           font-size: 0.85rem; }
+.sidebar-home { display: block; color: #38bdf8; font-weight: 700;
+                margin-bottom: 1rem; text-decoration: none; font-size: 0.95rem; }
+.sb-chapter { margin-bottom: 0.5rem; border: 1px solid #1e293b;
+              border-radius: 6px; padding: 0.4rem 0.6rem; }
+.sb-chapter[open] { background: #0f172a; }
+.sb-summary { color: #f8fafc; font-weight: 600; cursor: pointer;
+              font-size: 0.88rem; padding: 0.2rem 0; }
+.sb-summary:hover { color: #38bdf8; }
+.sb-section { margin: 0.4rem 0 0.6rem 0; }
+.sb-section-title { color: #94a3b8; font-size: 0.75rem; font-weight: 600;
+                    margin: 0.5rem 0 0.25rem 0; }
+.sb-list { list-style: none; padding: 0; margin: 0; }
+.sb-list li { margin: 0; }
+.sb-link { display: block; padding: 0.2rem 0.5rem; color: #94a3b8;
+           text-decoration: none; font-size: 0.8rem; border-radius: 4px;
+           line-height: 1.35; }
+.sb-link:hover { background: #1e293b; color: #e2e8f0; }
+.sb-link.active { background: #1e3a8a; color: #f8fafc; font-weight: 600; }
+@media (max-width: 768px) {
+  .layout { display: block; }
+  .sidebar { width: auto; max-height: none; position: static;
+             border-right: none; border-bottom: 1px solid #1e293b; }
+}
 .breadcrumb { color: #64748b; font-size: 0.9rem; margin-bottom: 1rem; }
 .breadcrumb a { color: #38bdf8; text-decoration: none; }
 h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
@@ -93,6 +145,71 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 (defun notebook-url-id (notebook)
   "Lowercase symbol-name of the notebook ID, for use in URLs."
   (string-downcase (symbol-name (notebook-id notebook))))
+
+(defun %chapter-prefix (notebook)
+  "Return the chapter number string (e.g. '1') from notebook-chapter '1.1.1'."
+  (let ((c (notebook-chapter notebook)))
+    (if (and c (plusp (length c))) (subseq c 0 1) "")))
+
+(defun %section-prefix (notebook)
+  "Return the section prefix (e.g. '1.1') from notebook-chapter '1.1.1'."
+  (let ((c (notebook-chapter notebook)))
+    (if (and c (plusp (length c)))
+        (let ((p (position #\. c :start 2)))
+          (if p (subseq c 0 p) c))
+        "")))
+
+(defun render-sidebar (current-id all)
+  "Render a left sidebar with collapsible chapter TOC.
+   ALL is the list of notebooks (typically (all-notebooks)).
+   CURRENT-ID is the notebook-id keyword of the page being rendered.
+   The chapter containing CURRENT-ID is shown expanded; others collapsed."
+  (let* ((current-nb (find current-id all :key #'notebook-id))
+         (current-ch (and current-nb (%chapter-prefix current-nb))))
+    (with-html
+      (:aside :class "sidebar"
+              (:a :class "sidebar-home" :href "/wardlisp/learn"
+                  "📘 SICP コース")
+              (dolist (ch '("1" "2" "3"))
+                (let ((ch-nbs (sort (copy-list
+                                     (remove-if-not
+                                      (lambda (nb) (string= (%chapter-prefix nb) ch))
+                                      all))
+                                    #'string<
+                                    :key #'notebook-chapter)))
+                  (when ch-nbs
+                    (:details :class "sb-chapter"
+                              :open (when (equal ch current-ch) "open")
+                              (:summary :class "sb-summary"
+                                        (or (cdr (assoc ch *chapter-titles* :test #'string=))
+                                            (format nil "Chapter ~A" ch)))
+                              (let (sections-seen)
+                                (dolist (nb ch-nbs)
+                                  (let ((sec (%section-prefix nb)))
+                                    (unless (member sec sections-seen :test #'string=)
+                                      (push sec sections-seen))))
+                                (dolist (sec (nreverse sections-seen))
+                                  (:div :class "sb-section"
+                                        (:h4 :class "sb-section-title"
+                                             (or (cdr (assoc sec *section-titles*
+                                                             :test #'string=))
+                                                 sec))
+                                        (:ul :class "sb-list"
+                                             (dolist (nb (remove-if-not
+                                                          (lambda (n)
+                                                            (string= (%section-prefix n) sec))
+                                                          ch-nbs))
+                                               (:li
+                                                (:a :href (format nil "/wardlisp/learn/~A"
+                                                                  (string-downcase
+                                                                   (symbol-name
+                                                                    (notebook-id nb))))
+                                                    :class (if (eq (notebook-id nb) current-id)
+                                                               "sb-link active"
+                                                               "sb-link")
+                                                    (format nil "~A ~A"
+                                                            (notebook-chapter nb)
+                                                            (notebook-title nb)))))))))))))))))
 
 (defun render-prose-tree (tree)
   "Render a Spinneret DSL list at runtime to an HTML string."
@@ -172,31 +289,35 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
          :crossorigin "anonymous")
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
-        :data-logged-in (if *user* "true" "false")
-        (:main
-         (cond
-           (*user*
-            (:div :class "user-banner"
-                  "ログイン中: "
-                  (:strong (or (getf *user* :name) "User"))
-                  " · " (:form :method "post" :action "/logout"
-                               :style "display:inline;"
-                               (:button :type "submit" :class "user-banner__logout"
-                                        :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
-                                        "ログアウト"))))
-           (t
-            (:div :class "user-banner anon"
-                  "進捗を端末を超えて保存するには "
-                  (:a :href "/login" "ログイン")
-                  " してください。")))
-         (:div :class "breadcrumb" (:a :href "/wardlisp/" "WardLisp") " > "
-          (:a :href "/wardlisp/learn" "SICPコース") " > "
-          (notebook-chapter notebook))
-         (:h1 (notebook-title notebook))
-         (:p :class "summary" (notebook-summary notebook))
-         (loop for cell in (notebook-cells notebook)
-               for i from 0
-               do (render-cell cell i (notebook-url-id notebook))))
+              :data-logged-in (if *user* "true" "false")
+        (:div :class "layout"
+              (render-sidebar (notebook-id notebook) (all-notebooks))
+              (:main
+               (cond
+                 (*user*
+                  (:div :class "user-banner"
+                        "ログイン中: "
+                        (:strong (or (getf *user* :name) "User"))
+                        " · " (:form :method "post" :action "/logout"
+                                     :style "display:inline;"
+                                     (:button :type "submit"
+                                              :class "user-banner__logout"
+                                              :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
+                                              "ログアウト"))))
+                 (t
+                  (:div :class "user-banner anon"
+                        "進捗を端末を超えて保存するには "
+                        (:a :href "/login" "ログイン")
+                        " してください。")))
+               (:div :class "breadcrumb"
+                     (:a :href "/wardlisp/" "WardLisp") " > "
+                     (:a :href "/wardlisp/learn" "SICPコース") " > "
+                     (notebook-chapter notebook))
+               (:h1 (notebook-title notebook))
+               (:p :class "summary" (notebook-summary notebook))
+               (loop for cell in (notebook-cells notebook)
+                     for i from 0
+                     do (render-cell cell i (notebook-url-id notebook)))))
         (:script :src "/static/js/learn.js"))))))
 
 (defun render-test-results (results)
