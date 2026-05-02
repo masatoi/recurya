@@ -27,3 +27,5 @@ ql ironclad :latest
 ql babel :latest
 ql hunchentoot :latest
 ql flexi-streams :latest
+ql 3bmd :latest
+ql plump :latest

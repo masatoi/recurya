@@ -23,6 +23,9 @@
                "dexador"
                ;; WardLisp language (external library)
                "wardlisp"
+               ;; Markdown + HTML sanitizer for user-authored notebooks
+               "3bmd"
+               "plump"
                ;; Game logic
                "recurya/game/puzzle"
                "recurya/game/puzzles/adjacent"
