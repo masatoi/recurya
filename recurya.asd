@@ -37,6 +37,7 @@
                "recurya/game/puzzles/registry"
                ;; Notebook
                "recurya/game/notebook"
+               "recurya/game/notebook-parser"
                "recurya/game/notebooks/sicp-1-1-1"
                "recurya/game/notebooks/sicp-1-1-2"
                "recurya/game/notebooks/sicp-1-1-3"
@@ -165,6 +166,7 @@
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
+               "recurya/tests/game/notebook-parser"
                "recurya/tests/game/notebooks/sicp-1-1-1"
                "recurya/tests/game/notebooks/sicp-1-1-2"
                "recurya/tests/game/notebooks/sicp-1-1-3"
