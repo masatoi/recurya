@@ -46,3 +46,32 @@ Hello.
       (ok (= 2 (length cells)))
       (ok (eq :prose      (cell-kind (first cells))))
       (ok (eq :code-eval  (cell-kind (second cells)))))))
+
+(deftest single-exercise-with-expect
+  (let ((body "===exercise: 三項の和===
+; ここに式を書く
+
+===expect: 三項の和===
+508"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (ok (null errors))
+      (ok (= 1 (length cells)))
+      (let ((c (first cells)))
+        (ok (eq :code-exercise (cell-kind c)))
+        (ok (string= "三項の和" (cell-description c)))
+        (ok (= 1 (length (cell-test-cases c))))))))
+
+(deftest exercise-with-input-output-expect
+  (let ((body "===exercise: zero?===
+(define (zero? x) ???)
+
+===expect===
+input: (zero? 0)
+output: t
+
+===expect===
+input: (zero? 5)
+output: nil"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (ok (null errors))
+      (ok (= 2 (length (cell-test-cases (first cells))))))))
