@@ -31,12 +31,26 @@
       (push (subseq s start) lines))
     (nreverse lines)))
 
+(defun parse-fence-header (line)
+  "If LINE is a fence header line (`===kind===' or `===kind: desc==='),
+   return (values KIND DESCRIPTION-OR-NIL). Otherwise return
+   (values NIL NIL).
+
+   KIND is a keyword such as :prose or :code-eval. DESCRIPTION is a
+   string for fences that carry one (added in later tasks) or NIL.
+
+   Future tasks will extend this with :code-exercise and :expect."
+  (cond
+    ((string= line "===prose===") (values :prose nil))
+    ((string= line "===eval===")  (values :code-eval nil))
+    (t                            (values nil nil))))
+
 (defun parse-notebook-body (body-md &optional existing-cells)
   "Parse BODY-MD into (values CELLS ERRORS).
 
    BODY-MD is a string using `===KIND===' fence lines to delimit cells.
-   Currently supports only `===prose===' cells; future tasks will add
-   `===eval===', `===exercise: ...===', and `===expect[: ...]===' fences.
+   Currently supports `===prose===' and `===eval===' cells; future tasks
+   will add `===exercise: ...===' and `===expect[: ...]===' fences.
 
    Each parsed cell receives a fresh string UUID as its ID. EXISTING-CELLS
    is reserved for future stable-ID matching and is ignored at this stage."
@@ -59,14 +73,15 @@
                        cells))
                (setf (fill-pointer current-buffer) 0))))
       (dolist (line lines)
-        (cond
-          ((string= line "===prose===")
-           (flush)
-           (setf current-kind :prose
-                 current-desc nil))
-          (t
-           (vector-push-extend #\Newline current-buffer)
-           (loop for c across line do (vector-push-extend c current-buffer)))))
+        (multiple-value-bind (kind desc) (parse-fence-header line)
+          (cond
+            (kind
+             (flush)
+             (setf current-kind kind
+                   current-desc desc))
+            (t
+             (vector-push-extend #\Newline current-buffer)
+             (loop for c across line do (vector-push-extend c current-buffer))))))
       (flush))
     (values (nreverse cells) (nreverse errors))))
 
