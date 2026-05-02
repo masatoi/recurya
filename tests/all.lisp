@@ -8,6 +8,7 @@
 
 (defparameter *test-packages*
   '(:recurya/tests/utils/common
+    :recurya/tests/utils/html-sanitize
     :recurya/tests/db/core
     :recurya/tests/db/jsonb
     :recurya/tests/db/users

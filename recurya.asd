@@ -98,6 +98,7 @@
                "recurya/game/scenario"
                ;; Shared utilities
                "recurya/utils/common"
+               "recurya/utils/html-sanitize"
                ;; Database layer
                "recurya/db/core"
                "recurya/db/jsonb"
@@ -149,6 +150,7 @@
                "recurya/tests/support/db"
                ;; Utils tests
                "recurya/tests/utils/common"
+               "recurya/tests/utils/html-sanitize"
                ;; DB tests
                "recurya/tests/db/core"
                "recurya/tests/db/jsonb"
