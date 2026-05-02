@@ -20,6 +20,7 @@
                "babel"
                "hunchentoot"
                "cl-ppcre"
+               "dexador"
                ;; WardLisp language (external library)
                "wardlisp"
                ;; Game logic
@@ -113,7 +114,6 @@
                "recurya/web/ui/styles"
                "recurya/web/ui/layout"
                "recurya/web/ui/login"
-               "recurya/web/ui/signup"
                "recurya/web/ui/errors"
                "recurya/web/ui/account"
                ;; Blog UI
@@ -153,7 +153,7 @@
                "recurya/tests/db/posts"
                "recurya/tests/db/learn"
                ;; Web tests
-               "recurya/tests/web/auth"
+               "recurya/tests/web/oauth"
                "recurya/tests/web/routes"
                "recurya/tests/web/learn-routes"
                ;; Game tests

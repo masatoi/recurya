@@ -7,14 +7,12 @@
 
 (defpackage #:recurya/web/routes
   (:use #:cl)
-  (:import-from #:recurya/web/auth
-                #:authenticate
-                #:register!)
+  (:import-from #:recurya/web/oauth)
   (:import-from #:recurya/db/users
                 #:update-user!
-                #:get-user-by-id)
+                #:get-user-by-id
+                #:find-or-create-oauth-user)
   (:import-from #:recurya/web/ui/login)
-  (:import-from #:recurya/web/ui/signup)
   (:import-from #:recurya/web/ui/errors)
   (:import-from #:recurya/web/ui/account)
   (:import-from #:recurya/web/ui/posts)
@@ -50,7 +48,6 @@
            #:account-delete-handler
            #:post-confirm-delete-handler
            #:post-delete-handler))
-
 
 (in-package #:recurya/web/routes)
 
@@ -140,45 +137,108 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
       (redirect "/posts")
       (html-response (recurya/web/ui/login:render))))
 
-(defun login-handler (params)
-  "Handle POST /login - authenticate user."
-  (let* ((email (get-param params "email"))
-         (password (get-param params "password"))
-         (user (authenticate email password)))
-    (if user
-        (progn
-          (set-session-user! user)
-          (redirect "/posts"))
-        (html-response (recurya/web/ui/login:render :error "Invalid email or password.")
-                       :status 401))))
-
 (defun logout-handler (params)
   "Handle POST /logout - clear session."
   (declare (ignore params))
   (clear-session!)
   (redirect "/login"))
 
-(defun signup-page-handler (params)
-  "Handle GET /signup - show signup form."
-  (declare (ignore params))
-  (if (get-current-user)
-      (redirect "/posts")
-      (html-response (recurya/web/ui/signup:render))))
+(defun parse-admin-emails ()
+  "Parse the ADMIN_OAUTH_EMAIL env var as a comma-separated list (lower-cased)."
+  (let ((env (uiop:getenv "ADMIN_OAUTH_EMAIL")))
+    (when (and env (plusp (length env)))
+      (loop for raw in (cl-ppcre:split "," env)
+            for trimmed = (string-trim '(#\Space #\Tab) raw)
+            unless (string= trimmed "")
+              collect (string-downcase trimmed)))))
 
-(defun signup-handler (params)
-  "Handle POST /signup - register new user."
-  (let* ((email (get-param params "email"))
-         (password (get-param params "password"))
-         (name (get-param params "name"))
-         (result (register! :email email :password password :name name)))
-    (if (getf result :ok)
-        (let ((user (getf result :ok)))
-          (set-session-user! user)
-          (redirect "/posts"))
-        (let ((error-key (getf result :error)))
-          (html-response (recurya/web/ui/signup:render
-                          :error (princ-to-string error-key))
-                         :status 400)))))
+(defun admin-email-p (email)
+  "True if EMAIL appears in ADMIN_OAUTH_EMAIL (case-insensitive)."
+  (and email
+       (let ((lc (string-downcase email)))
+         (member lc (parse-admin-emails) :test #'string=))))
+
+(defun user-dao->plist (user)
+  "Convert a USER mito instance to the session plist used elsewhere."
+  (list :id (recurya/models/users:users-id user)
+        :email (recurya/models/users:users-email user)
+        :name (recurya/models/users:users-display-name user)
+        :role (intern (string-upcase (recurya/models/users:users-role user)) :keyword)
+        :provider (recurya/models/users:users-provider user)
+        :language (recurya/models/users:users-language user)
+        :timezone (recurya/models/users:users-timezone user)))
+
+(defun oauth-start-handler (params)
+  "Handle GET /auth/:provider/start - generate state and redirect to provider."
+  (let* ((provider-name (get-path-param params :provider))
+         (provider (and provider-name (recurya/web/oauth:find-provider provider-name))))
+    (cond
+      ((null provider)
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      ((not (recurya/web/oauth:provider-configured-p provider))
+       (html-response (recurya/web/ui/login:render
+                       :error (format nil "OAuth provider ~A is not configured." provider-name))
+                      :status 503))
+      (t
+       (let ((state (recurya/web/oauth:generate-state)))
+         (when ningle/context:*session*
+           (setf (gethash :oauth-state ningle/context:*session*) state)
+           (setf (gethash :oauth-provider ningle/context:*session*) provider-name))
+         (redirect (recurya/web/oauth:build-authorize-url provider state)))))))
+
+(defun oauth-callback-handler (params)
+  "Handle GET /auth/:provider/callback - validate state, exchange code, create session."
+  (let* ((provider-name (get-path-param params :provider))
+         (provider (and provider-name (recurya/web/oauth:find-provider provider-name)))
+         (code (get-param params "code"))
+         (state (get-param params "state"))
+         (saved-state (and ningle/context:*session*
+                           (gethash :oauth-state ningle/context:*session*)))
+         (saved-provider (and ningle/context:*session*
+                              (gethash :oauth-provider ningle/context:*session*))))
+    (cond
+      ((null provider)
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      ((or (null code) (null state)
+           (null saved-state)
+           (not (string= state saved-state))
+           (not (and saved-provider (string-equal provider-name saved-provider))))
+       (html-response (recurya/web/ui/login:render
+                       :error "Sign-in session expired. Please try again.")
+                      :status 400))
+      (t
+       (when ningle/context:*session*
+         (remhash :oauth-state ningle/context:*session*)
+         (remhash :oauth-provider ningle/context:*session*))
+       (handler-case
+           (let* ((token (recurya/web/oauth:exchange-code provider code))
+                  (info (and token (recurya/web/oauth:fetch-userinfo provider token)))
+                  (email (and info (recurya/web/oauth:extract-email provider info token)))
+                  (uid (and info (recurya/web/oauth:extract-uid provider info)))
+                  (display-name (and info (recurya/web/oauth:extract-name provider info))))
+             (cond
+               ((or (null email) (null uid))
+                (html-response (recurya/web/ui/login:render
+                                :error "Could not retrieve a verified email from the provider.")
+                               :status 400))
+               (t
+                (let* ((role (if (admin-email-p email) "admin" "user"))
+                       (user (find-or-create-oauth-user
+                              :provider provider-name
+                              :provider-uid uid
+                              :email email
+                              :display-name display-name
+                              :role role)))
+                  (unless (string= (recurya/models/users:users-role user) role)
+                    (update-user! (recurya/models/users:users-id user) :role role)
+                    (setf user (get-user-by-id (recurya/models/users:users-id user))))
+                  (set-session-user! (user-dao->plist user))
+                  (redirect "/wardlisp/learn")))))
+         (error (e)
+           (declare (ignore e))
+           (html-response (recurya/web/ui/login:render
+                           :error "OAuth login failed. Please try again.")
+                          :status 502)))))))
 
 ;;; Blog Post Handlers
 
@@ -572,14 +632,13 @@ without restarting the server."
   (setf (ningle/app:route app "/") (make-dynamic-handler 'root-handler))
   (setf (ningle/app:route app "/login")
           (make-dynamic-handler 'login-page-handler))
-  (setf (ningle/app:route app "/login" :method :post)
-          (make-dynamic-handler 'login-handler))
   (setf (ningle/app:route app "/logout" :method :post)
           (make-dynamic-handler 'logout-handler))
-  (setf (ningle/app:route app "/signup")
-          (make-dynamic-handler 'signup-page-handler))
-  (setf (ningle/app:route app "/signup" :method :post)
-          (make-dynamic-handler 'signup-handler))
+  ;; OAuth flow
+  (setf (ningle/app:route app "/auth/:provider/start")
+          (make-dynamic-handler 'oauth-start-handler))
+  (setf (ningle/app:route app "/auth/:provider/callback")
+          (make-dynamic-handler 'oauth-callback-handler))
   ;; Blog admin routes (auth required)
   (setf (ningle/app:route app "/posts")
           (make-dynamic-handler 'posts-handler))

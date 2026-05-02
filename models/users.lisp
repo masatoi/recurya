@@ -16,6 +16,8 @@
            #:users-role
            #:users-language
            #:users-timezone
+           #:users-provider
+           #:users-provider-uid
            #:users-created-at
            #:users-updated-at))
 
@@ -29,11 +31,13 @@
    (email :col-type (:varchar 255)
           :initarg :email
           :accessor users-email)
-   (password-hash :col-type (:varchar 255)
+   (password-hash :col-type (or (:varchar 255) :null)
                   :initarg :password-hash
+                  :initform nil
                   :accessor users-password-hash)
-   (password-salt :col-type (:varchar 255)
+   (password-salt :col-type (or (:varchar 255) :null)
                   :initarg :password-salt
+                  :initform nil
                   :accessor users-password-salt)
    (display-name :col-type (:varchar 255)
                  :initarg :display-name
@@ -49,11 +53,20 @@
    (timezone :col-type (or (:varchar 64) :null)
              :initarg :timezone
              :initform "UTC"
-             :accessor users-timezone))
+             :accessor users-timezone)
+   (provider :col-type (or (:varchar 16) :null)
+             :initarg :provider
+             :initform nil
+             :accessor users-provider)
+   (provider-uid :col-type (or (:varchar 64) :null)
+                 :initarg :provider-uid
+                 :initform nil
+                 :accessor users-provider-uid))
   ;; Disable Mito's auto-generated integer PK; we use an explicit UUID column.
   (:auto-pk nil)
   (:unique-keys email)
-  (:documentation "User account with authentication credentials and preferences."))
+  (:documentation "User account. Authenticates via OAuth (provider/provider-uid).
+   Legacy password fields remain nullable for back-compat with old rows."))
 
 (defun users-id (user)
   "Return the UUID primary key for USER."

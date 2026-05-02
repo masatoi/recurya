@@ -59,6 +59,10 @@ services:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       MCP_NO_WORKER_POOL: "1"
+      # OAuth dev stub: short-circuits the Google/GitHub flow for local
+      # development. Safety gate inside web/oauth.lisp restricts activation
+      # to localhost / ngrok hosts. See .env.example for details.
+      OAUTH_DEV_STUB: "1"
     volumes:
       - ${PWD}:${PWD}:cached
     working_dir: ${PWD}

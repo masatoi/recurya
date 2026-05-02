@@ -7,7 +7,6 @@
                 #:with-test-db)
   (:import-from #:recurya/web/routes
                 #:root-handler
-                #:login-handler
                 #:login-page-handler
                 #:logout-handler
                 #:account-page-handler
@@ -20,11 +19,8 @@
                 ;; Pagination helpers
                 #:parse-page-param
                 #:make-pagination)
-  (:import-from #:recurya/web/auth
-                #:authenticate
-                #:ensure-default-admin!
-                #:register!)
   (:import-from #:recurya/db/users
+                #:find-or-create-oauth-user
                 #:delete-user!
                 #:get-user-by-id
                 #:users-display-name
@@ -82,35 +78,6 @@
         (ok (= 302 (response-status response)))
         (ok (string= "/posts" (response-location response)))))))
 
-(deftest login-handler-success
-  (testing "valid credentials redirect to posts and store user in session"
-    (with-test-db
-      (ensure-default-admin!)
-      (with-mock-session (make-session)
-        (let* ((params '(("email" . "admin@recurya.dev")
-                         ("password" . "changeme")))
-               (response (login-handler params)))
-          (ok (= 302 (response-status response)))
-          (ok (string= "/posts" (response-location response)))
-          ;; Session should have user
-          (ok (gethash :user ningle/context:*session*))
-          (ok (string= "admin@recurya.dev"
-                       (getf (gethash :user ningle/context:*session*) :email))))))))
-
-
-(deftest login-handler-failure
-  (testing "invalid credentials render login page with error and return 401"
-    (with-test-db
-      (ensure-default-admin!)
-      (with-mock-session (make-session)
-        (let* ((params '(("email" . "admin@recurya.dev")
-                         ("password" . "wrongpassword")))
-               (response (login-handler params)))
-          (ok (= 401 (response-status response)))
-          (ok (search "Invalid email or password"
-                      (first (response-body response)))))))))
-
-
 (deftest logout-handler-clears-session
   (testing "logout clears session and redirects to login"
     (with-mock-session (make-session :user '(:id "123" :email "test@example.com"))
@@ -130,18 +97,16 @@
         (ok (= 302 (response-status response)))
         (ok (string= "/login" (response-location response)))))))
 
-
 (deftest account-page-renders-for-authenticated-user
   (testing "account page renders for authenticated user"
     (with-test-db
-      (ensure-default-admin!)
-      (let ((user (authenticate "admin@recurya.dev" "changeme")))
-        (with-mock-session (make-session :user user)
-          (let ((response (account-page-handler nil)))
-            (ok (= 200 (response-status response)))
-            ;; Should include user email in the rendered page
-            (ok (search "admin@recurya.dev" (first (response-body response))))))))))
-
+      (let ((user (create-test-user)))
+        (unwind-protect
+             (with-mock-session (make-session :user user)
+               (let ((response (account-page-handler nil)))
+                 (ok (= 200 (response-status response)))
+                 (ok (search (getf user :email) (first (response-body response))))))
+          (ignore-errors (delete-user! (getf user :email))))))))
 
 (deftest account-update-validates-display-name
   (testing "account update rejects blank display name"
@@ -189,17 +154,22 @@
 ;;; ---------------------------------------------------------------------------
 
 (defun create-test-user ()
-  "Create a test user and return user plist for session."
-  (let* ((email (format nil "test-~A@example.com" (uuid:make-v4-uuid)))
-         (result (register! :email email
-                            :password "testpass123"
-                            :name "Test User")))
-    (if (eq :ok (first result))
-        (let ((user-data (second result)))
-          (list :id (getf user-data :id)
-                :email email
-                :name "Test User"))
-        (error "Failed to create test user: ~A" (second result)))))
+  "Create a test user via the OAuth find-or-create path and return user plist."
+  (let* ((uuid (uuid:make-v4-uuid))
+         (uid (format nil "test-~A" uuid))
+         (email (format nil "test-~A@example.com" uuid))
+         (dao (find-or-create-oauth-user :provider "google"
+                                         :provider-uid uid
+                                         :email email
+                                         :display-name "Test User"
+                                         :role "user")))
+    (list :id (recurya/models/users:users-id dao)
+          :email email
+          :name "Test User"
+          :role :user
+          :provider "google"
+          :language (recurya/models/users:users-language dao)
+          :timezone (recurya/models/users:users-timezone dao))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; Account Update Integration Tests
@@ -295,21 +265,23 @@
       (let ((user (create-test-user)))
         (unwind-protect
              (progn
-               ;; First update the settings
                (with-mock-session (make-session :user user)
                  (account-update-handler '(("display-name" . "Test User")
                                            ("language" . "fr")
                                            ("timezone" . "Europe/Paris"))))
-               ;; Re-authenticate to get fresh user data with saved settings
-               (let* ((fresh-user (authenticate (getf user :email) "testpass123")))
+               (let* ((db-user (get-user-by-id (getf user :id)))
+                      (fresh-user (list :id (recurya/models/users:users-id db-user)
+                                        :email (recurya/models/users:users-email db-user)
+                                        :name (recurya/models/users:users-display-name db-user)
+                                        :role (intern (string-upcase (recurya/models/users:users-role db-user)) :keyword)
+                                        :language (recurya/models/users:users-language db-user)
+                                        :timezone (recurya/models/users:users-timezone db-user))))
                  (with-mock-session (make-session :user fresh-user)
                    (let ((response (account-page-handler nil)))
                      (ok (= 200 (response-status response)))
                      (let ((body (first (response-body response))))
-                       ;; Check that the saved language is selected
                        (ok (search "value=fr selected" body)
                            "French should be selected in language dropdown")
-                       ;; Check that the saved timezone is selected (has quotes due to /)
                        (ok (search "value=\"Europe/Paris\" selected" body)
                            "Europe/Paris should be selected in timezone dropdown"))))))
           (ignore-errors (delete-user! (getf user :email))))))))
@@ -384,6 +356,20 @@
       (ok (= 1 (getf pag :total-pages)))
       (ok (null (getf pag :has-prev)))
       (ok (null (getf pag :has-next))))))
+
+(deftest admin-email-promotion-from-env
+  (testing "admin-email-p matches lower-cased entries from ADMIN_OAUTH_EMAIL"
+    (let ((saved (uiop:getenv "ADMIN_OAUTH_EMAIL")))
+      (unwind-protect
+           (progn
+             (setf (uiop:getenv "ADMIN_OAUTH_EMAIL")
+                   "Boss@Example.com, other@example.com")
+             (ok (recurya/web/routes::admin-email-p "boss@example.com"))
+             (ok (recurya/web/routes::admin-email-p "BOSS@example.com"))
+             (ok (recurya/web/routes::admin-email-p "other@example.com"))
+             (ok (null (recurya/web/routes::admin-email-p "stranger@example.com")))
+             (ok (null (recurya/web/routes::admin-email-p nil))))
+        (setf (uiop:getenv "ADMIN_OAUTH_EMAIL") (or saved ""))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; HTMX Confirmation Modal Tests

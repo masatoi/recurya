@@ -37,12 +37,14 @@ CREATE INDEX "key_learn_progress_user_id_notebook_id" ON "learn_progress" ("user
 CREATE TABLE "users" (
     "id" UUID NOT NULL PRIMARY KEY,
     "email" VARCHAR(255) NOT NULL,
-    "password_hash" VARCHAR(255) NOT NULL,
-    "password_salt" VARCHAR(255) NOT NULL,
+    "password_hash" VARCHAR(255),
+    "password_salt" VARCHAR(255),
     "display_name" VARCHAR(255) NOT NULL,
     "role" VARCHAR(64) NOT NULL,
     "language" VARCHAR(16),
     "timezone" VARCHAR(64),
+    "provider" VARCHAR(16),
+    "provider_uid" VARCHAR(64),
     "created_at" TIMESTAMPTZ,
     "updated_at" TIMESTAMPTZ
 );

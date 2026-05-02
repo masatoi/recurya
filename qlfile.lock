@@ -65,7 +65,7 @@
 ("cl-mcp" .
  (:class qlot/source/git:source-git
   :initargs (:remote-url "https://github.com/cl-ai-project/cl-mcp")
-  :version "git-789abe85f09a5a6c8fd20b88d8bd36af01b8d72d"))
+  :version "git-47a4bf4568841bf7d527e0060ecf945e3ba016bf"))
 ("wardlisp" .
  (:class qlot/source/git:source-git
   :initargs (:remote-url "https://github.com/masatoi/wardlisp")

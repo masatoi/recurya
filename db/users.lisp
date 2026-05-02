@@ -27,6 +27,8 @@
                 #:users-role
                 #:users-language
                 #:users-timezone
+                #:users-provider
+                #:users-provider-uid
                 #:users-created-at
                 #:users-updated-at)
   (:export
@@ -40,12 +42,16 @@
    #:users-role
    #:users-language
    #:users-timezone
+   #:users-provider
+   #:users-provider-uid
    #:users-created-at
    #:users-updated-at
    ;; CRUD operations
    #:create-user!
    #:get-user-by-id
    #:get-user-by-email
+   #:get-user-by-provider
+   #:find-or-create-oauth-user
    #:update-user!
    #:delete-user!
    #:list-users))
@@ -59,26 +65,25 @@
 (defun create-user! (&key email password-hash password-salt display-name (role "user"))
   "Create a new user and return the created user instance.
 
+Used by tests and legacy admin seeding. OAuth-based registration goes
+through FIND-OR-CREATE-OAUTH-USER instead.
+
 Arguments:
   EMAIL         - User's email address (required, must be unique)
-  PASSWORD-HASH - Pre-computed password hash (required)
-  PASSWORD-SALT - Salt used for hashing (required)
+  PASSWORD-HASH - Pre-computed password hash (optional, NIL for OAuth-only)
+  PASSWORD-SALT - Salt used for hashing (optional, NIL for OAuth-only)
   DISPLAY-NAME  - Optional display name
   ROLE          - User role (default: \"user\")
 
 Returns:
-  The newly created USER instance.
-
-Side Effects:
-  Inserts a new row into the users table with auto-generated UUID.
-  Mito automatically sets created_at and updated_at timestamps."
+  The newly created USER instance."
   (let ((user-id (generate-uuid)))
     (insert-dao (make-instance 'users
                                :id user-id
                                :email email
                                :password-hash password-hash
                                :password-salt password-salt
-                               :display-name display-name
+                               :display-name (or display-name email)
                                :role role))))
 
 (defun get-user-by-id (user-id)
@@ -102,6 +107,47 @@ Returns:
 
 Note: Email lookup is case-sensitive."
   (find-dao 'users :email email))
+
+(defun get-user-by-provider (provider provider-uid)
+  "Fetch a user by their OAuth (provider, provider-uid) pair.
+   Returns USER instance if found, NIL otherwise."
+  (find-dao 'users :provider provider :provider-uid provider-uid))
+
+(defun find-or-create-oauth-user (&key provider provider-uid email display-name (role "user"))
+  "Idempotently resolve an OAuth login to a USER instance.
+
+Strategy:
+  1. Look up by (PROVIDER, PROVIDER-UID). If found, return it.
+  2. Look up by EMAIL (provider-agnostic). If found, attach the new
+     PROVIDER/PROVIDER-UID to it (merging this OAuth identity into the
+     existing user) and return it.
+  3. Otherwise create a new user with the given identity and return it.
+
+This makes Google ⇄ GitHub login on the same email resolve to the same
+account. Both Google and GitHub return verified emails by default, so
+the merge is safe.
+
+Returns the USER instance."
+  (or (get-user-by-provider provider provider-uid)
+      (let ((existing (and email (get-user-by-email email))))
+        (cond
+          (existing
+           (setf (users-provider existing) provider
+                 (users-provider-uid existing) provider-uid)
+           (when (and display-name
+                      (or (null (users-display-name existing))
+                          (zerop (length (users-display-name existing)))))
+             (setf (users-display-name existing) display-name))
+           (save-dao existing)
+           existing)
+          (t
+           (insert-dao (make-instance 'users
+                                      :id (generate-uuid)
+                                      :email (or email "")
+                                      :display-name (or display-name email "User")
+                                      :role role
+                                      :provider provider
+                                      :provider-uid provider-uid)))))))
 
 (defun update-user! (user-id &key password-hash password-salt display-name role
                               language timezone)

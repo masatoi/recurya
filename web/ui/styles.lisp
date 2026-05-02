@@ -490,10 +490,72 @@ tbody tr:hover {
   padding: 0.75rem 1rem;
   border-radius: 10px;
   margin-bottom: 1rem;
+}
+
+.auth-container .auth-help {
+  color: var(--color-text-muted);
+  margin-bottom: 1.5rem;
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.auth-container .oauth-button {
+  display: block;
+  margin-bottom: 0.75rem;
+  padding: 0.85rem 1.5rem;
+  text-align: center;
+  text-decoration: none;
+  border-radius: 999px;
+  font-weight: 600;
+  color: #fff;
+  background: var(--color-primary);
+  transition: background 0.15s ease;
+}
+
+.auth-container .oauth-button:hover {
+  text-decoration: none;
+  color: #fff;
+}
+
+.auth-container .oauth-google {
+  background: #1a73e8;
+}
+
+.auth-container .oauth-google:hover {
+  background: #1765cc;
+}
+
+.auth-container .oauth-github {
+  background: #24292f;
+}
+
+.auth-container .oauth-github:hover {
+  background: #1b1f23;
+}
+
+.auth-container .auth-footnote {
+  margin-top: 1.5rem;
+  font-size: 0.85rem;
+}
+
+.auth-container .dev-banner {
+  background: var(--color-warning-bg);
+  color: var(--color-warning-text);
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  margin-bottom: 1rem;
+  font-size: 0.9rem;
+  line-height: 1.4;
+}
+
+.auth-container .dev-banner code {
+  background: rgba(180, 83, 9, 0.12);
+  padding: 0.05rem 0.35rem;
+  border-radius: 4px;
 }")
 
 (defun auth-page-styles (&rest additional-styles)
-  "Return styles for authentication pages (login, signup)."
+  "Return styles for the OAuth login page."
   (apply #'concatenate 'string
          *color-vars*
          *base-styles*

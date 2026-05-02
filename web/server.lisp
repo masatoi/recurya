@@ -13,8 +13,6 @@
                 #:make-recurya-app)
   (:import-from #:recurya/web/routes
                 #:setup-routes)
-  (:import-from #:recurya/web/auth
-                #:ensure-default-admin!)
   (:export #:start!
            #:stop!
            #:*handler*))
@@ -65,9 +63,6 @@
     ;; Load timezone database for local-time
     (local-time:reread-timezone-repository)
     (log:info "Timezone repository loaded")
-
-    ;; Ensure default admin user exists
-    (ensure-default-admin!)
 
     ;; Build and start the application
     (let ((app (build-app)))
