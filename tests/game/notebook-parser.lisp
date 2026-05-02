@@ -121,3 +121,32 @@ Different."))
       (declare (ignore errors))
       (ok (stringp (cell-id (first cells))))
       (ok (not (string= "STABLE-ID" (cell-id (first cells))))))))
+
+(deftest roundtrip-prose
+  (let ((body "===prose===
+Hello world."))
+    (let* ((cells1 (parse-notebook-body body))
+           (md     (cells->body-md cells1))
+           (cells2 (parse-notebook-body md)))
+      (ok (= (length cells1) (length cells2)))
+      (ok (string= (cell-body (first cells1)) (cell-body (first cells2)))))))
+
+(deftest roundtrip-mixed
+  (let* ((body "===prose===
+Intro.
+
+===eval===
+(+ 1 2)
+
+===exercise: sum===
+; ?
+
+===expect: sum===
+3")
+         (cells1 (parse-notebook-body body))
+         (md     (cells->body-md cells1))
+         (cells2 (parse-notebook-body md)))
+    (ok (= (length cells1) (length cells2)))
+    (loop for c1 in cells1 for c2 in cells2 do
+          (ok (eq      (cell-kind c1) (cell-kind c2)))
+          (ok (string= (cell-body c1) (cell-body c2))))))

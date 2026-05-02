@@ -10,7 +10,10 @@
                 #:cell-description
                 #:cell-test-cases)
   (:import-from #:recurya/game/puzzle
-                #:make-test-case)
+                #:make-test-case
+                #:test-case-input
+                #:test-case-expected
+                #:test-case-description)
   (:import-from #:uuid
                 #:make-v4-uuid)
   (:export #:parse-notebook-body
@@ -339,10 +342,68 @@
         (push (list :line 1 :message "Notebook contains no cell") errors))
       (values final-cells (nreverse errors)))))
 
+(defun render-cell (stream cell)
+  "Render one CELL to STREAM, header + body, no trailing newline.
+
+   For :code-exercise cells, each test-case is appended after the
+   exercise body separated by a single blank line."
+  (let ((kind (cell-kind cell))
+        (body (or (cell-body cell) ""))
+        (desc (or (cell-description cell) "")))
+    (ecase kind
+      (:prose         (write-string "===prose===" stream))
+      (:code-eval     (write-string "===eval===" stream))
+      (:code-exercise (format stream "===exercise: ~A===" desc)))
+    (write-char #\Newline stream)
+    (write-string body stream)
+    (when (eq kind :code-exercise)
+      (dolist (tc (cell-test-cases cell))
+        (write-char #\Newline stream)
+        (write-char #\Newline stream)
+        (render-test-case stream tc)))))
+
+(defun render-test-case (stream tc)
+  "Render one TEST-CASE TC to STREAM as `===expect[: <desc>]===' header
+   followed by either a `input: <i>\\noutput: <o>' two-line form (when
+   TEST-CASE-INPUT is non-empty) or just the expected value on a single
+   line. No trailing newline is emitted after the body."
+  (let ((desc (or (test-case-description tc) ""))
+        (input (or (test-case-input tc) ""))
+        (expected (or (test-case-expected tc) "")))
+    (if (zerop (length desc))
+        (write-string "===expect===" stream)
+        (format stream "===expect: ~A===" desc))
+    (write-char #\Newline stream)
+    (cond
+      ((plusp (length input))
+       (format stream "input: ~A~%output: ~A" input expected))
+      (t
+       (write-string expected stream)))))
+
 (defun cells->body-md (cells)
-  "Render CELLS list back into the canonical body-md string. Stub."
-  (declare (ignore cells))
-  (error "not implemented"))
+  "Render CELLS list back into the canonical body-md string.
+
+   The result, when re-parsed by PARSE-NOTEBOOK-BODY, yields cells equal
+   in (KIND BODY DESCRIPTION TEST-CASES) to the input. Cells are
+   separated by exactly one blank line; no trailing newline is emitted.
+
+   Output format per cell kind:
+     :prose          -> `===prose===\\n<body>'
+     :code-eval      -> `===eval===\\n<body>'
+     :code-exercise  -> `===exercise: <description>===\\n<body>'
+                        followed, for each test-case, by
+                          `===expect[: <description>]===\\n<expect-body>'
+
+   Test-case body uses two-line `input: <i>\\noutput: <o>' form when
+   TEST-CASE-INPUT is non-empty; otherwise the single-line expected
+   value is emitted directly."
+  (with-output-to-string (s)
+    (loop for cell in cells
+          for first-p = t then nil
+          do (unless first-p
+               (write-char #\Newline s)
+               (write-char #\Newline s))
+             (render-cell s cell))))
 
 (defun render-cell-prose-html (markdown-string)
   "Markdown -> sanitized HTML. Stub."
