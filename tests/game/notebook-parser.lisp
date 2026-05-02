@@ -7,6 +7,7 @@
                 #:cells->body-md
                 #:render-cell-prose-html)
   (:import-from #:recurya/game/notebook
+                #:make-cell
                 #:cell-id
                 #:cell-kind
                 #:cell-body
@@ -103,3 +104,20 @@ peel"))
     (declare (ignore cells))
     (ok (find-if (lambda (e) (search "no cell" (getf e :message)))
                  errors))))
+
+(deftest preserves-cell-id-on-match
+  (let* ((body "===prose===
+Hello.")
+         (existing (list (make-cell :id "STABLE-ID" :kind :prose
+                                    :body "Hello." :description ""))))
+    (multiple-value-bind (cells errors) (parse-notebook-body body existing)
+      (ok (null errors))
+      (ok (string= "STABLE-ID" (cell-id (first cells)))))))
+
+(deftest assigns-new-uuid-when-no-match
+  (let ((body "===prose===
+Different."))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (declare (ignore errors))
+      (ok (stringp (cell-id (first cells))))
+      (ok (not (string= "STABLE-ID" (cell-id (first cells))))))))

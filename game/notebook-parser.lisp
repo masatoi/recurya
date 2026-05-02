@@ -4,6 +4,10 @@
   (:use #:cl)
   (:import-from #:recurya/game/notebook
                 #:make-cell
+                #:cell-id
+                #:cell-kind
+                #:cell-body
+                #:cell-description
                 #:cell-test-cases)
   (:import-from #:recurya/game/puzzle
                 #:make-test-case)
@@ -127,6 +131,28 @@
                        :expected trimmed
                        :description desc)))))
 
+(defun take-matching-cell-id (kind body description existing-cells)
+  "Walk EXISTING-CELLS once. If we find a cell whose (KIND BODY DESCRIPTION)
+   triple matches, capture its ID and exclude it from the returned list.
+   Matching uses EQ on KIND and STRING= on BODY/DESCRIPTION (with NIL
+   coerced to the empty string).
+
+   Returns (values MATCHED-ID-OR-NIL REMAINING-LIST). Only the first
+   matching cell is consumed; later matches in EXISTING-CELLS remain in
+   REMAINING-LIST so two new cells with the same triple do not both reuse
+   the same ID."
+  (let ((matched-id nil)
+        (remaining 'nil))
+    (dolist (c existing-cells)
+      (cond
+        ((and (null matched-id)
+              (eq (cell-kind c) kind)
+              (string= (or (cell-body c) "") (or body ""))
+              (string= (or (cell-description c) "") (or description "")))
+         (setf matched-id (cell-id c)))
+        (t (push c remaining))))
+    (values matched-id (nreverse remaining))))
+
 (defun parse-notebook-body (body-md &optional existing-cells)
   "Parse BODY-MD into (values CELLS ERRORS).
 
@@ -138,8 +164,11 @@
      ===expect===
      ===expect: <description>===
 
-   Each parsed cell receives a fresh string UUID as its ID. EXISTING-CELLS
-   is reserved for future stable-ID matching and is ignored at this stage.
+   Each parsed cell receives a string UUID as its ID, unless a cell in
+   EXISTING-CELLS matches by (KIND BODY DESCRIPTION) — in that case the
+   existing cell's ID is reused so that learner progress (keyed by
+   cell-id) survives notebook edits. Matching is first-fit and
+   consume-on-match: each existing cell can be reused at most once.
 
    ERRORS is a list of plists (:line N :message \"...\") where N is the
    1-based line number of the offending input. The following validation
@@ -167,7 +196,6 @@
    Test-cases accumulate on PENDING-EXERCISE-CELL via APPEND so they are
    stored in source order. The exercise cell is flushed to CELLS only
    when the next non-expect header arrives (or EOF)."
-  (declare (ignore existing-cells))
   (let ((errors '())
         (cells '())
         (current-kind nil)
@@ -180,7 +208,8 @@
         (expect-buffer (make-array 0 :element-type 'character
                                      :fill-pointer 0 :adjustable t))
         (lines (split-lines body-md))
-        (line-number 0))
+        (line-number 0)
+        (remaining-existing (copy-list existing-cells)))
     (labels ((buffer-string (buf)
                (string-trim '(#\Space #\Tab #\Newline #\Return)
                             (coerce buf 'string)))
@@ -210,12 +239,19 @@
                ;; a struct held in pending-exercise-cell, ready to receive
                ;; test-cases from following ===expect=== blocks.
                (when (eq current-kind :code-exercise)
-                 (setf pending-exercise-cell
-                       (make-cell :id (princ-to-string (uuid:make-v4-uuid))
-                                  :kind :code-exercise
-                                  :body (buffer-string current-buffer)
-                                  :description (or current-desc "")
-                                  :test-cases nil))
+                 (let ((body (buffer-string current-buffer))
+                       (desc (or current-desc "")))
+                   (multiple-value-bind (matched-id new-remaining)
+                       (take-matching-cell-id :code-exercise body desc
+                                              remaining-existing)
+                     (setf remaining-existing new-remaining)
+                     (setf pending-exercise-cell
+                           (make-cell :id (or matched-id
+                                              (princ-to-string (uuid:make-v4-uuid)))
+                                      :kind :code-exercise
+                                      :body body
+                                      :description desc
+                                      :test-cases nil))))
                  (setf (fill-pointer current-buffer) 0
                        current-kind nil
                        current-desc nil)))
@@ -226,11 +262,18 @@
              (flush-current ()
                ;; Flush a non-exercise cell (prose / eval) into CELLS.
                (when current-kind
-                 (push (make-cell :id (princ-to-string (uuid:make-v4-uuid))
-                                  :kind current-kind
-                                  :body (buffer-string current-buffer)
-                                  :description (or current-desc ""))
-                       cells)
+                 (let ((body (buffer-string current-buffer))
+                       (desc (or current-desc "")))
+                   (multiple-value-bind (matched-id new-remaining)
+                       (take-matching-cell-id current-kind body desc
+                                              remaining-existing)
+                     (setf remaining-existing new-remaining)
+                     (push (make-cell :id (or matched-id
+                                              (princ-to-string (uuid:make-v4-uuid)))
+                                      :kind current-kind
+                                      :body body
+                                      :description desc)
+                           cells)))
                  (setf (fill-pointer current-buffer) 0
                        current-kind nil
                        current-desc nil))))
