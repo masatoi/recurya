@@ -24,5 +24,22 @@
       (ng (search "javascript:" out)))))
 
 (deftest strips-iframe-and-style
-  (ng (search "<iframe" (sanitize-html "<iframe src=\"x\"></iframe>")))
-  (ng (search "<style"  (sanitize-html "<style>body{}</style>"))))
+  (testing "<iframe> and <style> are removed"
+    (ng (search "<iframe" (sanitize-html "<iframe src=\"x\"></iframe>")))
+    (ng (search "<style"  (sanitize-html "<style>body{}</style>")))))
+
+(deftest strips-data-uri-href
+  (testing "data: scheme is removed from a@href"
+    (let ((out (sanitize-html "<a href=\"data:text/html,<script>1</script>\">x</a>")))
+      (ng (search "data:" out)))))
+
+(deftest strips-data-uri-img-src
+  (testing "data: scheme is removed from img@src (alt may remain)"
+    (let ((out (sanitize-html "<img src=\"data:image/png;base64,abc\" alt=\"x\">")))
+      (ng (search "data:" out)))))
+
+(deftest strips-entity-encoded-javascript
+  (testing "entity-encoded javascript: scheme is removed from a@href"
+    (let ((out (sanitize-html "<a href=\"javascript&#58;alert(1)\">x</a>")))
+      (ng (search "alert" out))
+      (ng (search "javascript" out)))))
