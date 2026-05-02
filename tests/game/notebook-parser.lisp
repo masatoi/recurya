@@ -75,3 +75,31 @@ output: nil"))
     (multiple-value-bind (cells errors) (parse-notebook-body body)
       (ok (null errors))
       (ok (= 2 (length (cell-test-cases (first cells))))))))
+
+(deftest expect-without-prior-exercise
+  (let ((body "===expect===
+1"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (declare (ignore cells))
+      (ok (find-if (lambda (e) (search "expect" (getf e :message)))
+                   errors)))))
+
+(deftest exercise-missing-description
+  (let ((body "===exercise===
+(foo)"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (declare (ignore cells))
+      (ok errors))))
+
+(deftest unknown-header
+  (let ((body "===banana===
+peel"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (declare (ignore cells))
+      (ok errors))))
+
+(deftest empty-body-zero-cells
+  (multiple-value-bind (cells errors) (parse-notebook-body "")
+    (declare (ignore cells))
+    (ok (find-if (lambda (e) (search "no cell" (getf e :message)))
+                 errors))))

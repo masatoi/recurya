@@ -41,6 +41,16 @@
   "Scanner for `===expect===' and `===expect: <description>===' fence headers.
    The optional capture group holds the description, or NIL when absent.")
 
+(defparameter +bare-exercise-header-regex+
+  (cl-ppcre:create-scanner "^===exercise===$")
+  "Scanner for `===exercise===' (no description). Triggers a validation
+   error: an exercise header must include a description.")
+
+(defparameter +generic-header-regex+
+  (cl-ppcre:create-scanner "^===.+===$")
+  "Scanner for any line that looks like a fence header (`===...==='),
+   used to detect unknown headers after specific patterns failed.")
+
 (defun parse-fence-header (line)
   "If LINE is a fence header line, return (values KIND DESCRIPTION-OR-NIL).
    Otherwise return (values NIL NIL).
@@ -131,6 +141,18 @@
    Each parsed cell receives a fresh string UUID as its ID. EXISTING-CELLS
    is reserved for future stable-ID matching and is ignored at this stage.
 
+   ERRORS is a list of plists (:line N :message \"...\") where N is the
+   1-based line number of the offending input. The following validation
+   errors are emitted:
+
+     * `===expect===' or `===expect: <desc>===' with no preceding
+       `===exercise===' cell.
+     * Bare `===exercise===' header without a description.
+     * Unknown fence header (anything that looks like `===...===' but
+       does not match a recognised kind).
+     * The body contains no cell at all (empty/whitespace-only input,
+       or input consisting only of unknown / stray headers).
+
    State machine:
      * CURRENT-KIND / CURRENT-DESC / CURRENT-BUFFER hold the cell that is
        currently being collected (prose, eval, or exercise body).
@@ -144,9 +166,7 @@
 
    Test-cases accumulate on PENDING-EXERCISE-CELL via APPEND so they are
    stored in source order. The exercise cell is flushed to CELLS only
-   when the next non-expect header arrives (or EOF). Stray ===expect===
-   blocks with no preceding exercise are silently ignored at this stage;
-   validation is the responsibility of a later task."
+   when the next non-expect header arrives (or EOF)."
   (declare (ignore existing-cells))
   (let ((errors '())
         (cells '())
@@ -159,17 +179,21 @@
         (expect-desc nil)
         (expect-buffer (make-array 0 :element-type 'character
                                      :fill-pointer 0 :adjustable t))
-        (lines (split-lines body-md)))
+        (lines (split-lines body-md))
+        (line-number 0))
     (labels ((buffer-string (buf)
                (string-trim '(#\Space #\Tab #\Newline #\Return)
                             (coerce buf 'string)))
              (append-line-to (buf line)
                (vector-push-extend #\Newline buf)
                (loop for c across line do (vector-push-extend c buf)))
+             (push-error (line-no message)
+               (push (list :line line-no :message message) errors))
              (finalise-expect ()
                ;; Convert the buffered expect block into a test-case and
-               ;; append it to the pending exercise cell. Silently no-op
-               ;; if there is no pending exercise (validation deferred).
+               ;; append it to the pending exercise cell. If there is no
+               ;; pending exercise the block is dropped (the stray-expect
+               ;; error was emitted at the header line).
                (when in-expect-p
                  (when pending-exercise-cell
                    (let ((tc (parse-expect-block
@@ -211,19 +235,32 @@
                        current-kind nil
                        current-desc nil))))
       (dolist (line lines)
+        (incf line-number)
         (multiple-value-bind (kind desc) (parse-fence-header line)
           (cond
             ;; ===expect=== or ===expect: <desc>===
             ((eq kind :expect)
-             ;; Closing expect of any in-progress expect block.
-             (finalise-expect)
-             ;; If we were collecting an exercise body, freeze it now.
-             (when (eq current-kind :code-exercise)
-               (close-exercise-body))
-             ;; Begin a new expect block.
-             (setf in-expect-p t
-                   expect-desc desc
-                   (fill-pointer expect-buffer) 0))
+             (cond
+               ;; No exercise to attach to: emit error and drop the block.
+               ((and (null pending-exercise-cell)
+                     (not (eq current-kind :code-exercise)))
+                (push-error line-number
+                            "===expect=== without preceding ===exercise===")
+                ;; Drop any in-progress expect (also stray) so subsequent
+                ;; body lines are not mis-attached.
+                (setf in-expect-p nil
+                      expect-desc nil
+                      (fill-pointer expect-buffer) 0))
+               (t
+                ;; Closing expect of any in-progress expect block.
+                (finalise-expect)
+                ;; If we were collecting an exercise body, freeze it now.
+                (when (eq current-kind :code-exercise)
+                  (close-exercise-body))
+                ;; Begin a new expect block.
+                (setf in-expect-p t
+                      expect-desc desc
+                      (fill-pointer expect-buffer) 0))))
             ;; Any other recognised header.
             (kind
              ;; First close any open expect block.
@@ -234,6 +271,14 @@
              (flush-current)
              (setf current-kind kind
                    current-desc desc))
+            ;; Bare ===exercise=== without description.
+            ((cl-ppcre:scan +bare-exercise-header-regex+ line)
+             (push-error line-number
+                         "===exercise=== requires a description (===exercise: <desc>===)"))
+            ;; Looks like a header but matched nothing known.
+            ((cl-ppcre:scan +generic-header-regex+ line)
+             (push-error line-number
+                         (format nil "Unknown header: ~A" line)))
             ;; Body line: append to the active buffer.
             (t
              (cond
@@ -246,7 +291,10 @@
       (finalise-expect)
       (flush-pending-exercise)
       (flush-current))
-    (values (nreverse cells) (nreverse errors))))
+    (let ((final-cells (nreverse cells)))
+      (when (null final-cells)
+        (push (list :line 1 :message "Notebook contains no cell") errors))
+      (values final-cells (nreverse errors)))))
 
 (defun cells->body-md (cells)
   "Render CELLS list back into the canonical body-md string. Stub."
