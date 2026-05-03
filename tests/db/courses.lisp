@@ -11,6 +11,7 @@
                 #:course-slug
                 #:course-title
                 #:course-status
+                #:course-visibility
                 #:course-published-at
                 #:course-author-id
                 #:create-course!
@@ -136,3 +137,33 @@
         (ok (= 2 (count-courses :status "published")))
         (ok (= 1 (count-courses :status "draft")))
         (ok (= 2 (count-courses :author-id (users-id u1))))))))
+
+(deftest list-courses-filters-visibility
+  (testing "list-courses filters by :visibility"
+    (with-test-db
+      (let ((u (create-test-user)))
+        (create-course! :title "P" :author u
+                        :status "published" :visibility "public")
+        (create-course! :title "Q" :author u
+                        :status "published" :visibility "private")
+        (let ((pub (list-courses :status "published" :visibility "public"))
+              (pri (list-courses :status "published" :visibility "private")))
+          (ok (= 1 (length pub)))
+          (ok (every (lambda (c) (string= "public" (course-visibility c))) pub))
+          (ok (= 1 (length pri)))
+          (ok (every (lambda (c) (string= "private" (course-visibility c))) pri)))))))
+
+(deftest count-courses-filters-visibility
+  (testing "count-courses filters by :visibility"
+    (with-test-db
+      (let ((u (create-test-user)))
+        (create-course! :title "P" :author u
+                        :status "published" :visibility "public")
+        (create-course! :title "Q" :author u
+                        :status "published" :visibility "private")
+        (create-course! :title "R" :author u
+                        :status "draft" :visibility "private")
+        (ok (= 1 (count-courses :visibility "public")))
+        (ok (= 2 (count-courses :visibility "private")))
+        (ok (= 1 (count-courses :status "published" :visibility "public")))
+        (ok (= 1 (count-courses :status "published" :visibility "private")))))))
