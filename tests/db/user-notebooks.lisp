@@ -19,7 +19,8 @@
                 #:update-user-notebook!
                 #:delete-user-notebook!
                 #:list-user-notebooks
-                #:count-user-notebooks)
+                #:count-user-notebooks
+                #:user-notebook-cells-parsed)
   (:import-from #:recurya/db/users
                 #:users-id))
 
@@ -160,3 +161,18 @@ d1" :cells '() :author u2 :status "published")
         (ok (= 2 (count-user-notebooks :status "published")))
         (ok (= 1 (count-user-notebooks :status "draft")))
         (ok (= 2 (count-user-notebooks :author-id (users-id u1))))))))
+
+(deftest cells-jsonb-roundtrip
+  (testing "cells written as a list come back parseable as a 2-element collection"
+    (with-test-db
+      (let* ((cells '((:cell-id "abc" :kind "prose"     :body-md "x")
+                      (:cell-id "def" :kind "code-eval" :body    "(+ 1 2)")))
+             (u  (create-test-user))
+             (nb (create-user-notebook!
+                  :title "x"
+                  :body-md "==="
+                  :cells cells
+                  :author u))
+             (out (user-notebook-cells-parsed
+                   (get-user-notebook-by-id (user-notebook-id nb)))))
+        (ok (= (length cells) (length out)))))))

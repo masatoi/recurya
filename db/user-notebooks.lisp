@@ -11,7 +11,7 @@
   (:import-from #:sxql #:where #:order-by #:limit)
   (:import-from #:recurya/db/core #:generate-uuid #:ensure-uuid)
   (:import-from #:recurya/db/posts #:slugify)
-  (:import-from #:recurya/db/jsonb #:lisp->jsonb)
+  (:import-from #:recurya/db/jsonb #:lisp->jsonb #:jsonb->lisp)
   (:import-from #:recurya/models/user-notebook
                 #:user-notebook
                 #:user-notebook-id
@@ -45,7 +45,8 @@
            #:update-user-notebook!
            #:delete-user-notebook!
            #:list-user-notebooks
-           #:count-user-notebooks))
+           #:count-user-notebooks
+           #:user-notebook-cells-parsed))
 
 (in-package #:recurya/db/user-notebooks)
 
@@ -188,3 +189,8 @@ Returns:
         (if result
             (getf (first result) :count)
             0)))))
+
+(defun user-notebook-cells-parsed (nb)
+  "Return the cells JSONB column of NB parsed back to Lisp data.
+JSON arrays come back as vectors; JSON objects as hash-tables."
+  (jsonb->lisp (user-notebook-cells nb)))
