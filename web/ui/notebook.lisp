@@ -41,28 +41,6 @@
 being rendered. Set by `render'. The full URL is
 \"<base>/cells/<index>/run\".")
 
-(defparameter *chapter-titles*
-  '(("1" . "第1章 手続きによる抽象化")
-    ("2" . "第2章 データによる抽象化")
-    ("3" . "第3章 並行性、状態、ストリーム"))
-  "Top-level chapter labels for the sidebar TOC.")
-
-(defparameter *section-titles*
-  '(("1.1" . "1.1 言語の要素")
-    ("1.2" . "1.2 手続きと作りだすプロセス")
-    ("1.3" . "1.3 高階手続きでの抽象化の定式化")
-    ("2.1" . "2.1 データ抽象入門")
-    ("2.2" . "2.2 階層データと閉包性")
-    ("2.3" . "2.3 記号データ")
-    ("2.4" . "2.4 抽象データの複数表現")
-    ("2.5" . "2.5 ジェネリック演算系")
-    ("3.1" . "3.1 代入と局所状態")
-    ("3.2" . "3.2 評価の環境モデル")
-    ("3.3" . "3.3 可変データを用いたモデル化")
-    ("3.4" . "3.4 並行性")
-    ("3.5" . "3.5 ストリーム"))
-  "Section labels (e.g. 1.1) for the sidebar TOC.")
-
 (defparameter *styles*
   "body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
          margin: 0; background: #0f172a; color: #e2e8f0; line-height: 1.6; }
@@ -158,88 +136,6 @@ and string (UUID) representations. NIL becomes \"\"."
         ((keywordp id) (string-downcase (symbol-name id)))
         ((symbolp id) (string-downcase (symbol-name id)))
         (t (string id))))
-
-(defun %chapter-prefix (notebook)
-  "Return the chapter number string (e.g. '1') from notebook-chapter '1.1.1'."
-  (let ((c (notebook-chapter notebook)))
-    (if (and c (plusp (length c))) (subseq c 0 1) "")))
-
-(defun %section-prefix (notebook)
-  "Return the section prefix (e.g. '1.1') from notebook-chapter '1.1.1'."
-  (let ((c (notebook-chapter notebook)))
-    (if (and c (plusp (length c)))
-        (let ((p (position #\. c :start 2)))
-          (if p (subseq c 0 p) c))
-        "")))
-
-(defun render-legacy-sicp-sidebar (current-id all)
-  "Render a left sidebar with collapsible chapter TOC for the legacy SICP path.
-   ALL is the list of notebooks (typically (all-notebooks)).
-   CURRENT-ID is the notebook-id keyword of the page being rendered.
-   The chapter containing CURRENT-ID is shown expanded; others collapsed.
-
-   This function is kept for backward compatibility while the SICP course
-   has not yet been migrated to the database-backed course/notebook model.
-   It will be removed once SICP is migrated (Phase 9 cleanup)."
-  (let* ((current-nb (find current-id all :key #'notebook-id))
-         (current-ch (and current-nb (%chapter-prefix current-nb))))
-    (with-html
-      (:aside :class "sidebar"
-              (:a :class "sidebar-home" :href "/wardlisp/learn"
-                  "📘 SICP コース")
-              (dolist (ch '("1" "2" "3"))
-                (let ((ch-nbs
-                        (sort
-                         (copy-list
-                          (remove-if-not (lambda (nb)
-                                           (string= (%chapter-prefix nb) ch))
-                                         all))
-                         #'string< :key #'notebook-chapter)))
-                  (when ch-nbs
-                    (:details :class "sb-chapter"
-                              :open (when (equal ch current-ch) "open")
-                              (:summary :class "sb-summary"
-                                        (or (cdr (assoc ch *chapter-titles*
-                                                        :test #'string=))
-                                            (format nil "Chapter ~A" ch)))
-                              (let (sections-seen)
-                                (dolist (nb ch-nbs)
-                                  (let ((sec (%section-prefix nb)))
-                                    (unless (member sec sections-seen
-                                                    :test #'string=)
-                                      (push sec sections-seen))))
-                                (dolist (sec (nreverse sections-seen))
-                                  (:div :class "sb-section"
-                                        (:h4 :class "sb-section-title"
-                                             (or (cdr (assoc sec
-                                                             *section-titles*
-                                                             :test #'string=))
-                                                 sec))
-                                        (:ul :class "sb-list"
-                                             (dolist (nb (remove-if-not
-                                                          (lambda (n)
-                                                            (string=
-                                                             (%section-prefix n)
-                                                             sec))
-                                                          ch-nbs))
-                                               (:li
-                                                (:a :href
-                                                    (format nil
-                                                            "/wardlisp/learn/~A"
-                                                            (string-downcase
-                                                             (symbol-name
-                                                              (notebook-id
-                                                               nb))))
-                                                    :class
-                                                    (if (eq (notebook-id nb)
-                                                            current-id)
-                                                        "sb-link active"
-                                                        "sb-link")
-                                                    (format nil "~A ~A"
-                                                            (notebook-chapter
-                                                             nb)
-                                                            (notebook-title
-                                                             nb)))))))))))))))))
 
 (defun render-course-sidebar (course-title course-slug notebooks current-id)
   "Render a flat-list left sidebar for a generic course.
