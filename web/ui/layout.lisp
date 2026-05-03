@@ -11,6 +11,9 @@
   (:import-from #:recurya/web/ui/styles
                 #:common-styles
                 #:page-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input
+                #:csrf-form-block)
   (:export #:header
            #:header-styles
            #:page-shell
@@ -102,6 +105,7 @@
   "Generate the application header HTML."
   (let ((display (get-user-display user)) (initial (get-user-initial user)))
     (with-html-string
+      (:raw (csrf-form-block))
       (:header :class "app-header"
                (:div :class "app-header__inner"
                      (:div :class "app-header__left"

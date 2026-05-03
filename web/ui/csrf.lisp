@@ -11,9 +11,18 @@
 
 (defun current-csrf-token ()
   "Return the CSRF token for the current request session, or NIL if no
-session is bound (e.g. when called outside a request context)."
+session is bound (e.g. when called outside a request context).
+
+The session key dynamic variable used by lack/middleware/csrf is only
+bound while the middleware is on the call stack. When templates are
+rendered outside that context (e.g. in tests, or in handlers that bypass
+CSRF for skip-listed paths), we fall back to the middleware's default
+key so the helper remains safe to call."
   (when *session*
-    (csrf-token *session*)))
+    (if (boundp 'lack/middleware/csrf::*csrf-session-key*)
+        (csrf-token *session*)
+        (let ((lack/middleware/csrf::*csrf-session-key* "_csrf_token"))
+          (csrf-token *session*)))))
 
 (defun csrf-input ()
   "Render a hidden <input> carrying the current CSRF token. Returns a
