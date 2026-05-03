@@ -105,6 +105,7 @@
                "recurya/db/jsonb"
                "recurya/db/users"
                "recurya/db/posts"
+               "recurya/db/user-notebooks"
                "recurya/db/learn"
                "recurya/db"
                ;; Models
@@ -158,6 +159,7 @@
                "recurya/tests/db/jsonb"
                "recurya/tests/db/users"
                "recurya/tests/db/posts"
+               "recurya/tests/db/user-notebooks"
                "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/oauth"
