@@ -113,6 +113,7 @@
                "recurya/models/post"
                "recurya/models/user-notebook"
                "recurya/models/course"
+               "recurya/models/course-notebook"
                "recurya/models/learn-progress"
                "recurya/models/learn-cell-code"
                "recurya/models/learn-submission"
