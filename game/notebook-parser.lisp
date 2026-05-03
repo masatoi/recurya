@@ -41,6 +41,10 @@
   (cl-ppcre:create-scanner "^===exercise: (.+)===$")
   "Scanner for `===exercise: <description>===' fence headers.")
 
+(defparameter +solution-header-regex+
+  (cl-ppcre:create-scanner "^===solution: (.+)===$")
+  "Scanner for `===solution: <description>===' fence headers.")
+
 (defparameter +expect-header-regex+
   (cl-ppcre:create-scanner "^===expect(?:: (.+))?===$")
   "Scanner for `===expect===' and `===expect: <description>===' fence headers.
@@ -64,6 +68,7 @@
      :prose          for `===prose==='
      :code-eval      for `===eval==='
      :code-exercise  for `===exercise: <desc>==='
+     :code-solution  for `===solution: <desc>==='
      :expect         for `===expect===' and `===expect: <desc>==='
                      (sentinel kind: not stored as a cell, used by the
                       state machine in parse-notebook-body to attach a
@@ -80,6 +85,11 @@
        (when m
          (return-from parse-fence-header
            (values :code-exercise (aref groups 0)))))
+     (multiple-value-bind (m groups)
+         (cl-ppcre:scan-to-strings +solution-header-regex+ line)
+       (when m
+         (return-from parse-fence-header
+           (values :code-solution (aref groups 0)))))
      (multiple-value-bind (m groups)
          (cl-ppcre:scan-to-strings +expect-header-regex+ line)
        (when m
