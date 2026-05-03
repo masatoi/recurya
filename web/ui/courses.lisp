@@ -27,10 +27,11 @@
                     color: #fff; text-decoration: none; }
 .status-pill { cursor: pointer; transition: opacity 0.15s ease; }
 .status-pill:hover { opacity: 0.75; }
-.status-pill[data-status='draft'] { background: var(--color-warning-bg);
-                                    color: var(--color-warning-text); }
-.status-pill[data-status='published'] { background: var(--color-success-bg);
-                                        color: var(--color-success-text); }
+.status-pill.status-draft { background: var(--color-warning-bg);
+                            color: var(--color-warning-text); }
+.status-pill.status-private { background: #6b21a8; color: #f3e8ff; }
+.status-pill.status-public { background: var(--color-success-bg);
+                             color: var(--color-success-text); }
 .actions-cell { display: flex; gap: 0.75rem; align-items: center; }
 .actions-cell form { margin: 0; }
 .flash-message { padding: 0.75rem 1rem; border-radius: 6px;
@@ -82,12 +83,30 @@ COURSES is a list of plists with :id :slug :title :status
                                   (:th "Actions")))
                             (:tbody :id "courses-body"
                                     (dolist (course courses)
-                                      (let ((id (getf course :id))
-                                            (slug (getf course :slug))
-                                            (title (getf course :title))
-                                            (status (getf course :status))
-                                            (notebook-count (getf course :notebook-count))
-                                            (created-at (getf course :created-at)))
+                                      (let* ((id (getf course :id))
+                                             (slug (getf course :slug))
+                                             (title (getf course :title))
+                                             (status (getf course :status))
+                                             (visibility (or (getf course :visibility)
+                                                             "private"))
+                                             (status-lower (string-downcase
+                                                            (or status "draft")))
+                                             (visibility-lower (string-downcase
+                                                                visibility))
+                                             (state-class
+                                              (cond ((equal status-lower "draft")
+                                                     "status-draft")
+                                                    ((equal visibility-lower "public")
+                                                     "status-public")
+                                                    (t "status-private")))
+                                             (label
+                                              (cond ((equal status-lower "draft")
+                                                     "Draft")
+                                                    ((equal visibility-lower "public")
+                                                     "Public")
+                                                    (t "Private")))
+                                             (notebook-count (getf course :notebook-count))
+                                             (created-at (getf course :created-at)))
                                         (:tr :id (format nil "course-row-~A" id)
                                              (:td
                                               (if (and slug (string= status "published"))
@@ -95,17 +114,18 @@ COURSES is a list of plists with :id :slug :title :status
                                                       title)
                                                   title))
                                              (:td
-                                              (:span :class "status-pill"
+                                              (:span :class (format nil
+                                                                    "status-pill ~A"
+                                                                    state-class)
                                                      :id (format nil "status-~A" id)
-                                                     :data-status (string-downcase
-                                                                    (or status "draft"))
+                                                     :data-status status-lower
+                                                     :data-visibility visibility-lower
                                                      :hx-post (format nil
                                                                       "/courses/~A/toggle-status"
                                                                       id)
                                                      :hx-target (format nil "#status-~A" id)
                                                      :hx-swap "outerHTML"
-                                                     (string-capitalize
-                                                       (or status "draft"))))
+                                                     label))
                                              (:td (or notebook-count 0))
                                              (:td (or (format-timestamp created-at
                                                                         user-timezone)

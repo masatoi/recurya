@@ -394,6 +394,43 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (course-published-at after)
                 "published_at is preserved on un-publish")))))))
 
+(deftest course-list-renders-3-state-pill-classes
+  (testing "Courses listing emits status-{draft|private|public} CSS classes."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-course! :title "DraftC" :status "draft"
+                        :visibility "private" :author dao)
+        (create-course! :title "PrivPubC" :status "published"
+                        :visibility "private"
+                        :published-at (local-time:now) :author dao)
+        (create-course! :title "PublicPubC" :status "published"
+                        :visibility "public"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session :user user)
+          (let* ((res (courses-me-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body))
+            (ok (search "status-private" body))
+            (ok (search "status-public" body))))))))
+
+(deftest course-toggle-status-pill-from-draft-emits-private-state
+  (testing "Legacy course toggle-status preserves visibility so a draft+private
+course flips to published+private and the pill shows status-private."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "C" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-toggle-status-handler (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-private" body))
+            (ng (search "status-draft" body))))))))
+
 (deftest course-confirm-delete-401-anonymous
   (with-mock-session (make-session)
     (let ((res (course-confirm-delete-handler '((:id . "x")))))

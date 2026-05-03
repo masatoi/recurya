@@ -484,6 +484,61 @@ hi"
             (ok (recurya/db/user-notebooks:user-notebook-published-at after)
                 "published_at is preserved on un-publish")))))))
 
+(deftest list-renders-3-state-pill-classes
+  (testing "Notebooks listing emits status-{draft|private|public} CSS classes
+that drive the 3-state pill colour, computed from (status, visibility)."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-user-notebook!
+         :title "DraftA" :slug "drafta" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "draft"
+         :visibility "private")
+        (create-user-notebook!
+         :title "PrivPub" :slug "priv-pub-listing" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published"
+         :visibility "private" :published-at (local-time:now))
+        (create-user-notebook!
+         :title "PublicPub" :slug "public-pub-listing" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published"
+         :visibility "public" :published-at (local-time:now))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebooks-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body)
+                "draft notebook gets status-draft class")
+            (ok (search "status-private" body)
+                "published+private gets status-private class")
+            (ok (search "status-public" body)
+                "published+public gets status-public class")))))))
+
+(deftest toggle-status-pill-from-draft-emits-private-state
+  (testing "Legacy toggle-status flips draft to published while preserving
+visibility, so the returned pill shows status-private when visibility was
+already private."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "T" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-toggle-status-handler
+                       (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-private" body)
+                "pill turns purple/private after publish")
+            (ng (search "status-draft" body)
+                "draft class no longer applies")))))))
+
 (deftest confirm-delete-401-anonymous
   (with-mock-session (make-session)
     (let ((res (user-notebook-confirm-delete-handler '((:id . "x")))))

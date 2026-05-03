@@ -27,10 +27,11 @@
                     color: #fff; text-decoration: none; }
 .status-pill { cursor: pointer; transition: opacity 0.15s ease; }
 .status-pill:hover { opacity: 0.75; }
-.status-pill[data-status='draft'] { background: var(--color-warning-bg);
-                                    color: var(--color-warning-text); }
-.status-pill[data-status='published'] { background: var(--color-success-bg);
-                                        color: var(--color-success-text); }
+.status-pill.status-draft { background: var(--color-warning-bg);
+                            color: var(--color-warning-text); }
+.status-pill.status-private { background: #6b21a8; color: #f3e8ff; }
+.status-pill.status-public { background: var(--color-success-bg);
+                             color: var(--color-success-text); }
 .actions-cell { display: flex; gap: 0.75rem; align-items: center; }
 .actions-cell form { margin: 0; }
 .flash-message { padding: 0.75rem 1rem; border-radius: 6px;
@@ -82,12 +83,30 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                                   (:th "Actions")))
                             (:tbody :id "notebooks-body"
                                     (dolist (nb notebooks)
-                                      (let ((id (getf nb :id))
-                                            (slug (getf nb :slug))
-                                            (title (getf nb :title))
-                                            (status (getf nb :status))
-                                            (published-at (getf nb :published-at))
-                                            (created-at (getf nb :created-at)))
+                                      (let* ((id (getf nb :id))
+                                             (slug (getf nb :slug))
+                                             (title (getf nb :title))
+                                             (status (getf nb :status))
+                                             (visibility (or (getf nb :visibility)
+                                                             "private"))
+                                             (status-lower (string-downcase
+                                                            (or status "draft")))
+                                             (visibility-lower (string-downcase
+                                                                visibility))
+                                             (state-class
+                                              (cond ((equal status-lower "draft")
+                                                     "status-draft")
+                                                    ((equal visibility-lower "public")
+                                                     "status-public")
+                                                    (t "status-private")))
+                                             (label
+                                              (cond ((equal status-lower "draft")
+                                                     "Draft")
+                                                    ((equal visibility-lower "public")
+                                                     "Public")
+                                                    (t "Private")))
+                                             (published-at (getf nb :published-at))
+                                             (created-at (getf nb :created-at)))
                                         (:tr :id (format nil "nb-row-~A" id)
                                              (:td
                                               (if (and slug (string= status "published"))
@@ -95,17 +114,18 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                                                       title)
                                                   title))
                                              (:td
-                                              (:span :class "status-pill"
+                                              (:span :class (format nil
+                                                                    "status-pill ~A"
+                                                                    state-class)
                                                      :id (format nil "status-~A" id)
-                                                     :data-status (string-downcase
-                                                                    (or status "draft"))
+                                                     :data-status status-lower
+                                                     :data-visibility visibility-lower
                                                      :hx-post (format nil
                                                                       "/notebooks/~A/toggle-status"
                                                                       id)
                                                      :hx-target (format nil "#status-~A" id)
                                                      :hx-swap "outerHTML"
-                                                     (string-capitalize
-                                                       (or status "draft"))))
+                                                     label))
                                              (:td (if published-at
                                                       (or (format-timestamp published-at
                                                                             user-timezone)

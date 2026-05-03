@@ -966,18 +966,35 @@ populated with the user's other published notebooks."
                      :published-at published-at)
                     (redirect "/courses/me")))))))))))
 
-(defun render-course-status-pill (id status)
-  "Render the course status pill HTML fragment for HTMX swap."
-  (let ((status-lower (string-downcase (or status "draft"))))
+(defun render-course-status-pill (id status &optional (visibility "private"))
+  "Render the course status pill HTML fragment for HTMX swap.
+
+Renders a 3-state pill computed from (STATUS, VISIBILITY):
+  (draft, *)               -> Draft (yellow, class=status-draft)
+  (published, private)     -> Private (purple, class=status-private)
+  (published, public)      -> Public (green, class=status-public)
+
+Click POSTs to /courses/:id/toggle-status (legacy 2-state toggle)."
+  (let* ((status-lower (string-downcase (or status "draft")))
+         (visibility-lower (string-downcase (or visibility "private")))
+         (state-class (cond ((equal status-lower "draft") "status-draft")
+                            ((equal visibility-lower "public") "status-public")
+                            (t "status-private")))
+         (label (cond ((equal status-lower "draft") "Draft")
+                      ((equal visibility-lower "public") "Public")
+                      (t "Private"))))
     (with-html-string
-     (:span :class "status-pill" :id (format nil "status-~A" id) :data-status
-      status-lower :hx-post (format nil "/courses/~A/toggle-status" id)
+     (:span :class (format nil "status-pill ~A" state-class)
+      :id (format nil "status-~A" id)
+      :data-status status-lower :data-visibility visibility-lower
+      :hx-post (format nil "/courses/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
-      (string-capitalize status-lower)))))
+      label))))
 
 (defun course-toggle-status-handler (params)
-  "Handle POST /courses/:id/toggle-status - toggle between draft and published.
-Returns the updated status pill HTML fragment for HTMX swap."
+  "Handle POST /courses/:id/toggle-status - legacy 2-state toggle.
+Toggles between draft and published while preserving the visibility column.
+Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
@@ -990,6 +1007,7 @@ Returns the updated status pill HTML fragment for HTMX swap."
                  (html-response "Forbidden" :status 403))
                 (t
                  (let* ((current (course-status c))
+                        (current-vis (course-visibility c))
                         (new-status
                           (if (equal current "published")
                               "draft"
@@ -1000,7 +1018,8 @@ Returns the updated status pill HTML fragment for HTMX swap."
                    (update-course! id :status new-status :published-at
                                    published-at)
                    (html-response
-                    (render-course-status-pill id new-status)))))))))
+                    (render-course-status-pill id new-status
+                                               current-vis)))))))))
 
 (defun course-confirm-delete-handler (params)
   "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
@@ -1204,18 +1223,36 @@ notebooks dropdown in sync."
                   (%render-course-notebook-list-fragment
                    c (getf user :id)))))))))))
 
-(defun render-user-notebook-status-pill (id status)
-  "Render the user-notebook status pill HTML fragment for HTMX swap."
-  (let ((status-lower (string-downcase (or status "draft"))))
+(defun render-user-notebook-status-pill (id status &optional (visibility "private"))
+  "Render the user-notebook status pill HTML fragment for HTMX swap.
+
+Renders a 3-state pill computed from (STATUS, VISIBILITY):
+  (draft, *)               -> Draft (yellow, class=status-draft)
+  (published, private)     -> Private (purple, class=status-private)
+  (published, public)      -> Public (green, class=status-public)
+
+Click POSTs to /notebooks/:id/toggle-status (legacy 2-state toggle).
+The Task 14 dropdown is layered on top of this in the listing template."
+  (let* ((status-lower (string-downcase (or status "draft")))
+         (visibility-lower (string-downcase (or visibility "private")))
+         (state-class (cond ((equal status-lower "draft") "status-draft")
+                            ((equal visibility-lower "public") "status-public")
+                            (t "status-private")))
+         (label (cond ((equal status-lower "draft") "Draft")
+                      ((equal visibility-lower "public") "Public")
+                      (t "Private"))))
     (with-html-string
-     (:span :class "status-pill" :id (format nil "status-~A" id) :data-status
-      status-lower :hx-post (format nil "/notebooks/~A/toggle-status" id)
+     (:span :class (format nil "status-pill ~A" state-class)
+      :id (format nil "status-~A" id)
+      :data-status status-lower :data-visibility visibility-lower
+      :hx-post (format nil "/notebooks/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
-      (string-capitalize status-lower)))))
+      label))))
 
 (defun user-notebook-toggle-status-handler (params)
-  "Handle POST /notebooks/:id/toggle-status - toggle between draft and published.
-Returns the updated status pill HTML fragment for HTMX swap."
+  "Handle POST /notebooks/:id/toggle-status - legacy 2-state toggle.
+Toggles between draft and published while preserving the visibility column.
+Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
@@ -1228,6 +1265,7 @@ Returns the updated status pill HTML fragment for HTMX swap."
                  (html-response "Forbidden" :status 403))
                 (t
                  (let* ((current (user-notebook-status nb))
+                        (current-vis (user-notebook-visibility nb))
                         (new-status
                           (if (equal current "published")
                               "draft"
@@ -1238,7 +1276,8 @@ Returns the updated status pill HTML fragment for HTMX swap."
                    (update-user-notebook! id :status new-status :published-at
                                           published-at)
                    (html-response
-                    (render-user-notebook-status-pill id new-status)))))))))
+                    (render-user-notebook-status-pill id new-status
+                                                      current-vis)))))))))
 
 (defun user-notebook-confirm-delete-handler (params)
   "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
