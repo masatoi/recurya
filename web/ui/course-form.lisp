@@ -8,6 +8,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input)
   (:export #:render
            #:render-course-notebooks-list))
 
@@ -187,6 +189,7 @@ When editing an existing COURSE, the caller may also supply:
                                      " "
                                      (getf err :message))))))
                      (:form :class "course-form" :method "post" :action action-url
+                            (:raw (csrf-input))
                             (:div :class "form-group"
                                   (:label :for "title" "Title")
                                   (:input :type "text" :id "title" :name "title"

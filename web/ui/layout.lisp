@@ -128,6 +128,7 @@
                                      (:a :class "app-header__action" :href "/account"
                                          "Account settings")
                                      (:form :method "post" :action "/logout"
+                                            (:raw (csrf-input))
                                             (:button :type "submit"
                                                      :class "app-header__action"
                                                      "Log out")))))))))

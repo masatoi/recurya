@@ -8,6 +8,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input)
   (:export #:render))
 
 (in-package #:recurya/web/ui/user-notebook-form)
@@ -113,6 +115,7 @@ a list of plists like (:line N :message \"...\")."
                                      " "
                                      (getf err :message))))))
                      (:form :class "nb-form" :method "post" :action action-url
+                            (:raw (csrf-input))
                             (:div :class "form-group"
                                   (:label :for "title" "Title")
                                   (:input :type "text" :id "title" :name "title"
