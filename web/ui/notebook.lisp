@@ -328,7 +328,8 @@ the matching entry as 'sb-link active'."
 (defun render (notebook
                &key user saved-codes passed-cells
                     (sidebar-notebooks t) run-cell-base
-                    course-title course-slug)
+                    course-title course-slug
+                    breadcrumb course-prev-url course-next-url)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
 SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
@@ -344,7 +345,15 @@ SIDEBAR-NOTEBOOKS controls the left TOC:
     supplied, add a course header link at the top of the sidebar.
 COURSE-TITLE / COURSE-SLUG are used only when SIDEBAR-NOTEBOOKS is a list.
 RUN-CELL-BASE is the URL prefix for run-cell HTMX endpoints. Defaults
-to the SICP route /wardlisp/learn/<id> when omitted."
+to the SICP route /wardlisp/learn/<id> when omitted.
+BREADCRUMB, when non-nil, is a list of plists overriding the default
+chapter-based breadcrumb. Each entry has the shape
+  (:text \"label\" :href nil-or-url)
+and entries are joined by \" > \". Plain-text entries (no :href) render
+as a bare span; entries with :href render as an <a>.
+COURSE-PREV-URL / COURSE-NEXT-URL, when non-nil, render \"← Previous\"
+and \"Next →\" links in the breadcrumb area for navigating between
+notebooks within the same course."
   (let* ((*saved-codes* saved-codes)
          (*passed-cells* passed-cells)
          (*user* user)
@@ -396,12 +405,34 @@ to the SICP route /wardlisp/learn/<id> when omitted."
                               "進捗を端末を超えて保存するには "
                               (:a :href "/login" "ログイン")
                               " してください。")))
-                     (when (and (notebook-chapter notebook)
-                                (plusp (length (notebook-chapter notebook))))
-                       (:div :class "breadcrumb"
-                             (:a :href "/wardlisp/" "WardLisp") " > "
-                             (:a :href "/wardlisp/learn" "SICPコース") " > "
-                             (notebook-chapter notebook)))
+                     (cond
+                       (breadcrumb
+                        (:div :class "breadcrumb"
+                              (loop for entry in breadcrumb
+                                    for first-p = t then nil
+                                    do (unless first-p (:raw " > "))
+                                       (let ((text (getf entry :text))
+                                             (href (getf entry :href)))
+                                         (if href
+                                             (:a :href href text)
+                                             (:span text))))))
+                       ((and (notebook-chapter notebook)
+                             (plusp (length (notebook-chapter notebook))))
+                        (:div :class "breadcrumb"
+                              (:a :href "/wardlisp/" "WardLisp") " > "
+                              (:a :href "/wardlisp/learn" "SICPコース") " > "
+                              (notebook-chapter notebook))))
+                     (when (or course-prev-url course-next-url)
+                       (:div :class "course-nav"
+                             :style "margin-bottom: 1rem; font-size: 0.9rem;"
+                             (when course-prev-url
+                               (:a :href course-prev-url
+                                   :style "color: #38bdf8; text-decoration: none; margin-right: 1rem;"
+                                   "← Previous"))
+                             (when course-next-url
+                               (:a :href course-next-url
+                                   :style "color: #38bdf8; text-decoration: none;"
+                                   "Next →"))))
                      (:h1 (notebook-title notebook))
                      (:p :class "summary" (notebook-summary notebook))
                      (loop for cell in (notebook-cells notebook)

@@ -1274,14 +1274,23 @@ Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
 (defun public-user-notebook-handler (params)
   "Handle GET /n/:slug - public single user-notebook page.
 Anonymous and other users see published notebooks; the owner can also
-preview their own draft. Anything else is 404."
+preview their own draft. Anything else is 404.
+
+When the optional query parameter ?course=<slug> is supplied AND the
+referenced course exists AND the notebook is attached to that course,
+the page is rendered with the course context: the sidebar lists the
+course's notebooks, the breadcrumb is
+  Notebooks > <Course Title> > <Notebook Title>,
+and prev/next links navigate to the surrounding notebooks within the
+course (preserving the ?course=<slug> query string)."
   (let* ((slug (get-path-param params :slug))
          (nb-row (and slug (get-user-notebook-by-slug slug)))
          (user (get-current-user))
-         (uid  (and user (getf user :id)))
-         (owner-p (and nb-row uid
-                       (equal (princ-to-string (user-notebook-author-id nb-row))
-                              (princ-to-string uid)))))
+         (uid (and user (getf user :id)))
+         (owner-p
+          (and nb-row uid
+               (equal (princ-to-string (user-notebook-author-id nb-row))
+                      (princ-to-string uid)))))
     (cond
       ((null nb-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
@@ -1292,15 +1301,74 @@ preview their own draft. Anything else is 404."
               (nb-id-str (princ-to-string (user-notebook-id nb-row)))
               (saved (when uid (user-cell-codes uid nb-id-str)))
               (passed (when uid (user-passed-cells uid nb-id-str)))
-              (run-cell-base (format nil "/n/~A" (user-notebook-slug nb-row))))
-         (html-response
-          (recurya/web/ui/notebook:render
-           notebook
-           :user user
-           :saved-codes saved
-           :passed-cells passed
-           :sidebar-notebooks nil
-           :run-cell-base run-cell-base)))))))
+              (run-cell-base
+               (format nil "/n/~A" (user-notebook-slug nb-row)))
+              (course-slug-param (get-param params "course"))
+              (course-row
+               (and course-slug-param
+                    (get-course-by-slug course-slug-param)))
+              (course-rows
+               (and course-row
+                    (list-course-notebooks (course-id course-row))))
+              (notebook-in-course-p
+               (and course-rows
+                    (find (princ-to-string (user-notebook-id nb-row))
+                          course-rows
+                          :key (lambda (cn)
+                                 (princ-to-string
+                                  (course-notebook-notebook-id cn)))
+                          :test #'equal))))
+         (cond
+           (notebook-in-course-p
+            (let* ((sidebar-notebooks
+                    (mapcar #'course-notebook-row->public-plist course-rows))
+                   (current-slug (user-notebook-slug nb-row))
+                   (current-pos
+                    (position current-slug sidebar-notebooks
+                              :key (lambda (p) (getf p :slug))
+                              :test #'string=))
+                   (cs (course-slug course-row))
+                   (prev-url
+                    (when (and current-pos (> current-pos 0))
+                      (let ((prev (nth (1- current-pos)
+                                       sidebar-notebooks)))
+                        (format nil "/n/~A?course=~A"
+                                (getf prev :slug) cs))))
+                   (next-url
+                    (when (and current-pos
+                               (< current-pos
+                                  (1- (length sidebar-notebooks))))
+                      (let ((nxt (nth (1+ current-pos)
+                                      sidebar-notebooks)))
+                        (format nil "/n/~A?course=~A"
+                                (getf nxt :slug) cs))))
+                   (breadcrumb
+                    (list (list :text "Notebooks" :href "/notebooks")
+                          (list :text (course-title course-row)
+                                :href (format nil "/c/~A" cs))
+                          (list :text (user-notebook-title nb-row)))))
+              (html-response
+               (recurya/web/ui/notebook:render
+                notebook
+                :user user
+                :saved-codes saved
+                :passed-cells passed
+                :sidebar-notebooks sidebar-notebooks
+                :course-title (course-title course-row)
+                :course-slug cs
+                :breadcrumb breadcrumb
+                :course-prev-url prev-url
+                :course-next-url next-url
+                :run-cell-base run-cell-base))))
+           (t
+            (html-response
+             (recurya/web/ui/notebook:render
+              notebook
+              :user user
+              :saved-codes saved
+              :passed-cells passed
+              :sidebar-notebooks nil
+              :run-cell-base run-cell-base)))))))))
 
 (defun course-notebook-row->public-plist (cn)
   "Convert a course-notebook DAO into a plist for the public course view.
