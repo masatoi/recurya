@@ -150,3 +150,10 @@ Intro.
     (loop for c1 in cells1 for c2 in cells2 do
           (ok (eq      (cell-kind c1) (cell-kind c2)))
           (ok (string= (cell-body c1) (cell-body c2))))))
+
+(deftest renders-markdown-bold-and-strips-script
+  (let ((html (render-cell-prose-html "**bold**
+
+<script>x</script>")))
+    (ok (search "<strong>bold</strong>" html))
+    (ng (search "<script" html))))

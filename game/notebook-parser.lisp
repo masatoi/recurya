@@ -14,11 +14,9 @@
                 #:test-case-input
                 #:test-case-expected
                 #:test-case-description)
-  (:import-from #:uuid
-                #:make-v4-uuid)
-  (:export #:parse-notebook-body
-           #:cells->body-md
-           #:render-cell-prose-html))
+  (:import-from #:uuid #:make-v4-uuid)
+  (:import-from #:recurya/utils/html-sanitize #:sanitize-html)
+  (:export #:parse-notebook-body #:cells->body-md #:render-cell-prose-html))
 
 (in-package #:recurya/game/notebook-parser)
 
@@ -406,6 +404,8 @@
              (render-cell s cell))))
 
 (defun render-cell-prose-html (markdown-string)
-  "Markdown -> sanitized HTML. Stub."
-  (declare (ignore markdown-string))
-  (error "not implemented"))
+  "Convert MARKDOWN-STRING to HTML via 3bmd, then run it through the HTML
+allowlist sanitizer. Used to render `prose' cell bodies for display."
+  (sanitize-html
+   (with-output-to-string (s)
+     (3bmd:parse-string-and-print-to-stream markdown-string s))))
