@@ -23,6 +23,8 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-form-block)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -205,7 +207,7 @@ the matching entry as 'sb-link active'."
             (:button :type "button" :class "btn-run"
                      :hx-post run-url
                      :hx-target (format nil "#~A" result-id)
-                     :hx-include ".notebook-code"
+                     :hx-include ".notebook-code, #csrf-form"
                      :hx-swap "innerHTML"
                      "Run")
             (:button :type "button" :class "btn-reset"
@@ -278,6 +280,7 @@ notebooks within the same course."
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
+              (:raw (or (csrf-form-block) ""))
               (:div :class "layout"
                     (cond
                       ((null sidebar-notebooks) nil)
