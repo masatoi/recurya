@@ -126,6 +126,7 @@
                ;; Blog UI
                "recurya/web/ui/posts"
                "recurya/web/ui/post-form"
+               "recurya/web/ui/user-notebook-form"
                "recurya/web/ui/blog"
                "recurya/web/ui/blog-post"
                "recurya/web/routes"
