@@ -62,6 +62,17 @@ Hello.
         (ok (string= "三項の和" (cell-description c)))
         (ok (= 1 (length (cell-test-cases c))))))))
 
+(deftest single-solution-cell
+  (let ((body "===solution: my-square===
+(define (my-square x) (* x x))"))
+    (multiple-value-bind (cells errors) (parse-notebook-body body)
+      (ok (null errors))
+      (ok (= 1 (length cells)))
+      (let ((c (first cells)))
+        (ok (eq :code-solution (cell-kind c)))
+        (ok (string= "my-square" (cell-description c)))
+        (ok (search "(* x x)" (cell-body c)))))))
+
 (deftest exercise-with-input-output-expect
   (let ((body "===exercise: zero?===
 (define (zero? x) ???)
