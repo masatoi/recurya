@@ -15,7 +15,9 @@
                 #:user-notebook-author-id
                 #:create-user-notebook!
                 #:get-user-notebook-by-id
-                #:get-user-notebook-by-slug)
+                #:get-user-notebook-by-slug
+                #:update-user-notebook!
+                #:delete-user-notebook!)
   (:import-from #:recurya/db/users
                 #:users-id))
 
@@ -57,3 +59,47 @@ y"
 (deftest get-by-id-missing-returns-nil
   (with-test-db
     (ok (null (get-user-notebook-by-id "00000000-0000-0000-0000-000000000000")))))
+
+(deftest update-user-notebook-test
+  (testing "update-user-notebook! modifies provided fields and returns instance"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (nb (create-user-notebook!
+                  :title "Before"
+                  :body-md "===prose===
+old"
+                  :cells '()
+                  :author u))
+             (updated (update-user-notebook!
+                       (user-notebook-id nb)
+                       :title "After"
+                       :body-md "===prose===
+new"
+                       :status "published")))
+        (ok updated)
+        (ok (string= "After" (user-notebook-title updated)))
+        (ok (string= "published" (user-notebook-status updated)))
+        (ok (search "new" (user-notebook-body-md updated))))))
+  (testing "update on missing id returns NIL"
+    (with-test-db
+      (ok (null (update-user-notebook!
+                 "00000000-0000-0000-0000-000000000000"
+                 :title "X"))))))
+
+(deftest delete-user-notebook-test
+  (testing "delete-user-notebook! removes row and returns T"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (nb (create-user-notebook!
+                  :title "To Delete"
+                  :body-md "===prose===
+bye"
+                  :cells '()
+                  :author u))
+             (id (user-notebook-id nb)))
+        (ok (eq t (delete-user-notebook! id)))
+        (ok (null (get-user-notebook-by-id id))))))
+  (testing "delete on missing id returns NIL"
+    (with-test-db
+      (ok (null (delete-user-notebook!
+                 "00000000-0000-0000-0000-000000000000"))))))

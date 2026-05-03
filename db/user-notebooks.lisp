@@ -41,7 +41,9 @@
            #:user-notebook-updated-at
            #:create-user-notebook!
            #:get-user-notebook-by-id
-           #:get-user-notebook-by-slug))
+           #:get-user-notebook-by-slug
+           #:update-user-notebook!
+           #:delete-user-notebook!))
 
 (in-package #:recurya/db/user-notebooks)
 
@@ -91,3 +93,34 @@ Returns:
 Returns:
   USER-NOTEBOOK instance if found, NIL otherwise."
   (find-dao 'user-notebook :slug slug))
+
+(defun update-user-notebook! (notebook-id &key title slug summary body-md cells
+                                            status published-at)
+  "Update user-notebook attributes. Only provided fields are updated.
+
+CELLS, when provided, is JSON-serialized via lisp->jsonb before write
+(an empty list serializes to \"[]\").
+
+Returns:
+  The updated USER-NOTEBOOK instance, or NIL if not found."
+  (let ((nb (find-dao 'user-notebook :id (ensure-uuid notebook-id))))
+    (when nb
+      (when title (setf (user-notebook-title nb) title))
+      (when slug (setf (user-notebook-slug nb) slug))
+      (when summary (setf (user-notebook-summary nb) summary))
+      (when body-md (setf (user-notebook-body-md nb) body-md))
+      (when cells
+        (setf (user-notebook-cells nb)
+              (if (null cells) "[]" (lisp->jsonb cells))))
+      (when status (setf (user-notebook-status nb) status))
+      (when published-at (setf (user-notebook-published-at nb) published-at))
+      (save-dao nb))
+    nb))
+
+(defun delete-user-notebook! (notebook-id)
+  "Delete a user-notebook by UUID.
+
+Returns:
+  T if deleted, NIL if not found."
+  (let ((nb (find-dao 'user-notebook :id (ensure-uuid notebook-id))))
+    (when nb (delete-dao nb) t)))
