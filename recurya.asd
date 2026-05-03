@@ -68,6 +68,7 @@
                "recurya/web/app"
                "recurya/web/auth"
                "recurya/web/ui/styles"
+               "recurya/web/ui/csrf"
                "recurya/web/ui/layout"
                "recurya/web/ui/login"
                "recurya/web/ui/errors"
