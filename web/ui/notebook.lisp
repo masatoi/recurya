@@ -23,8 +23,6 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
-  (:import-from #:recurya/game/notebooks/registry
-                #:all-notebooks)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -327,7 +325,7 @@ the matching entry as 'sb-link active'."
 
 (defun render (notebook
                &key user saved-codes passed-cells
-                    (sidebar-notebooks t) run-cell-base
+                    (sidebar-notebooks nil) run-cell-base
                     course-title course-slug
                     breadcrumb course-prev-url course-next-url)
   "Render the full notebook page as a complete HTML document.
@@ -335,11 +333,11 @@ USER is the logged-in user plist or nil.
 SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
 PASSED-CELLS is a list of cell-id strings this user has passed.
 SIDEBAR-NOTEBOOKS controls the left TOC:
-  T (default) - legacy SICP path: render the chapter-grouped TOC for
-    (all-notebooks). Kept for backward compatibility while SICP has
-    not yet been migrated to the DB-backed course/notebook model.
-  NIL - omits the sidebar entirely (used for stand-alone user-authored
-    notebooks at /n/:slug without a course context).
+  NIL (default) - omits the sidebar entirely (used for stand-alone
+    user-authored notebooks at /n/:slug without a course context).
+    The legacy SICP T path was removed when the hard-coded SICP
+    notebook registry was deleted; SICP is now served via the
+    DB-backed course/notebook model.
   LIST - a list of notebook plists (:slug :title ...) to render via
     render-course-sidebar. COURSE-TITLE and COURSE-SLUG, when both are
     supplied, add a course header link at the top of the sidebar.
@@ -381,9 +379,6 @@ notebooks within the same course."
               (:div :class "layout"
                     (cond
                       ((null sidebar-notebooks) nil)
-                      ((eq sidebar-notebooks t)
-                       (render-legacy-sicp-sidebar (notebook-id notebook)
-                                                   (all-notebooks)))
                       ((listp sidebar-notebooks)
                        (render-course-sidebar course-title course-slug
                                               sidebar-notebooks

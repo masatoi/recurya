@@ -28,62 +28,7 @@
     :recurya/tests/game/puzzle
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
-    :recurya/tests/game/notebook-parser
-    :recurya/tests/game/notebooks/sicp-1-1-1
-    :recurya/tests/game/notebooks/sicp-1-1-2
-    :recurya/tests/game/notebooks/sicp-1-1-3
-    :recurya/tests/game/notebooks/sicp-1-1-4
-    :recurya/tests/game/notebooks/sicp-1-1-5
-    :recurya/tests/game/notebooks/sicp-1-1-6
-    :recurya/tests/game/notebooks/sicp-1-1-7
-    :recurya/tests/game/notebooks/sicp-1-1-8
-    :recurya/tests/game/notebooks/sicp-1-2-1
-    :recurya/tests/game/notebooks/sicp-1-2-2
-    :recurya/tests/game/notebooks/sicp-1-2-3
-    :recurya/tests/game/notebooks/sicp-1-2-4
-    :recurya/tests/game/notebooks/sicp-1-2-5
-    :recurya/tests/game/notebooks/sicp-1-2-6
-    :recurya/tests/game/notebooks/sicp-1-3-1
-    :recurya/tests/game/notebooks/sicp-1-3-2
-    :recurya/tests/game/notebooks/sicp-1-3-3
-    :recurya/tests/game/notebooks/sicp-1-3-4
-    :recurya/tests/game/notebooks/sicp-2-1-1
-    :recurya/tests/game/notebooks/sicp-2-1-2
-    :recurya/tests/game/notebooks/sicp-2-1-3
-    :recurya/tests/game/notebooks/sicp-2-1-4
-    :recurya/tests/game/notebooks/sicp-2-2-1
-    :recurya/tests/game/notebooks/sicp-2-2-2
-    :recurya/tests/game/notebooks/sicp-2-2-3
-    :recurya/tests/game/notebooks/sicp-2-2-4
-    :recurya/tests/game/notebooks/sicp-2-3-1
-    :recurya/tests/game/notebooks/sicp-2-3-2
-    :recurya/tests/game/notebooks/sicp-2-3-3
-    :recurya/tests/game/notebooks/sicp-2-3-4
-    :recurya/tests/game/notebooks/sicp-2-4-1
-    :recurya/tests/game/notebooks/sicp-2-4-2
-    :recurya/tests/game/notebooks/sicp-2-4-3
-    :recurya/tests/game/notebooks/sicp-2-5-1
-    :recurya/tests/game/notebooks/sicp-2-5-2
-    :recurya/tests/game/notebooks/sicp-2-5-3
-    :recurya/tests/game/notebooks/sicp-3-1-1
-    :recurya/tests/game/notebooks/sicp-3-1-2
-    :recurya/tests/game/notebooks/sicp-3-1-3
-    :recurya/tests/game/notebooks/sicp-3-2-1
-    :recurya/tests/game/notebooks/sicp-3-2-2
-    :recurya/tests/game/notebooks/sicp-3-2-3
-    :recurya/tests/game/notebooks/sicp-3-2-4
-    :recurya/tests/game/notebooks/sicp-3-3-1
-    :recurya/tests/game/notebooks/sicp-3-3-2
-    :recurya/tests/game/notebooks/sicp-3-3-3
-    :recurya/tests/game/notebooks/sicp-3-3-4
-    :recurya/tests/game/notebooks/sicp-3-3-5
-    :recurya/tests/game/notebooks/sicp-3-4-1
-    :recurya/tests/game/notebooks/sicp-3-4-2
-    :recurya/tests/game/notebooks/sicp-3-5-1
-    :recurya/tests/game/notebooks/sicp-3-5-2
-    :recurya/tests/game/notebooks/sicp-3-5-3
-    :recurya/tests/game/notebooks/sicp-3-5-4
-    :recurya/tests/game/notebooks/sicp-3-5-5)
+    :recurya/tests/game/notebook-parser)
   "List of all test packages to run.")
 
 (defun run-all-tests ()
