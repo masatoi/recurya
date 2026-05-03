@@ -21,12 +21,14 @@
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:lack/request #:request-env)
   (:import-from #:recurya/web/ui/blog-post)
-  (:import-from #:recurya/web/ui/user-notebooks)
+  (:import-from #:recurya/web/ui/user-notebooks
+                #:render-user-notebook-state-dropdown)
   (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
   (:import-from #:recurya/web/ui/course)
   (:import-from #:recurya/web/ui/course-list)
-  (:import-from #:recurya/web/ui/courses)
+  (:import-from #:recurya/web/ui/courses
+                #:render-course-state-dropdown)
   (:import-from #:recurya/web/ui/course-form)
   (:import-from #:recurya/db/posts
                 #:create-post!
@@ -1043,7 +1045,9 @@ Tokens are:
 draft|published-private|published-public.
 
 Decodes into (status, visibility), updates the course, and returns the
-updated 3-state pill HTML for HTMX swap. Owner-only."
+updated <details> dropdown markup (summary pill + 3 state buttons) so
+HTMX can swap the entire dropdown via outerHTML and keep it functional
+after subsequent clicks. Owner-only."
   (let ((user (get-current-user)))
     (cond
       ((null user)
@@ -1075,8 +1079,8 @@ updated 3-state pill HTML for HTMX swap. Owner-only."
                                    :visibility effective-vis
                                    :published-at published-at)
                    (html-response
-                    (render-course-status-pill id new-status
-                                               effective-vis)))))))))))))
+                    (render-course-state-dropdown id new-status
+                                                  effective-vis)))))))))))))
 
 (defun course-confirm-delete-handler (params)
   "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
@@ -1341,7 +1345,9 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
 draft|published-private|published-public.
 
 Decodes into (status, visibility), updates the notebook, and returns
-the updated 3-state pill HTML for HTMX swap. Owner-only."
+the updated <details> dropdown markup (summary pill + 3 state buttons)
+so HTMX can swap the entire dropdown via outerHTML and keep it
+functional after subsequent clicks. Owner-only."
   (let ((user (get-current-user)))
     (cond
       ((null user)
@@ -1373,8 +1379,8 @@ the updated 3-state pill HTML for HTMX swap. Owner-only."
                                           :visibility effective-vis
                                           :published-at published-at)
                    (html-response
-                    (render-user-notebook-status-pill id new-status
-                                                      effective-vis)))))))))))))
+                    (render-user-notebook-state-dropdown id new-status
+                                                         effective-vis)))))))))))))
 
 (defun user-notebook-confirm-delete-handler (params)
   "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."

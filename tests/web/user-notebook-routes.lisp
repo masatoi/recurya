@@ -565,7 +565,8 @@ hi"
 (deftest set-state-decodes-published-public
   (testing "POST /notebooks/:id/state with state=published-public sets
 status=published, visibility=public, sets published_at, and returns the
-status-public pill HTML."
+full <details> dropdown markup (summary pill + 3 hx-post state buttons),
+not a bare pill span."
     (with-test-db
       (let* ((user (mk-user))
              (dao (get-user-by-id (getf user :id)))
@@ -582,6 +583,18 @@ hi"
                  (body (first (response-body res))))
             (ok (= 200 (response-status res)))
             (ok (search "status-public" body))
+            ;; The dropdown markup must include the <details>/<summary>
+            ;; wrapper and three hx-post buttons (one per state token),
+            ;; otherwise repeated clicks will destroy the dropdown.
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
+            (ok (search "status-pill-menu" body))
+            ;; spinneret HTML-escapes the inner double quotes of hx-vals.
+            (ok (search "&quot;state&quot;:&quot;draft&quot;" body))
+            (ok (search "&quot;state&quot;:&quot;published-private&quot;"
+                        body))
+            (ok (search "&quot;state&quot;:&quot;published-public&quot;"
+                        body))
             (let ((after (get-user-notebook-by-id id)))
               (ok (string= "published" (user-notebook-status after)))
               (ok (string= "public" (user-notebook-visibility after)))
@@ -590,7 +603,8 @@ hi"
 
 (deftest set-state-decodes-draft-preserves-visibility
   (testing "state=draft from a published+public notebook turns it back to
-draft while preserving published_at; pill becomes status-draft."
+draft while preserving published_at; the response body contains the full
+<details> dropdown markup with the status-draft summary pill."
     (with-test-db
       (let* ((user (mk-user))
              (dao (get-user-by-id (getf user :id)))
@@ -608,6 +622,8 @@ hi"
                  (body (first (response-body res))))
             (ok (= 200 (response-status res)))
             (ok (search "status-draft" body))
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
             (let ((after (get-user-notebook-by-id id)))
               (ok (string= "draft" (user-notebook-status after))))))))))
 

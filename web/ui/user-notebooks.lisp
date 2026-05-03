@@ -2,14 +2,14 @@
 
 (defpackage #:recurya/web/ui/user-notebooks
   (:use #:cl)
-  (:import-from #:spinneret
-                #:with-html-string)
+  (:import-from #:spinneret #:with-html-string)
   (:import-from #:recurya/web/ui/layout
                 #:header
                 #:header-styles
                 #:common-styles
                 #:format-timestamp)
-  (:export #:render))
+  (:export #:render
+           #:render-user-notebook-state-dropdown))
 
 (in-package #:recurya/web/ui/user-notebooks)
 
@@ -60,6 +60,49 @@
                        color: var(--color-error-text); }
 tr.htmx-swapping { opacity: 0; transition: opacity 0.3s ease; }")
 
+(defun render-user-notebook-state-dropdown (id status visibility)
+  "Render the user-notebook 3-state pill wrapped in a <details>/<summary>
+dropdown with three HTMX buttons (Draft / Private / Public).
+
+The outer <details> element gets id=state-dropdown-{ID} and the HTMX
+buttons target it with hx-swap=\"outerHTML\" so a state change replaces
+the entire dropdown markup (preserving the dropdown structure across
+clicks). The inner <summary> keeps id=status-{ID} so any external code
+referencing the pill by that id continues to work."
+  (let* ((status-lower (string-downcase (or status "draft")))
+         (visibility-lower (string-downcase (or visibility "private")))
+         (state-class
+          (cond ((equal status-lower "draft") "status-draft")
+                ((equal visibility-lower "public") "status-public")
+                (t "status-private")))
+         (label
+          (cond ((equal status-lower "draft") "Draft")
+                ((equal visibility-lower "public") "Public")
+                (t "Private")))
+         (dropdown-id (format nil "state-dropdown-~A" id))
+         (dropdown-target (format nil "#state-dropdown-~A" id))
+         (state-url (format nil "/notebooks/~A/state" id)))
+    (with-html-string
+      (:details :class "status-pill-menu" :id dropdown-id
+        (:summary :class (format nil "status-pill ~A" state-class)
+          :id (format nil "status-~A" id)
+          :data-status status-lower
+          :data-visibility visibility-lower
+          label)
+        (:div :class "pill-menu"
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"draft\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            "Draft")
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-private\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            "Private")
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-public\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            "Public"))))))
+
 (defun render (&key user notebooks pagination message errors)
   "Render the admin user-notebook list page as an HTML string.
 
@@ -67,159 +110,85 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
 :published-at :created-at."
   (let ((user-timezone (getf user :timezone))
         (all-styles
-          (concatenate 'string (common-styles) (header-styles) *page-styles*)))
+         (concatenate 'string (common-styles) (header-styles) *page-styles*)))
     (spinneret:with-html-string
       (:doctype)
       (:html
        (:head (:meta :charset "utf-8")
-              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-              (:title "recurya - My Notebooks")
-              (:script :src "https://unpkg.com/htmx.org@2.0.4"
-                       :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-                       :crossorigin "anonymous")
-              (:style (:raw all-styles)))
+        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
+        (:title "recurya - My Notebooks")
+        (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
+         "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+         :crossorigin "anonymous")
+        (:style (:raw all-styles)))
        (:body (:raw (header user))
-              (:main
-               (:div :class "card"
-                     (:h1 "My Notebooks")
-                     (:p :class "muted" "Manage your user-authored notebooks.")
-                     (:div :class "actions-bar"
-                           (:a :class "new-nb-btn" :href "/notebooks/new"
-                               "+ New Notebook"))
-                     (:div :id "flash-area"
-                           (when message
-                             (:div :class "flash-message success" message))
-                           (when errors
-                             (:div :class "flash-message error"
-                                   (dolist (err errors) (:p err)))))
-                     (if notebooks
-                         (progn
-                           (:table
-                            (:thead
-                             (:tr (:th "Title") (:th "Status")
-                                  (:th "Published") (:th "Created")
-                                  (:th "Actions")))
-                            (:tbody :id "notebooks-body"
-                                    (dolist (nb notebooks)
-                                      (let* ((id (getf nb :id))
-                                             (slug (getf nb :slug))
-                                             (title (getf nb :title))
-                                             (status (getf nb :status))
-                                             (visibility (or (getf nb :visibility)
-                                                             "private"))
-                                             (status-lower (string-downcase
-                                                            (or status "draft")))
-                                             (visibility-lower (string-downcase
-                                                                visibility))
-                                             (state-class
-                                              (cond ((equal status-lower "draft")
-                                                     "status-draft")
-                                                    ((equal visibility-lower "public")
-                                                     "status-public")
-                                                    (t "status-private")))
-                                             (label
-                                              (cond ((equal status-lower "draft")
-                                                     "Draft")
-                                                    ((equal visibility-lower "public")
-                                                     "Public")
-                                                    (t "Private")))
-                                             (published-at (getf nb :published-at))
-                                             (created-at (getf nb :created-at)))
-                                        (:tr :id (format nil "nb-row-~A" id)
-                                             (:td
-                                              (if (and slug (string= status "published"))
-                                                  (:a :href (format nil "/n/~A" slug)
-                                                      title)
-                                                  title))
-                                             (:td
-                                              (:details :class "status-pill-menu"
-                                                        (:summary
-                                                         :class (format nil
-                                                                        "status-pill ~A"
-                                                                        state-class)
-                                                         :id (format nil "status-~A" id)
-                                                         :data-status status-lower
-                                                         :data-visibility visibility-lower
-                                                         label)
-                                                        (:div :class "pill-menu"
-                                                              (:button :type "button"
-                                                                       :hx-post (format nil
-                                                                                        "/notebooks/~A/state"
-                                                                                        id)
-                                                                       :hx-vals
-                                                                       "{\"state\":\"draft\"}"
-                                                                       :hx-target
-                                                                       (format nil
-                                                                               "#status-~A" id)
-                                                                       :hx-swap "outerHTML"
-                                                                       "Draft")
-                                                              (:button :type "button"
-                                                                       :hx-post (format nil
-                                                                                        "/notebooks/~A/state"
-                                                                                        id)
-                                                                       :hx-vals
-                                                                       "{\"state\":\"published-private\"}"
-                                                                       :hx-target
-                                                                       (format nil
-                                                                               "#status-~A" id)
-                                                                       :hx-swap "outerHTML"
-                                                                       "Private")
-                                                              (:button :type "button"
-                                                                       :hx-post (format nil
-                                                                                        "/notebooks/~A/state"
-                                                                                        id)
-                                                                       :hx-vals
-                                                                       "{\"state\":\"published-public\"}"
-                                                                       :hx-target
-                                                                       (format nil
-                                                                               "#status-~A" id)
-                                                                       :hx-swap "outerHTML"
-                                                                       "Public"))))
-                                             (:td (if published-at
-                                                      (or (format-timestamp published-at
-                                                                            user-timezone)
-                                                          "—")
-                                                      "—"))
-                                             (:td (or (format-timestamp created-at
-                                                                        user-timezone)
-                                                      "—"))
-                                             (:td
-                                              (:div :class "actions-cell"
-                                                    (:a :class "link"
-                                                        :href (format nil
-                                                                      "/notebooks/~A/edit"
-                                                                      id)
-                                                        "Edit")
-                                                    (:button :class "button-danger btn-sm"
-                                                             :hx-get
-                                                             (format nil
-                                                                     "/notebooks/~A/confirm-delete"
-                                                                     id)
-                                                             :hx-target "#modal-container"
-                                                             :hx-swap "innerHTML"
-                                                             "Delete"))))))))
-                           (when pagination
-                             (let ((current-page (getf pagination :current-page))
-                                   (total-pages (getf pagination :total-pages))
-                                   (has-prev (getf pagination :has-prev))
-                                   (has-next (getf pagination :has-next))
-                                   (prev-url (getf pagination :prev-url))
-                                   (next-url (getf pagination :next-url)))
-                               (:div :class "pagination"
-                                     (:span :class "pagination-info"
-                                            (format nil "Page ~A of ~A"
-                                                    current-page total-pages))
-                                     (:nav :class "pagination-nav"
-                                           (if has-prev
-                                               (:a :class "pagination-btn"
-                                                   :href prev-url "← Previous")
-                                               (:span :class "pagination-btn disabled"
-                                                      "← Previous"))
-                                           (if has-next
-                                               (:a :class "pagination-btn"
-                                                   :href next-url "Next →")
-                                               (:span :class "pagination-btn disabled"
-                                                      "Next →")))))))
-                         (:p :class "muted"
-                             "No notebooks yet. Create your first one!"))))
-              (:div :id "modal-container"))))))
+        (:main
+         (:div :class "card" (:h1 "My Notebooks")
+          (:p :class "muted" "Manage your user-authored notebooks.")
+          (:div :class "actions-bar"
+           (:a :class "new-nb-btn" :href "/notebooks/new" "+ New Notebook"))
+          (:div :id "flash-area"
+           (when message (:div :class "flash-message success" message))
+           (when errors
+             (:div :class "flash-message error"
+              (dolist (err errors) (:p err)))))
+          (if notebooks
+              (progn
+               (:table
+                (:thead
+                 (:tr (:th "Title") (:th "Status") (:th "Published")
+                  (:th "Created") (:th "Actions")))
+                (:tbody :id "notebooks-body"
+                 (dolist (nb notebooks)
+                   (let* ((id (getf nb :id))
+                          (slug (getf nb :slug))
+                          (title (getf nb :title))
+                          (status (getf nb :status))
+                          (visibility (or (getf nb :visibility) "private"))
+                          (published-at (getf nb :published-at))
+                          (created-at (getf nb :created-at)))
+                     (:tr :id (format nil "nb-row-~A" id)
+                      (:td
+                       (if (and slug (string= status "published"))
+                           (:a :href (format nil "/n/~A" slug) title)
+                           title))
+                      (:td
+                       (:raw
+                        (render-user-notebook-state-dropdown
+                         id status visibility)))
+                      (:td
+                       (if published-at
+                           (or (format-timestamp published-at user-timezone)
+                               "—")
+                           "—"))
+                      (:td
+                       (or (format-timestamp created-at user-timezone) "—"))
+                      (:td
+                       (:div :class "actions-cell"
+                        (:a :class "link" :href
+                         (format nil "/notebooks/~A/edit" id) "Edit")
+                        (:button :class "button-danger btn-sm" :hx-get
+                         (format nil "/notebooks/~A/confirm-delete" id)
+                         :hx-target "#modal-container" :hx-swap "innerHTML"
+                         "Delete"))))))))
+               (when pagination
+                 (let ((current-page (getf pagination :current-page))
+                       (total-pages (getf pagination :total-pages))
+                       (has-prev (getf pagination :has-prev))
+                       (has-next (getf pagination :has-next))
+                       (prev-url (getf pagination :prev-url))
+                       (next-url (getf pagination :next-url)))
+                   (:div :class "pagination"
+                    (:span :class "pagination-info"
+                     (format nil "Page ~A of ~A" current-page total-pages))
+                    (:nav :class "pagination-nav"
+                     (if has-prev
+                         (:a :class "pagination-btn" :href prev-url
+                          "← Previous")
+                         (:span :class "pagination-btn disabled" "← Previous"))
+                     (if has-next
+                         (:a :class "pagination-btn" :href next-url "Next →")
+                         (:span :class "pagination-btn disabled"
+                          "Next →")))))))
+              (:p :class "muted" "No notebooks yet. Create your first one!"))))
+        (:div :id "modal-container"))))))

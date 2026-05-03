@@ -452,23 +452,39 @@ course flips to published+private and the pill shows status-private."
           (ok (= 403 (response-status res))))))))
 
 (deftest course-set-state-decodes-published-public
-  (with-test-db
-    (let* ((user (mk-user))
-           (dao (get-user-by-id (getf user :id)))
-           (c (create-course! :title "S" :author dao
-                              :status "draft" :visibility "private"))
-           (id (princ-to-string (course-id c))))
-      (with-mock-session (make-session :user user)
-        (let* ((res (course-set-state-handler
-                     (list (cons :id id)
-                           (cons "state" "published-public"))))
-               (body (first (response-body res))))
-          (ok (= 200 (response-status res)))
-          (ok (search "status-public" body))
-          (let ((after (get-course-by-id id)))
-            (ok (string= "published" (course-status after)))
-            (ok (string= "public" (course-visibility after)))
-            (ok (course-published-at after))))))))
+  (testing "POST /courses/:id/state with state=published-public sets
+status=published, visibility=public, sets published_at, and returns the
+full <details> dropdown markup (summary pill + 3 hx-post state buttons),
+not a bare pill span."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "S" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-public"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-public" body))
+            ;; The dropdown markup must include the <details>/<summary>
+            ;; wrapper and three hx-post buttons (one per state token),
+            ;; otherwise repeated clicks will destroy the dropdown.
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
+            (ok (search "status-pill-menu" body))
+            ;; spinneret HTML-escapes the inner double quotes of hx-vals.
+            (ok (search "&quot;state&quot;:&quot;draft&quot;" body))
+            (ok (search "&quot;state&quot;:&quot;published-private&quot;"
+                        body))
+            (ok (search "&quot;state&quot;:&quot;published-public&quot;"
+                        body))
+            (let ((after (get-course-by-id id)))
+              (ok (string= "published" (course-status after)))
+              (ok (string= "public" (course-visibility after)))
+              (ok (course-published-at after)))))))))
 
 (deftest course-set-state-rejects-invalid-state
   (with-test-db
