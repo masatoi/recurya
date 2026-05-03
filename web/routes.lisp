@@ -1414,16 +1414,11 @@ Anonymous and other users see published courses; the owner can also
 preview their own draft. Anything else is 404."
   (let* ((slug (get-path-param params :slug))
          (course-row (and slug (get-course-by-slug slug)))
-         (user (get-current-user))
-         (uid (and user (getf user :id)))
-         (owner-p
-          (and course-row uid
-               (equal (princ-to-string (course-author-id course-row))
-                      (princ-to-string uid)))))
+         (user (get-current-user)))
     (cond
       ((null course-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
-      ((and (string= "draft" (course-status course-row)) (not owner-p))
+      ((not (recurya/utils/access-control:can-view-course-p user course-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
        (let* ((rows (list-course-notebooks (course-id course-row)))
@@ -1451,9 +1446,11 @@ preview their own draft. Anything else is 404."
   "Handle GET /courses - public listing of published courses.
 No authentication required."
   (let* ((page (parse-page-param params))
-         (total-count (count-courses :status "published"))
+         (total-count (count-courses :status "published"
+                                      :visibility "public"))
          (offset (* (1- page) *page-size*))
          (raw (list-courses :status "published"
+                            :visibility "public"
                             :limit *page-size*
                             :offset offset))
          (courses (mapcar #'course-public-plist raw))

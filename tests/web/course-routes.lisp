@@ -674,6 +674,7 @@ where the lists are aligned with the attached positions."
            (course (create-course! :title "Public Course"
                                    :summary "Course summary text."
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (slug (course-slug course))
@@ -721,12 +722,47 @@ where the lists are aligned with the attached positions."
           (ok (= 200 (response-status res)))
           (ok (search "Owner Draft" body)))))))
 
+(deftest public-course-handler-published-private-404-for-others
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (course (create-course! :title "Pub Priv Course"
+                                   :status "published"
+                                   :visibility "private"
+                                   :published-at (local-time:now)
+                                   :author owner-dao))
+           (slug (course-slug course)))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-course-handler (list (cons :slug slug)))))
+          (ok (= 404 (response-status res)))))
+      (with-mock-session (make-session)
+        (let ((res (public-course-handler (list (cons :slug slug)))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest public-course-handler-published-private-200-for-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (course (create-course! :title "Owner Pub Priv"
+                                   :status "published"
+                                   :visibility "private"
+                                   :published-at (local-time:now)
+                                   :author owner-dao))
+           (slug (course-slug course)))
+      (with-mock-session (make-session :user owner)
+        (let* ((res (public-course-handler (list (cons :slug slug))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Owner Pub Priv" body)))))))
+
 (deftest public-course-handler-shows-attached-notebooks-in-order
   (with-test-db
     (let* ((author (mk-user))
            (dao (get-user-by-id (getf author :id)))
            (course (create-course! :title "Ordered"
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (course-uuid (course-id course))
@@ -774,6 +810,7 @@ where the lists are aligned with the attached positions."
            (dao (get-user-by-id (getf author :id))))
       (create-course! :title "Pub Course"
                       :status "published"
+                      :visibility "public"
                       :published-at (local-time:now)
                       :author dao)
       (create-course! :title "Drafty Course"
@@ -785,6 +822,23 @@ where the lists are aligned with the attached positions."
           (ok (= 200 (response-status res)))
           (ok (search "Pub Course" body))
           (ng (search "Drafty Course" body)))))))
+
+(deftest courses-public-handler-shows-only-public
+  (with-test-db
+    (let* ((author (mk-user))
+           (dao (get-user-by-id (getf author :id))))
+      (create-course! :title "PubPub Course"
+                      :status "published" :visibility "public"
+                      :published-at (local-time:now) :author dao)
+      (create-course! :title "PubPriv Course"
+                      :status "published" :visibility "private"
+                      :published-at (local-time:now) :author dao)
+      (with-mock-session (make-session)
+        (let* ((res (courses-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "PubPub Course" body))
+          (ng (search "PubPriv Course" body)))))))
 
 (deftest courses-public-handler-anonymous-200
   (with-test-db
@@ -799,6 +853,7 @@ where the lists are aligned with the attached positions."
            (dao (get-user-by-id (getf author :id)))
            (course (create-course! :title "Slug Linked"
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (slug (course-slug course)))
