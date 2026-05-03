@@ -435,19 +435,45 @@ Includes :author-name extracted from the FK author."
                                   :published-at published-at)
                     (redirect "/posts")))))))))))
 
-(defun cell->jsonb-plist (cell)
-  "Convert a cell struct into a plist that JSONB serialization can handle.
-The shape preserves the cell id so it survives roundtrips through the
-notebook body markdown and back."
-  (list :cell-id     (or (cell-id cell) "")
-        :kind        (string-downcase (symbol-name (cell-kind cell)))
-        :body        (or (cell-body cell) "")
-        :description (cell-description cell)
-        :test-cases  (mapcar (lambda (tc)
-                               (list :input       (test-case-input tc)
-                                     :expected    (test-case-expected tc)
-                                     :description (test-case-description tc)))
-                             (cell-test-cases cell))))
+(defun cell->jsonb-form (cell)
+  "Convert a cell struct into a hash-table that jzon serializes as a JSON
+object. Pairs with `jsonb-hash->cell' to round-trip cells through the
+JSONB column while preserving stable cell ids across edits."
+  (let ((h (make-hash-table :test 'equal)))
+    (setf (gethash "cell-id"     h) (or (cell-id cell) "")
+          (gethash "kind"        h) (string-downcase (symbol-name (cell-kind cell)))
+          (gethash "body"        h) (or (cell-body cell) "")
+          (gethash "description" h) (cell-description cell)
+          (gethash "test-cases"  h)
+          (mapcar (lambda (tc)
+                    (let ((th (make-hash-table :test 'equal)))
+                      (setf (gethash "input"       th) (test-case-input tc)
+                            (gethash "expected"    th) (test-case-expected tc)
+                            (gethash "description" th) (test-case-description tc))
+                      th))
+                  (cell-test-cases cell)))
+    h))
+
+(defun jsonb-hash->cell (h)
+  "Reconstruct a cell struct from a JSONB hash-table produced by
+`cell->jsonb-form'. Used to seed parse-notebook-body's existing-cells
+so cell ids stay stable across edits."
+  (let ((kind-str (gethash "kind" h ""))
+        (raw-tcs  (gethash "test-cases" h #())))
+    (recurya/game/notebook:make-cell
+     :id (or (gethash "cell-id" h "") "")
+     :kind (if (and kind-str (plusp (length kind-str)))
+               (intern (string-upcase kind-str) :keyword)
+               :prose)
+     :body (or (gethash "body" h "") "")
+     :description (or (gethash "description" h "") "")
+     :test-cases (mapcar
+                  (lambda (th)
+                    (recurya/game/puzzle:make-test-case
+                     :input       (or (gethash "input" th "") "")
+                     :expected    (or (gethash "expected" th "") "")
+                     :description (or (gethash "description" th "") "")))
+                  (coerce raw-tcs 'list)))))
 
 (defun user-notebook->plist (nb)
   "Convert a user-notebook DAO into a plist for UI rendering."
@@ -531,7 +557,7 @@ notebook body markdown and back."
                          (summary-val (if (and summary (string/= summary "")) summary nil))
                          (published-at
                            (when (equal status "published") (local-time:now)))
-                         (cells-plists (mapcar #'cell->jsonb-plist cells)))
+                         (cells-plists (mapcar #'cell->jsonb-form cells)))
                     (create-user-notebook!
                      :title title :slug slug-val :summary summary-val
                      :body-md body :cells cells-plists
@@ -600,8 +626,11 @@ description) match."
                     :errors '((:line nil :message "Body is required.")))))
                  (t
                   (let ((existing-cells
-                          (parse-notebook-body
-                            (user-notebook-body-md existing))))
+                          (mapcar #'jsonb-hash->cell
+                                  (coerce
+                                   (recurya/db/user-notebooks:user-notebook-cells-parsed
+                                    existing)
+                                   'list))))
                     (multiple-value-bind (cells parse-errors)
                         (parse-notebook-body body existing-cells)
                       (cond
@@ -626,7 +655,7 @@ description) match."
                                                     "published")))
                                     (local-time:now)))
                                 (cells-plists
-                                  (mapcar #'cell->jsonb-plist cells)))
+                                  (mapcar #'cell->jsonb-form cells)))
                            (update-user-notebook!
                             id
                             :title title

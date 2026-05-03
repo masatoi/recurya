@@ -23,8 +23,7 @@
                 #:user-notebook-id
                 #:user-notebook-title
                 #:user-notebook-body-md
-                #:user-notebook-status
-                #:user-notebook-cells-parsed)
+                #:user-notebook-status)
   (:import-from #:uuid
                 #:make-v4-uuid))
 
@@ -279,3 +278,33 @@ nope"))))
           (ok (search "Validation errors" body))
           (let ((nb-after (get-user-notebook-by-id id)))
             (ok (string= "Before" (user-notebook-title nb-after)))))))))
+
+(deftest update-handler-preserves-cell-ids-on-rewrite
+  (testing "rewriting unchanged body keeps stable cell ids in the JSONB cache"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (body "===prose===
+Stable.
+
+===eval===
+(+ 1 2)")
+             (cells-on-create
+              (mapcar #'recurya/web/routes::cell->jsonb-form
+                      (recurya/game/notebook-parser:parse-notebook-body body)))
+             (nb (create-user-notebook!
+                  :title "Stable" :body-md body
+                  :cells cells-on-create :author dao))
+             (id (princ-to-string (user-notebook-id nb)))
+             (cells-before (recurya/db/user-notebooks:user-notebook-cells-parsed
+                            (get-user-notebook-by-id id))))
+        (with-mock-session (make-session :user user)
+          (user-notebook-update-handler
+           (list (cons :id id)
+                 (cons "title" "Stable")
+                 (cons "body" body))))
+        (let ((cells-after
+               (recurya/db/user-notebooks:user-notebook-cells-parsed
+                (get-user-notebook-by-id id))))
+          (ok (= (length cells-before) (length cells-after)))
+          (ok (equalp cells-before cells-after)))))))
