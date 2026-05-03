@@ -106,6 +106,7 @@
                "recurya/db/users"
                "recurya/db/posts"
                "recurya/db/user-notebooks"
+               "recurya/db/courses"
                "recurya/db/learn"
                "recurya/db"
                ;; Models
@@ -165,6 +166,7 @@
                "recurya/tests/db/users"
                "recurya/tests/db/posts"
                "recurya/tests/db/user-notebooks"
+               "recurya/tests/db/courses"
                "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/oauth"

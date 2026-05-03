@@ -14,6 +14,7 @@
     :recurya/tests/db/users
     :recurya/tests/db/posts
     :recurya/tests/db/user-notebooks
+    :recurya/tests/db/courses
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
     :recurya/tests/web/routes
