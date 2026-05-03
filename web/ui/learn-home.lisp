@@ -46,8 +46,10 @@ h1 { font-size: 2rem; letter-spacing: -0.03em; text-align: center;
 .nb-card__progress { color: #4ade80; font-size: 0.85rem; margin-top: 0.5rem; }")
 
 (defun notebook-url-id (nb)
-  "Lowercase symbol-name of the notebook ID, for use in URLs."
-  (string-downcase (symbol-name (notebook-id nb))))
+  "Lowercase id of the notebook, for use in URLs.
+Accepts both keyword (legacy SICP) and string (UUID) ids."
+  (let ((id (notebook-id nb)))
+    (string-downcase (if (keywordp id) (symbol-name id) (string id)))))
 
 (defun render (notebooks &key user passed-counts)
   "Render the SICP course index page as a complete HTML document.

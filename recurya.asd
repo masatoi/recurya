@@ -23,6 +23,9 @@
                "dexador"
                ;; WardLisp language (external library)
                "wardlisp"
+               ;; Markdown + HTML sanitizer for user-authored notebooks
+               "3bmd"
+               "plump"
                ;; Game logic
                "recurya/game/puzzle"
                "recurya/game/puzzles/adjacent"
@@ -34,6 +37,7 @@
                "recurya/game/puzzles/registry"
                ;; Notebook
                "recurya/game/notebook"
+               "recurya/game/notebook-parser"
                "recurya/game/notebooks/sicp-1-1-1"
                "recurya/game/notebooks/sicp-1-1-2"
                "recurya/game/notebooks/sicp-1-1-3"
@@ -95,16 +99,19 @@
                "recurya/game/scenario"
                ;; Shared utilities
                "recurya/utils/common"
+               "recurya/utils/html-sanitize"
                ;; Database layer
                "recurya/db/core"
                "recurya/db/jsonb"
                "recurya/db/users"
                "recurya/db/posts"
+               "recurya/db/user-notebooks"
                "recurya/db/learn"
                "recurya/db"
                ;; Models
                "recurya/models/users"
                "recurya/models/post"
+               "recurya/models/user-notebook"
                "recurya/models/learn-progress"
                "recurya/models/learn-cell-code"
                "recurya/models/learn-submission"
@@ -119,8 +126,11 @@
                ;; Blog UI
                "recurya/web/ui/posts"
                "recurya/web/ui/post-form"
+               "recurya/web/ui/user-notebook-form"
+               "recurya/web/ui/user-notebooks"
                "recurya/web/ui/blog"
                "recurya/web/ui/blog-post"
+               "recurya/web/ui/notebook-list"
                "recurya/web/routes"
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
@@ -146,20 +156,24 @@
                "recurya/tests/support/db"
                ;; Utils tests
                "recurya/tests/utils/common"
+               "recurya/tests/utils/html-sanitize"
                ;; DB tests
                "recurya/tests/db/core"
                "recurya/tests/db/jsonb"
                "recurya/tests/db/users"
                "recurya/tests/db/posts"
+               "recurya/tests/db/user-notebooks"
                "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/oauth"
                "recurya/tests/web/routes"
+               "recurya/tests/web/user-notebook-routes"
                "recurya/tests/web/learn-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
+               "recurya/tests/game/notebook-parser"
                "recurya/tests/game/notebooks/sicp-1-1-1"
                "recurya/tests/game/notebooks/sicp-1-1-2"
                "recurya/tests/game/notebooks/sicp-1-1-3"

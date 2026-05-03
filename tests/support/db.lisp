@@ -44,6 +44,7 @@ This is idempotent and safe to call multiple times."
 Only deletes data matching test patterns to avoid affecting production data."
   (ignore-errors
     (execute! "DELETE FROM post")
+    (execute! "DELETE FROM user_notebook")
     (execute! "DELETE FROM learn_submission")
     (execute! "DELETE FROM learn_cell_code")
     (execute! "DELETE FROM learn_progress")

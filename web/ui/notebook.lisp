@@ -38,6 +38,11 @@
 (defparameter *user* nil
   "Current user plist (with :id, :name, etc.), or nil for anonymous.")
 
+(defparameter *run-cell-base* nil
+  "URL prefix used to build run-cell HTMX endpoints for the cell currently
+being rendered. Set by `render'. The full URL is
+\"<base>/cells/<index>/run\".")
+
 (defparameter *chapter-titles*
   '(("1" . "第1章 手続きによる抽象化")
     ("2" . "第2章 データによる抽象化")
@@ -143,8 +148,18 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 .user-banner strong { color: #f8fafc; }")
 
 (defun notebook-url-id (notebook)
-  "Lowercase symbol-name of the notebook ID, for use in URLs."
-  (string-downcase (symbol-name (notebook-id notebook))))
+  "Lowercase id of the notebook, for use in URLs.
+Accepts both keyword (legacy SICP) and string (UUID) ids."
+  (let ((id (notebook-id notebook)))
+    (string-downcase (if (keywordp id) (symbol-name id) (string id)))))
+
+(defun %cell-id->string (id)
+  "Stringify a cell or notebook id, accepting both keyword (legacy SICP)
+and string (UUID) representations. NIL becomes \"\"."
+  (cond ((null id) "")
+        ((keywordp id) (string-downcase (symbol-name id)))
+        ((symbolp id) (string-downcase (symbol-name id)))
+        (t (string id))))
 
 (defun %chapter-prefix (notebook)
   "Return the chapter number string (e.g. '1') from notebook-chapter '1.1.1'."
@@ -216,35 +231,35 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
   (with-html-string (spinneret:interpret-html-tree tree)))
 
 (defun render-prose-cell (cell)
-  (with-html
-    (:div :class "cell cell--prose"
-          (:raw (render-prose-tree (cell-body cell))))
-    ;; Positional placeholder so codes[] on the wire stays index-aligned
-    ;; with notebook-cells. The value is always empty; prose cells carry
-    ;; no user code.
-    (:input :type "hidden"
-            :class "notebook-code"
-            :name "codes[]"
-            :value "")))
+  (let ((body (cell-body cell)))
+    (with-html
+      (:div :class "cell cell--prose"
+            (cond
+              ((stringp body)
+               (:raw (recurya/game/notebook-parser:render-cell-prose-html body)))
+              (t
+               (:raw (render-prose-tree body)))))
+      (:input :type "hidden" :class "notebook-code" :name "codes[]" :value ""))))
 
 (defun render-code-cell (cell index nb-id exercise-p)
+  (declare (ignore nb-id))
   (let* ((result-id (format nil "cell-~D-result" index))
          (id-suffix (format nil "-~D" index))
-         (cid-str (string-downcase (symbol-name (cell-id cell))))
+         (cid-str (%cell-id->string (cell-id cell)))
          (saved
-          (and *saved-codes*
-               (cdr (assoc cid-str *saved-codes* :test #'string=))))
+           (and *saved-codes*
+                (cdr (assoc cid-str *saved-codes* :test #'string=))))
          (original-code (or (cell-body cell) ""))
          (initial-code (or saved original-code ""))
          (passed-p
-          (and exercise-p (member cid-str *passed-cells* :test #'string=))))
+           (and exercise-p (member cid-str *passed-cells* :test #'string=)))
+         (run-url (format nil "~A/cells/~D/run" (or *run-cell-base* "") index)))
     (with-html
       (:div :class
             (if exercise-p
                 "cell cell--code cell--exercise"
                 "cell cell--code")
-            :data-cell-id cid-str
-            :data-original-code original-code
+            :data-cell-id cid-str :data-original-code original-code
             :data-textarea-id (format nil "editor-source~A" id-suffix)
             (when exercise-p (:div :class "cell__desc" (cell-description cell)))
             (when passed-p (:span :class "badge-pass" "✓ done"))
@@ -252,8 +267,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
              (editor-textarea "codes[]" initial-code :id-suffix id-suffix
                               :textarea-class "notebook-code"))
             (:button :type "button" :class "btn-run"
-                     :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
-                                      nb-id index)
+                     :hx-post run-url
                      :hx-target (format nil "#~A" result-id)
                      :hx-include ".notebook-code"
                      :hx-swap "innerHTML"
@@ -269,56 +283,71 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
     (:code-eval     (render-code-cell cell index nb-id nil))
     (:code-exercise (render-code-cell cell index nb-id t))))
 
-(defun render (notebook &key user saved-codes passed-cells)
+(defun render (notebook &key user saved-codes passed-cells
+                        (sidebar-notebooks t)
+                        run-cell-base)
   "Render the full notebook page as a complete HTML document.
-   USER is the logged-in user plist or nil.
-   SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
-   PASSED-CELLS is a list of cell-id strings this user has passed."
-  (let ((*saved-codes* saved-codes) (*passed-cells* passed-cells) (*user* user))
+USER is the logged-in user plist or nil.
+SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
+PASSED-CELLS is a list of cell-id strings this user has passed.
+SIDEBAR-NOTEBOOKS controls the left TOC: T (default) uses (all-notebooks),
+NIL omits the sidebar entirely (used for stand-alone user-authored
+notebooks at /n/:slug), or pass an explicit list to use a custom set.
+RUN-CELL-BASE is the URL prefix for run-cell HTMX endpoints. Defaults
+to the SICP route /wardlisp/learn/<id> when omitted."
+  (let* ((*saved-codes* saved-codes)
+         (*passed-cells* passed-cells)
+         (*user* user)
+         (*run-cell-base*
+           (or run-cell-base
+               (format nil "/wardlisp/learn/~A" (notebook-url-id notebook))))
+         (sidebar (cond ((null sidebar-notebooks) nil)
+                        ((eq sidebar-notebooks t) (all-notebooks))
+                        (t sidebar-notebooks))))
     (with-html-string
       (:doctype)
       (:html
        (:head (:meta :charset "utf-8")
-        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-        (:title
-         (format nil "~A — SICP ~A" (notebook-title notebook)
-                 (notebook-chapter notebook)))
-        (:style (:raw *styles*))
-        (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
-         "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-         :crossorigin "anonymous")
-        (:raw (editor-head-tags)))
+              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
+              (:title
+                (format nil "~A — SICP ~A" (notebook-title notebook)
+                        (notebook-chapter notebook)))
+              (:style (:raw *styles*))
+              (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
+                       "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+                       :crossorigin "anonymous")
+              (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
-        (:div :class "layout"
-              (render-sidebar (notebook-id notebook) (all-notebooks))
-              (:main
-               (cond
-                 (*user*
-                  (:div :class "user-banner"
-                        "ログイン中: "
-                        (:strong (or (getf *user* :name) "User"))
-                        " · " (:form :method "post" :action "/logout"
+              (:div :class "layout"
+                    (when sidebar
+                      (render-sidebar (notebook-id notebook) sidebar))
+                    (:main
+                     (cond
+                       (*user*
+                        (:div :class "user-banner" "ログイン中: "
+                              (:strong (or (getf *user* :name) "User")) " · "
+                              (:form :method "post" :action "/logout"
                                      :style "display:inline;"
                                      (:button :type "submit"
                                               :class "user-banner__logout"
                                               :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
                                               "ログアウト"))))
-                 (t
-                  (:div :class "user-banner anon"
-                        "進捗を端末を超えて保存するには "
-                        (:a :href "/login" "ログイン")
-                        " してください。")))
-               (:div :class "breadcrumb"
-                     (:a :href "/wardlisp/" "WardLisp") " > "
-                     (:a :href "/wardlisp/learn" "SICPコース") " > "
-                     (notebook-chapter notebook))
-               (:h1 (notebook-title notebook))
-               (:p :class "summary" (notebook-summary notebook))
-               (loop for cell in (notebook-cells notebook)
-                     for i from 0
-                     do (render-cell cell i (notebook-url-id notebook)))))
-        (:script :src "/static/js/learn.js"))))))
+                       (t
+                        (:div :class "user-banner anon" "進捗を端末を超えて保存するには "
+                              (:a :href "/login" "ログイン") " してください。")))
+                     (when (and (notebook-chapter notebook)
+                                (plusp (length (notebook-chapter notebook))))
+                       (:div :class "breadcrumb"
+                             (:a :href "/wardlisp/" "WardLisp") " > "
+                             (:a :href "/wardlisp/learn" "SICPコース") " > "
+                             (notebook-chapter notebook)))
+                     (:h1 (notebook-title notebook))
+                     (:p :class "summary" (notebook-summary notebook))
+                     (loop for cell in (notebook-cells notebook)
+                           for i from 0
+                           do (render-cell cell i (notebook-url-id notebook)))))
+              (:script :src "/static/js/learn.js"))))))
 
 (defun render-test-results (results)
   (spinneret:with-html
@@ -359,7 +388,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
              (:pre :class "result-error"
                    (if origin
                        (format nil "セル「~A」でエラー: ~A"
-                               (string-downcase (symbol-name origin))
+                               (%cell-id->string origin)
                                (notebook-cell-result-error-message result))
                        (notebook-cell-result-error-message result)))
              (:div :class "error-hint"

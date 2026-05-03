@@ -1,0 +1,45 @@
+;;;; tests/utils/html-sanitize.lisp --- Tests for HTML sanitizer.
+
+(defpackage #:recurya/tests/utils/html-sanitize
+  (:use #:cl #:rove)
+  (:import-from #:recurya/utils/html-sanitize #:sanitize-html))
+
+(in-package #:recurya/tests/utils/html-sanitize)
+
+(deftest passes-allowed-tags
+  (testing "p, strong, em, code, a remain"
+    (ok (search "<p>"        (sanitize-html "<p>hello</p>")))
+    (ok (search "<strong>"   (sanitize-html "<strong>x</strong>")))
+    (ok (search "<a href"    (sanitize-html "<a href=\"https://example.com\">x</a>")))))
+
+(deftest strips-script-and-on-handlers
+  (testing "<script> is removed"
+    (ng (search "<script"    (sanitize-html "<p>ok</p><script>alert(1)</script>"))))
+  (testing "onclick attribute is removed"
+    (ng (search "onclick"    (sanitize-html "<a href=\"x\" onclick=\"a()\">x</a>")))))
+
+(deftest strips-javascript-href
+  (testing "javascript: scheme is removed from a@href"
+    (let ((out (sanitize-html "<a href=\"javascript:alert(1)\">x</a>")))
+      (ng (search "javascript:" out)))))
+
+(deftest strips-iframe-and-style
+  (testing "<iframe> and <style> are removed"
+    (ng (search "<iframe" (sanitize-html "<iframe src=\"x\"></iframe>")))
+    (ng (search "<style"  (sanitize-html "<style>body{}</style>")))))
+
+(deftest strips-data-uri-href
+  (testing "data: scheme is removed from a@href"
+    (let ((out (sanitize-html "<a href=\"data:text/html,<script>1</script>\">x</a>")))
+      (ng (search "data:" out)))))
+
+(deftest strips-data-uri-img-src
+  (testing "data: scheme is removed from img@src (alt may remain)"
+    (let ((out (sanitize-html "<img src=\"data:image/png;base64,abc\" alt=\"x\">")))
+      (ng (search "data:" out)))))
+
+(deftest strips-entity-encoded-javascript
+  (testing "entity-encoded javascript: scheme is removed from a@href"
+    (let ((out (sanitize-html "<a href=\"javascript&#58;alert(1)\">x</a>")))
+      (ng (search "alert" out))
+      (ng (search "javascript" out)))))

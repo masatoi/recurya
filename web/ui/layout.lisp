@@ -100,25 +100,30 @@
 
 (defun header (user)
   "Generate the application header HTML."
-  (let ((display (get-user-display user))
-        (initial (get-user-initial user)))
-    (spinneret:with-html-string
+  (let ((display (get-user-display user)) (initial (get-user-initial user)))
+    (with-html-string
       (:header :class "app-header"
-        (:div :class "app-header__inner"
-          (:div :class "app-header__left"
-            (:a :class "app-header__brand" :href "/posts" "Recurya")
-            (:nav :class "app-header__nav"
-              (:a :class "app-header__link" :href "/blog" "Blog")
-              (:a :class "app-header__link" :href "/posts" "Posts")))
-          (:details :class "app-header__menu" :data-testid "app-header-menu"
-            (:summary :class "app-header__summary"
-              (:span :class "app-header__avatar" initial)
-              (:span :class "app-header__label" display)
-              (:span :class "app-header__chevron" "v"))
-            (:div :class "app-header__panel"
-              (:a :class "app-header__action" :href "/account" "Account settings")
-              (:form :method "post" :action "/logout"
-                (:button :type "submit" :class "app-header__action" "Log out")))))))))
+               (:div :class "app-header__inner"
+                     (:div :class "app-header__left"
+                           (:a :class "app-header__brand" :href "/posts" "Recurya")
+                           (:nav :class "app-header__nav"
+                                 (:a :class "app-header__link" :href "/blog" "Blog")
+                                 (:a :class "app-header__link" :href "/notebooks" "Notebooks")
+                                 (when user
+                                   (:a :class "app-header__link" :href "/notebooks/me" "My Notebooks"))
+                                 (:a :class "app-header__link" :href "/posts" "Posts")))
+                     (:details :class "app-header__menu" :data-testid "app-header-menu"
+                               (:summary :class "app-header__summary"
+                                         (:span :class "app-header__avatar" initial)
+                                         (:span :class "app-header__label" display)
+                                         (:span :class "app-header__chevron" "v"))
+                               (:div :class "app-header__panel"
+                                     (:a :class "app-header__action" :href "/account"
+                                         "Account settings")
+                                     (:form :method "post" :action "/logout"
+                                            (:button :type "submit"
+                                                     :class "app-header__action"
+                                                     "Log out")))))))))
 
 (defun page-shell (&key title styles user body-content)
   "Generate a complete HTML page shell with optional header for authenticated users.

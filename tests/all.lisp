@@ -8,13 +8,16 @@
 
 (defparameter *test-packages*
   '(:recurya/tests/utils/common
+    :recurya/tests/utils/html-sanitize
     :recurya/tests/db/core
     :recurya/tests/db/jsonb
     :recurya/tests/db/users
     :recurya/tests/db/posts
+    :recurya/tests/db/user-notebooks
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
     :recurya/tests/web/routes
+    :recurya/tests/web/user-notebook-routes
     :recurya/tests/web/learn-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
@@ -22,6 +25,7 @@
     :recurya/tests/game/puzzle
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
+    :recurya/tests/game/notebook-parser
     :recurya/tests/game/notebooks/sicp-1-1-1
     :recurya/tests/game/notebooks/sicp-1-1-2
     :recurya/tests/game/notebooks/sicp-1-1-3
