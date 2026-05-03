@@ -88,6 +88,12 @@
                 #:count-course-notebooks
                 #:list-course-notebooks
                 #:add-notebook-to-course!
+                #:remove-notebook-from-course!
+                #:move-notebook-up!
+                #:move-notebook-down!
+                #:get-course-notebook
+                #:course-notebook-id
+                #:course-notebook-course-id
                 #:course-notebook-position
                 #:course-notebook-notebook
                 #:course-notebook-notebook-id)
@@ -139,7 +145,10 @@
            #:course-toggle-status-handler
            #:course-confirm-delete-handler
            #:course-delete-handler
-           #:course-add-notebook-handler))
+           #:course-add-notebook-handler
+           #:course-notebook-move-up-handler
+           #:course-notebook-move-down-handler
+           #:course-notebook-remove-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -791,10 +800,16 @@ field is the number of notebooks attached to the course via course_notebook."
                (redirect "/courses/me"))))))))
 
 (defun course-notebook-row->plist (cn)
-  "Convert a COURSE-NOTEBOOK DAO into a plist (:id :title :position)
-where :id is the underlying user-notebook UUID string."
+  "Convert a COURSE-NOTEBOOK DAO into a plist
+\(:id :cn-id :title :position) where:
+
+  :id      - the underlying user-notebook UUID string (used by the
+             eligible-notebooks dedup logic).
+  :cn-id   - the course-notebook BIGSERIAL primary key (used by the
+             reorder/remove HTMX endpoints)."
   (let ((nb (course-notebook-notebook cn)))
     (list :id (princ-to-string (course-notebook-notebook-id cn))
+          :cn-id (course-notebook-id cn)
           :title (when nb (user-notebook-title nb))
           :position (course-notebook-position cn))))
 
@@ -1018,6 +1033,115 @@ flash message in the rendered list."
                       (recurya/web/ui/course-form:render-course-notebooks-list
                        (course->plist c) course-notebooks eligible
                        :message message))))))))))
+
+(defun %render-course-notebook-list-fragment (course user-id &key message)
+  "Helper: re-render the #course-notebooks-list fragment for COURSE owned by
+USER-ID. Returns an HTML response. Used by add/move/remove handlers."
+  (let* ((cid (course-id course))
+         (rows (list-course-notebooks cid))
+         (course-notebooks (mapcar #'course-notebook-row->plist rows))
+         (attached-ids (mapcar (lambda (p) (getf p :id)) course-notebooks))
+         (eligible (course-eligible-notebooks user-id attached-ids)))
+    (html-response
+     (recurya/web/ui/course-form:render-course-notebooks-list
+      (course->plist course) course-notebooks eligible :message message))))
+
+(defun %lookup-course-notebook-row (course-id cn-id-raw)
+  "Resolve the course-notebook join row identified by CN-ID-RAW and verify it
+belongs to COURSE-ID. Returns the row, or NIL on parse failure / mismatch /
+missing row."
+  (let ((cn-id (typecase cn-id-raw
+                 (string (parse-integer cn-id-raw :junk-allowed t))
+                 (integer cn-id-raw)
+                 (t nil))))
+    (when cn-id
+      (let ((row (get-course-notebook cn-id)))
+        (when (and row
+                   (equal (princ-to-string (course-notebook-course-id row))
+                          (princ-to-string course-id)))
+          row)))))
+
+(defun course-notebook-move-up-handler (params)
+  "Handle POST /courses/:id/notebooks/:cn-id/up - move a course-notebook
+one position up.
+
+Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
+fragment. No-op when already at position 0."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond
+            ((null c) (html-response "Not found" :status 404))
+            ((not (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let* ((cn-id-raw (get-path-param params :cn-id))
+                    (row (%lookup-course-notebook-row (course-id c) cn-id-raw)))
+               (cond
+                 ((null row) (html-response "Not found" :status 404))
+                 (t
+                  (move-notebook-up! (course-notebook-id row))
+                  (%render-course-notebook-list-fragment
+                   c (getf user :id)))))))))))
+
+(defun course-notebook-move-down-handler (params)
+  "Handle POST /courses/:id/notebooks/:cn-id/down - move a course-notebook
+one position down.
+
+Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
+fragment. No-op when already at the last position."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond
+            ((null c) (html-response "Not found" :status 404))
+            ((not (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let* ((cn-id-raw (get-path-param params :cn-id))
+                    (row (%lookup-course-notebook-row (course-id c) cn-id-raw)))
+               (cond
+                 ((null row) (html-response "Not found" :status 404))
+                 (t
+                  (move-notebook-down! (course-notebook-id row))
+                  (%render-course-notebook-list-fragment
+                   c (getf user :id)))))))))))
+
+(defun course-notebook-remove-handler (params)
+  "Handle POST /courses/:id/notebooks/:cn-id/remove - detach a notebook
+from a course.
+
+Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
+fragment with the row gone. We re-render the entire list (rather than
+just the single row) for consistency with up/down — keeping the eligible
+notebooks dropdown in sync."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond
+            ((null c) (html-response "Not found" :status 404))
+            ((not (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let* ((cn-id-raw (get-path-param params :cn-id))
+                    (row (%lookup-course-notebook-row (course-id c) cn-id-raw)))
+               (cond
+                 ((null row) (html-response "Not found" :status 404))
+                 (t
+                  (remove-notebook-from-course!
+                   (course-id c)
+                   (course-notebook-notebook-id row))
+                  (%render-course-notebook-list-fragment
+                   c (getf user :id)))))))))))
 
 (defun render-user-notebook-status-pill (id status)
   "Render the user-notebook status pill HTML fragment for HTMX swap."
@@ -1528,6 +1652,12 @@ without restarting the server."
           (make-dynamic-handler 'course-delete-handler))
   (setf (ningle/app:route app "/courses/:id/notebooks" :method :post)
           (make-dynamic-handler 'course-add-notebook-handler))
+  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/up" :method :post)
+          (make-dynamic-handler 'course-notebook-move-up-handler))
+  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/down" :method :post)
+          (make-dynamic-handler 'course-notebook-move-down-handler))
+  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/remove" :method :post)
+          (make-dynamic-handler 'course-notebook-remove-handler))
   ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))

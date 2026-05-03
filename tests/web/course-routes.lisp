@@ -15,14 +15,20 @@
                 #:course-toggle-status-handler
                 #:course-confirm-delete-handler
                 #:course-delete-handler
-                #:course-add-notebook-handler)
+                #:course-add-notebook-handler
+                #:course-notebook-move-up-handler
+                #:course-notebook-move-down-handler
+                #:course-notebook-remove-handler)
   (:import-from #:recurya/db/user-notebooks
                 #:create-user-notebook!
                 #:user-notebook-id
                 #:user-notebook-title)
   (:import-from #:recurya/db/course-notebooks
                 #:add-notebook-to-course!
-                #:list-course-notebooks)
+                #:list-course-notebooks
+                #:course-notebook-id
+                #:course-notebook-notebook-id
+                #:course-notebook-position)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -447,3 +453,184 @@ hi"
           (ok (search "already attached" body))
           (let ((rows (list-course-notebooks course-uuid)))
             (ok (= 1 (length rows)))))))))
+
+(defun %attach-n-notebooks (n &key user)
+  "Create COURSE owned by USER and attach N user-notebooks at positions 0..N-1.
+
+Returns (values course-id-uuid course-id-str (list cn-id ...) (list nb-id-str ...))
+where the lists are aligned with the attached positions."
+  (let* ((dao (get-user-by-id (getf user :id)))
+         (c (create-course! :title "Course" :author dao))
+         (course-uuid (course-id c))
+         (course-id-str (princ-to-string course-uuid))
+         (nbs (loop for i from 0 below n
+                    collect (create-user-notebook!
+                             :title (format nil "N~D" i)
+                             :body-md (format nil "===prose===~%body~D" i)
+                             :cells nil
+                             :status "published"
+                             :published-at (local-time:now)
+                             :author dao))))
+    (loop for nb in nbs
+          for i from 0
+          do (add-notebook-to-course! course-uuid (user-notebook-id nb)
+                                      :position i))
+    (let* ((rows (list-course-notebooks course-uuid))
+           (cn-ids (mapcar #'course-notebook-id rows))
+           (nb-id-strs
+             (mapcar (lambda (nb) (princ-to-string (user-notebook-id nb))) nbs)))
+      (values course-uuid course-id-str cn-ids nb-id-strs))))
+
+(deftest course-notebook-move-up-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-notebook-move-up-handler
+                '((:id . "00000000-0000-0000-0000-000000000000")
+                  (:cn-id . "1")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-notebook-move-up-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 2 :user owner)
+        (declare (ignore course-uuid nb-ids))
+        (with-mock-session (make-session :user other)
+          (let ((res (course-notebook-move-up-handler
+                      (list (cons :id course-id-str)
+                            (cons :cn-id (princ-to-string (second cn-ids)))))))
+            (ok (= 403 (response-status res)))))))))
+
+(deftest course-notebook-move-up-swaps-positions
+  (with-test-db
+    (let ((user (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 3 :user user)
+        (declare (ignore nb-ids))
+        (with-mock-session (make-session :user user)
+          ;; Move position 2 (third notebook) up -> ends up at position 1.
+          (let* ((target (third cn-ids))
+                 (res (course-notebook-move-up-handler
+                       (list (cons :id course-id-str)
+                             (cons :cn-id (princ-to-string target))))))
+            (ok (= 200 (response-status res)))
+            (ok (search "course-notebooks-list" (first (response-body res))))
+            (let* ((rows (list-course-notebooks course-uuid))
+                   (positions
+                    (mapcar (lambda (r)
+                              (cons (course-notebook-id r)
+                                    (course-notebook-position r)))
+                            rows)))
+              (ok (= 0 (cdr (assoc (first cn-ids) positions))))
+              (ok (= 2 (cdr (assoc (second cn-ids) positions))))
+              (ok (= 1 (cdr (assoc (third cn-ids) positions)))))))))))
+
+(deftest course-notebook-move-up-noop-at-top
+  (with-test-db
+    (let ((user (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 3 :user user)
+        (declare (ignore nb-ids))
+        (with-mock-session (make-session :user user)
+          (let ((res (course-notebook-move-up-handler
+                      (list (cons :id course-id-str)
+                            (cons :cn-id (princ-to-string (first cn-ids)))))))
+            (ok (= 200 (response-status res)))
+            (let* ((rows (list-course-notebooks course-uuid))
+                   (positions
+                    (mapcar (lambda (r)
+                              (cons (course-notebook-id r)
+                                    (course-notebook-position r)))
+                            rows)))
+              (ok (= 0 (cdr (assoc (first cn-ids) positions))))
+              (ok (= 1 (cdr (assoc (second cn-ids) positions))))
+              (ok (= 2 (cdr (assoc (third cn-ids) positions)))))))))))
+
+(deftest course-notebook-move-down-swaps-positions
+  (with-test-db
+    (let ((user (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 3 :user user)
+        (declare (ignore nb-ids))
+        (with-mock-session (make-session :user user)
+          ;; Move position 0 (first notebook) down -> ends up at position 1.
+          (let* ((target (first cn-ids))
+                 (res (course-notebook-move-down-handler
+                       (list (cons :id course-id-str)
+                             (cons :cn-id (princ-to-string target))))))
+            (ok (= 200 (response-status res)))
+            (ok (search "course-notebooks-list" (first (response-body res))))
+            (let* ((rows (list-course-notebooks course-uuid))
+                   (positions
+                    (mapcar (lambda (r)
+                              (cons (course-notebook-id r)
+                                    (course-notebook-position r)))
+                            rows)))
+              (ok (= 1 (cdr (assoc (first cn-ids) positions))))
+              (ok (= 0 (cdr (assoc (second cn-ids) positions))))
+              (ok (= 2 (cdr (assoc (third cn-ids) positions)))))))))))
+
+(deftest course-notebook-move-down-noop-at-bottom
+  (with-test-db
+    (let ((user (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 3 :user user)
+        (declare (ignore nb-ids))
+        (with-mock-session (make-session :user user)
+          (let ((res (course-notebook-move-down-handler
+                      (list (cons :id course-id-str)
+                            (cons :cn-id (princ-to-string (third cn-ids)))))))
+            (ok (= 200 (response-status res)))
+            (let* ((rows (list-course-notebooks course-uuid))
+                   (positions
+                    (mapcar (lambda (r)
+                              (cons (course-notebook-id r)
+                                    (course-notebook-position r)))
+                            rows)))
+              (ok (= 0 (cdr (assoc (first cn-ids) positions))))
+              (ok (= 1 (cdr (assoc (second cn-ids) positions))))
+              (ok (= 2 (cdr (assoc (third cn-ids) positions)))))))))))
+
+(deftest course-notebook-remove-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-notebook-remove-handler
+                '((:id . "00000000-0000-0000-0000-000000000000")
+                  (:cn-id . "1")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-notebook-remove-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 1 :user owner)
+        (declare (ignore course-uuid nb-ids))
+        (with-mock-session (make-session :user other)
+          (let ((res (course-notebook-remove-handler
+                      (list (cons :id course-id-str)
+                            (cons :cn-id
+                                  (princ-to-string (first cn-ids)))))))
+            (ok (= 403 (response-status res)))))))))
+
+(deftest course-notebook-remove-deletes-and-rerenders
+  (with-test-db
+    (let ((user (mk-user)))
+      (multiple-value-bind (course-uuid course-id-str cn-ids nb-ids)
+          (%attach-n-notebooks 2 :user user)
+        (declare (ignore nb-ids))
+        (with-mock-session (make-session :user user)
+          (let* ((target (first cn-ids))
+                 (res (course-notebook-remove-handler
+                       (list (cons :id course-id-str)
+                             (cons :cn-id (princ-to-string target)))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "course-notebooks-list" body))
+            ;; N0 is gone from the attached <li> rows but reappears as an
+            ;; eligible <option>. Check it no longer carries an nb-title span.
+            (ng (search "<span class=nb-title>N0" body))
+            (ok (search "<span class=nb-title>N1" body))
+            (let ((rows (list-course-notebooks course-uuid)))
+              (ok (= 1 (length rows)))
+              (ok (= (second cn-ids)
+                     (course-notebook-id (first rows)))))))))))

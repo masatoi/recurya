@@ -60,10 +60,17 @@ outerHTML swap.
 Arguments:
   COURSE              - Course plist with at least :id.
   COURSE-NOTEBOOKS    - List of plists for already-attached notebooks. Each
-                        plist has :id (notebook UUID), :title, :position.
+                        plist has :id (notebook UUID), :cn-id (BIGSERIAL
+                        join row id), :title, :position.
   ELIGIBLE-NOTEBOOKS  - List of plists for notebooks the user can still add.
                         Each plist has :id (notebook UUID) and :title.
-  MESSAGE             - Optional flash message rendered above the list."
+  MESSAGE             - Optional flash message rendered above the list.
+
+Each row's Up/Down/Remove buttons fire HTMX POSTs against
+/courses/<id>/notebooks/<cn-id>/{up,down,remove} and replace this entire
+fragment via outerHTML swap. Re-rendering the whole list (rather than
+scoping Remove to a single <li>) keeps the eligible-notebooks dropdown
+in sync with the attached set after every mutation."
   (let ((course-id (getf course :id)))
     (spinneret:with-html-string
       (:div :id "course-notebooks-list"
@@ -78,21 +85,38 @@ Arguments:
               (t
                (:ul :class "course-notebooks-list"
                     (dolist (nb course-notebooks)
-                      (:li :data-notebook-id (getf nb :id)
-                           (:span :class "nb-title" (getf nb :title))
-                           (:span :class "nb-controls"
-                                  (:button :type "button"
-                                           :class "btn-secondary"
-                                           :disabled t
-                                           "Up")
-                                  (:button :type "button"
-                                           :class "btn-secondary"
-                                           :disabled t
-                                           "Down")
-                                  (:button :type "button"
-                                           :class "btn-secondary"
-                                           :disabled t
-                                           "Remove")))))))
+                      (let* ((cn-id (getf nb :cn-id))
+                             (up-url
+                              (format nil "/courses/~A/notebooks/~A/up"
+                                      course-id cn-id))
+                             (down-url
+                              (format nil "/courses/~A/notebooks/~A/down"
+                                      course-id cn-id))
+                             (remove-url
+                              (format nil "/courses/~A/notebooks/~A/remove"
+                                      course-id cn-id)))
+                        (:li :data-notebook-id (getf nb :id)
+                             :data-cn-id cn-id
+                             (:span :class "nb-title" (getf nb :title))
+                             (:span :class "nb-controls"
+                                    (:button :type "button"
+                                             :class "btn-secondary"
+                                             :hx-post up-url
+                                             :hx-target "#course-notebooks-list"
+                                             :hx-swap "outerHTML"
+                                             "Up")
+                                    (:button :type "button"
+                                             :class "btn-secondary"
+                                             :hx-post down-url
+                                             :hx-target "#course-notebooks-list"
+                                             :hx-swap "outerHTML"
+                                             "Down")
+                                    (:button :type "button"
+                                             :class "btn-secondary"
+                                             :hx-post remove-url
+                                             :hx-target "#course-notebooks-list"
+                                             :hx-swap "outerHTML"
+                                             "Remove"))))))))
             (cond
               ((null eligible-notebooks)
                (:p :class "course-notebooks-empty"
@@ -109,8 +133,7 @@ Arguments:
                                      (dolist (nb eligible-notebooks)
                                        (:option :value (getf nb :id)
                                                 (getf nb :title)))))
-                      (:button :type "submit" :class "btn-primary"
-                               "Add"))))))))
+                      (:button :type "submit" :class "btn-primary" "Add"))))))))
 
 (defun render (&key user course message errors course-notebooks
                  eligible-notebooks)
