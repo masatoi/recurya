@@ -555,10 +555,43 @@ mine"
        :title "Open" :slug "open" :body-md "===prose===
 hello"
        :cells '() :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let ((res (public-user-notebook-handler '((:slug . "open")))))
           (ok (= 200 (response-status res))))))))
+
+(deftest public-page-published-private-404-for-others
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Private Pub" :slug "priv-pub" :body-md "===prose===
+shh"
+       :cells '() :author owner-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-handler '((:slug . "priv-pub")))))
+          (ok (= 404 (response-status res)))))
+      (with-mock-session (make-session)
+        (let ((res (public-user-notebook-handler '((:slug . "priv-pub")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest public-page-published-private-200-for-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Owner Private Pub" :slug "owner-priv-pub" :body-md "===prose===
+mine"
+       :cells '() :author owner-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user owner)
+        (let* ((res (public-user-notebook-handler
+                     '((:slug . "owner-priv-pub"))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Owner Private Pub" body)))))))
 
 (deftest public-page-renders-code-cell-with-correct-run-url
   (testing "code cells use /n/<slug>/cells/<i>/run, not the SICP route"
@@ -575,7 +608,7 @@ hi
         (create-user-notebook!
          :title "Code" :slug "with-code" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler '((:slug . "with-code"))))
                  (html (first (response-body res))))
@@ -596,7 +629,7 @@ hi
         (create-user-notebook!
          :title "Prose" :slug "prose-md" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler '((:slug . "prose-md"))))
                  (html (first (response-body res))))
@@ -622,7 +655,7 @@ hi
         (create-user-notebook!
          :title "Solo" :slug "with-solution" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler
                        '((:slug . "with-solution"))))
@@ -723,6 +756,7 @@ and the breadcrumb shows Notebooks > Course Title > Notebook Title."
 hi"
                   :cells nil
                   :status "published"
+                  :visibility "public"
                   :published-at (local-time:now)
                   :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb)
@@ -753,18 +787,21 @@ preserving the ?course=<slug> query string."
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Middle" :slug "middle"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb3 (create-user-notebook!
                    :title "Last" :slug "last"
                    :body-md "===prose===
 c"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -795,12 +832,14 @@ c"
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Second" :slug "second"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -830,12 +869,14 @@ b"
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Second" :slug "second"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -861,6 +902,7 @@ b"
                   :body-md "===prose===
 hi"
                   :cells nil :status "published"
+                  :visibility "public"
                   :published-at (local-time:now) :author dao)))
         (declare (ignore nb))
         (with-mock-session (make-session)

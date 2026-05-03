@@ -1314,15 +1314,11 @@ course (preserving the ?course=<slug> query string)."
   (let* ((slug (get-path-param params :slug))
          (nb-row (and slug (get-user-notebook-by-slug slug)))
          (user (get-current-user))
-         (uid (and user (getf user :id)))
-         (owner-p
-          (and nb-row uid
-               (equal (princ-to-string (user-notebook-author-id nb-row))
-                      (princ-to-string uid)))))
+         (uid (and user (getf user :id))))
     (cond
       ((null nb-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
-      ((and (string= "draft" (user-notebook-status nb-row)) (not owner-p))
+      ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
        (let* ((notebook (user-notebook-row->notebook-struct nb-row))
