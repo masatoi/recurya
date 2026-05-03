@@ -166,6 +166,7 @@
                ;; Web tests
                "recurya/tests/web/oauth"
                "recurya/tests/web/routes"
+               "recurya/tests/web/user-notebook-routes"
                "recurya/tests/web/learn-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"

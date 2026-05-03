@@ -18,11 +18,11 @@
   (:import-from #:recurya/web/ui/posts)
   (:import-from #:recurya/web/ui/post-form)
   (:import-from #:recurya/web/ui/blog)
-  (:import-from #:spinneret
-                #:with-html-string)
-  (:import-from #:lack/request
-                #:request-env)
+  (:import-from #:spinneret #:with-html-string)
+  (:import-from #:lack/request #:request-env)
   (:import-from #:recurya/web/ui/blog-post)
+  (:import-from #:recurya/web/ui/user-notebooks)
+  (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/db/posts
                 #:create-post!
                 #:get-post-by-id
@@ -43,11 +43,51 @@
                 #:post-author-id
                 #:post-created-at
                 #:post-updated-at)
+  (:import-from #:recurya/db/user-notebooks
+                #:create-user-notebook!
+                #:get-user-notebook-by-id
+                #:get-user-notebook-by-slug
+                #:update-user-notebook!
+                #:delete-user-notebook!
+                #:list-user-notebooks
+                #:count-user-notebooks
+                #:user-notebook-id
+                #:user-notebook-slug
+                #:user-notebook-title
+                #:user-notebook-summary
+                #:user-notebook-body-md
+                #:user-notebook-cells
+                #:user-notebook-status
+                #:user-notebook-published-at
+                #:user-notebook-author
+                #:user-notebook-author-id
+                #:user-notebook-created-at
+                #:user-notebook-updated-at)
+  (:import-from #:recurya/game/notebook-parser
+                #:parse-notebook-body)
+  (:import-from #:recurya/game/notebook
+                #:cell-id
+                #:cell-kind
+                #:cell-body
+                #:cell-description
+                #:cell-test-cases)
+  (:import-from #:recurya/game/puzzle
+                #:test-case-input
+                #:test-case-expected
+                #:test-case-description)
   (:export #:setup-routes
            #:account-confirm-delete-handler
            #:account-delete-handler
            #:post-confirm-delete-handler
-           #:post-delete-handler))
+           #:post-delete-handler
+           #:user-notebooks-handler
+           #:user-notebook-new-handler
+           #:user-notebook-create-handler
+           #:user-notebook-edit-handler
+           #:user-notebook-update-handler
+           #:user-notebook-toggle-status-handler
+           #:user-notebook-confirm-delete-handler
+           #:user-notebook-delete-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -395,6 +435,209 @@ Includes :author-name extracted from the FK author."
                                   :published-at published-at)
                     (redirect "/posts")))))))))))
 
+(defun cell->jsonb-plist (cell)
+  "Convert a cell struct into a plist that JSONB serialization can handle.
+The shape preserves the cell id so it survives roundtrips through the
+notebook body markdown and back."
+  (list :cell-id     (or (cell-id cell) "")
+        :kind        (string-downcase (symbol-name (cell-kind cell)))
+        :body        (or (cell-body cell) "")
+        :description (cell-description cell)
+        :test-cases  (mapcar (lambda (tc)
+                               (list :input       (test-case-input tc)
+                                     :expected    (test-case-expected tc)
+                                     :description (test-case-description tc)))
+                             (cell-test-cases cell))))
+
+(defun user-notebook->plist (nb)
+  "Convert a user-notebook DAO into a plist for UI rendering."
+  (list :id           (princ-to-string (user-notebook-id nb))
+        :slug         (user-notebook-slug nb)
+        :title        (user-notebook-title nb)
+        :summary      (user-notebook-summary nb)
+        :body-md      (user-notebook-body-md nb)
+        :status       (user-notebook-status nb)
+        :published-at (user-notebook-published-at nb)
+        :created-at   (user-notebook-created-at nb)
+        :updated-at   (user-notebook-updated-at nb)
+        :author-id    (user-notebook-author-id nb)))
+
+(defun user-notebooks-handler (params)
+  "Handle GET /notebooks/me - admin user-notebook list (own notebooks)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((user-id (getf user :id))
+               (page (parse-page-param params))
+               (total-count (count-user-notebooks :author-id user-id))
+               (offset (* (1- page) *page-size*))
+               (raw (list-user-notebooks :author-id user-id
+                                         :limit *page-size*
+                                         :offset offset))
+               (notebooks (mapcar #'user-notebook->plist raw))
+               (pagination (make-pagination page total-count *page-size*
+                                            "/notebooks/me")))
+          (html-response
+           (recurya/web/ui/user-notebooks:render
+            :user user :notebooks notebooks :pagination pagination))))))
+
+(defun user-notebook-new-handler (params)
+  "Handle GET /notebooks/new - show new user-notebook form."
+  (declare (ignore params))
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (html-response
+         (recurya/web/ui/user-notebook-form:render :user user)))))
+
+(defun user-notebook-create-handler (params)
+  "Handle POST /notebooks - create a new user-notebook."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let ((title (get-param params "title"))
+              (slug (get-param params "slug"))
+              (summary (get-param params "summary"))
+              (body (get-param params "body"))
+              (status (get-param params "status")))
+          (cond
+            ((or (null title) (equal title ""))
+             (html-response
+              (recurya/web/ui/user-notebook-form:render
+               :user user
+               :notebook (list :title title :slug slug :summary summary
+                               :body-md body :status status)
+               :errors '((:line nil :message "Title is required.")))))
+            ((or (null body) (equal body ""))
+             (html-response
+              (recurya/web/ui/user-notebook-form:render
+               :user user
+               :notebook (list :title title :slug slug :summary summary
+                               :body-md body :status status)
+               :errors '((:line nil :message "Body is required.")))))
+            (t
+             (multiple-value-bind (cells parse-errors)
+                 (parse-notebook-body body)
+               (cond
+                 (parse-errors
+                  (html-response
+                   (recurya/web/ui/user-notebook-form:render
+                    :user user
+                    :notebook (list :title title :slug slug :summary summary
+                                    :body-md body :status status)
+                    :errors parse-errors)))
+                 (t
+                  (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
+                         (summary-val (if (and summary (string/= summary "")) summary nil))
+                         (published-at
+                           (when (equal status "published") (local-time:now)))
+                         (cells-plists (mapcar #'cell->jsonb-plist cells)))
+                    (create-user-notebook!
+                     :title title :slug slug-val :summary summary-val
+                     :body-md body :cells cells-plists
+                     :status (or status "draft")
+                     :published-at published-at
+                     :author (get-session-user-object))
+                    (redirect "/notebooks/me")))))))))))
+
+(defun user-notebook-edit-handler (params)
+  "Handle GET /notebooks/:id/edit - show edit form for existing user-notebook
+(owner only)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (nb (and id (get-user-notebook-by-id id))))
+          (cond
+            ((null nb)
+             (html-response (recurya/web/ui/errors:not-found) :status 404))
+            ((not (equal (princ-to-string (user-notebook-author-id nb))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (html-response
+              (recurya/web/ui/user-notebook-form:render
+               :user user :notebook (user-notebook->plist nb)))))))))
+
+(defun user-notebook-update-handler (params)
+  "Handle POST /notebooks/:id - update an existing user-notebook (owner only).
+The previous body markdown is reparsed to recover stable cell ids, then the
+new body is parsed with those ids carried forward where (kind, body,
+description) match."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (existing (and id (get-user-notebook-by-id id))))
+          (cond
+            ((null existing)
+             (html-response (recurya/web/ui/errors:not-found) :status 404))
+            ((not (equal (princ-to-string (user-notebook-author-id existing))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let ((title (get-param params "title"))
+                   (slug (get-param params "slug"))
+                   (summary (get-param params "summary"))
+                   (body (get-param params "body"))
+                   (status (get-param params "status")))
+               (cond
+                 ((or (null title) (equal title ""))
+                  (html-response
+                   (recurya/web/ui/user-notebook-form:render
+                    :user user
+                    :notebook (list :id id :title title :slug slug
+                                    :summary summary :body-md body
+                                    :status status)
+                    :errors '((:line nil :message "Title is required.")))))
+                 ((or (null body) (equal body ""))
+                  (html-response
+                   (recurya/web/ui/user-notebook-form:render
+                    :user user
+                    :notebook (list :id id :title title :slug slug
+                                    :summary summary :body-md body
+                                    :status status)
+                    :errors '((:line nil :message "Body is required.")))))
+                 (t
+                  (let ((existing-cells
+                          (parse-notebook-body
+                            (user-notebook-body-md existing))))
+                    (multiple-value-bind (cells parse-errors)
+                        (parse-notebook-body body existing-cells)
+                      (cond
+                        (parse-errors
+                         (html-response
+                          (recurya/web/ui/user-notebook-form:render
+                           :user user
+                           :notebook (list :id id :title title :slug slug
+                                           :summary summary :body-md body
+                                           :status status)
+                           :errors parse-errors)))
+                        (t
+                         (let* ((slug-val
+                                  (if (and slug (string/= slug "")) slug nil))
+                                (summary-val
+                                  (if (and summary (string/= summary ""))
+                                      summary nil))
+                                (published-at
+                                  (when (and (equal status "published")
+                                             (not (equal
+                                                    (user-notebook-status existing)
+                                                    "published")))
+                                    (local-time:now)))
+                                (cells-plists
+                                  (mapcar #'cell->jsonb-plist cells)))
+                           (update-user-notebook!
+                            id
+                            :title title
+                            :slug slug-val
+                            :summary summary-val
+                            :body-md body
+                            :cells cells-plists
+                            :status (or status "draft")
+                            :published-at published-at)
+                           (redirect "/notebooks/me")))))))))))))))
+
 (defun htmx-request-p ()
   "Return T if the current request was made by HTMX (HX-Request header present).
 Checks both the Clack :headers hash-table (Hunchentoot) and the :http-hx-request
@@ -656,6 +899,17 @@ without restarting the server."
           (make-dynamic-handler 'post-confirm-delete-handler))
   (setf (ningle/app:route app "/posts/:id/delete" :method :post)
           (make-dynamic-handler 'post-delete-handler))
+  ;; User-notebook admin routes (auth required)
+  (setf (ningle/app:route app "/notebooks/me")
+          (make-dynamic-handler 'user-notebooks-handler))
+  (setf (ningle/app:route app "/notebooks/new")
+          (make-dynamic-handler 'user-notebook-new-handler))
+  (setf (ningle/app:route app "/notebooks" :method :post)
+          (make-dynamic-handler 'user-notebook-create-handler))
+  (setf (ningle/app:route app "/notebooks/:id/edit")
+          (make-dynamic-handler 'user-notebook-edit-handler))
+  (setf (ningle/app:route app "/notebooks/:id" :method :post)
+          (make-dynamic-handler 'user-notebook-update-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))

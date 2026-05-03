@@ -17,6 +17,7 @@
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
     :recurya/tests/web/routes
+    :recurya/tests/web/user-notebook-routes
     :recurya/tests/web/learn-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
