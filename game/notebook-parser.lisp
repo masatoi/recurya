@@ -361,7 +361,8 @@
     (ecase kind
       (:prose         (write-string "===prose===" stream))
       (:code-eval     (write-string "===eval===" stream))
-      (:code-exercise (format stream "===exercise: ~A===" desc)))
+      (:code-exercise (format stream "===exercise: ~A===" desc))
+      (:code-solution (format stream "===solution: ~A===" desc)))
     (write-char #\Newline stream)
     (write-string body stream)
     (when (eq kind :code-exercise)
@@ -401,6 +402,7 @@
      :code-exercise  -> `===exercise: <description>===\\n<body>'
                         followed, for each test-case, by
                           `===expect[: <description>]===\\n<expect-body>'
+     :code-solution  -> `===solution: <description>===\\n<body>'
 
    Test-case body uses two-line `input: <i>\\noutput: <o>' form when
    TEST-CASE-INPUT is non-empty; otherwise the single-line expected

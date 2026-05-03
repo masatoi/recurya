@@ -162,6 +162,33 @@ Intro.
           (ok (eq      (cell-kind c1) (cell-kind c2)))
           (ok (string= (cell-body c1) (cell-body c2))))))
 
+(deftest roundtrip-with-solution
+  (let* ((body "===exercise: square===
+(define (square x) ???)
+
+===expect: square===
+4
+
+===solution: square===
+(define (square x) (* x x))")
+         (cells1 (parse-notebook-body body))
+         (md     (cells->body-md cells1))
+         (cells2 (parse-notebook-body md)))
+    (ok (= (length cells1) (length cells2)))
+    (loop for c1 in cells1 for c2 in cells2 do
+          (ok (eq      (cell-kind c1) (cell-kind c2)))
+          (ok (string= (cell-body c1) (cell-body c2))))))
+
+(deftest preserves-solution-cell-id
+  (let* ((body "===solution: foo===
+(define foo 1)")
+         (existing (list (make-cell :id "STABLE-SOL" :kind :code-solution
+                                    :body "(define foo 1)"
+                                    :description "foo"))))
+    (multiple-value-bind (cells errors) (parse-notebook-body body existing)
+      (ok (null errors))
+      (ok (string= "STABLE-SOL" (cell-id (first cells)))))))
+
 (deftest renders-markdown-bold-and-strips-script
   (let ((html (render-cell-prose-html "**bold**
 
