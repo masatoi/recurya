@@ -155,6 +155,7 @@ When editing an existing COURSE, the caller may also supply:
          (c-slug    (or (getf course :slug) ""))
          (c-summary (or (getf course :summary) ""))
          (c-status  (or (getf course :status) "draft"))
+         (c-visibility (or (getf course :visibility) "private"))
          (action-url (if editing-p
                          (format nil "/courses/~A" c-id)
                          "/courses"))
@@ -216,6 +217,17 @@ When editing an existing COURSE, the caller may also supply:
                                                     :selected
                                                     (when (equal c-status "published") "selected")
                                                     "Published")))
+                            (:div :class "form-group"
+                                  (:label :for "visibility" "Visibility")
+                                  (:select :id "visibility" :name "visibility"
+                                           (:option :value "private"
+                                                    :selected
+                                                    (when (equal c-visibility "private") "selected")
+                                                    "Private (only you)")
+                                           (:option :value "public"
+                                                    :selected
+                                                    (when (equal c-visibility "public") "selected")
+                                                    "Public (anyone)")))
                             (:div :class "form-actions"
                                   (:button :type "submit" :class "btn-primary"
                                            (if editing-p "Update Course" "Create Course"))

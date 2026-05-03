@@ -29,7 +29,8 @@
                 #:user-notebook-id
                 #:user-notebook-title
                 #:user-notebook-body-md
-                #:user-notebook-status)
+                #:user-notebook-status
+                #:user-notebook-visibility)
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:course-id
@@ -169,6 +170,52 @@ hi")
             (ok (string= "published" (user-notebook-status nb)))
             (ok (recurya/db/user-notebooks:user-notebook-published-at nb))))))))
 
+(deftest new-handler-form-has-visibility-select
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let* ((res (user-notebook-new-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body)
+              "form has a visibility select")
+          (ok (search "value=private" body)
+              "private option is rendered")
+          (ok (search "value=public" body)
+              "public option is rendered"))))))
+
+(deftest create-handler-persists-visibility-public
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Vis NB")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "published")
+                        ("visibility" . "public"))))
+          (user-notebook-create-handler params)
+          (let ((nb (get-user-notebook-by-slug "vis-nb")))
+            (ok nb)
+            (ok (string= "public" (user-notebook-visibility nb)))))))))
+
+(deftest create-handler-defaults-visibility-private
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Default Priv")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "draft"))))
+          (user-notebook-create-handler params)
+          (let ((nb (get-user-notebook-by-slug "default-priv")))
+            (ok nb)
+            (ok (string= "private" (user-notebook-visibility nb))
+                "absent visibility param defaults to private")))))))
+
 ;;; --- listing ---
 
 (deftest list-handler-redirects-anonymous
@@ -238,6 +285,34 @@ hi"
           (ok (search "Edit Notebook" body))
           (ok (search "Mine" body)))))))
 
+(deftest edit-handler-form-shows-existing-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "Public NB"
+                :body-md "===prose===
+hi"
+                :cells '() :author dao
+                :status "published" :visibility "public"
+                :published-at (local-time:now)))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (user-notebook-edit-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body)
+              "edit form has visibility select")
+          ;; The public option must be marked selected for an existing public
+          ;; notebook. The order of attributes is "value=public ... selected".
+          (let* ((vis-pos (search "name=visibility" body))
+                 (segment (and vis-pos (subseq body vis-pos
+                                               (min (length body)
+                                                    (+ vis-pos 400))))))
+            (ok segment)
+            (ok (search "value=public selected" segment)
+                "the public option is marked selected")))))))
+
 (deftest update-handler-403-for-non-owner
   (with-test-db
     (let* ((owner (mk-user))
@@ -302,6 +377,31 @@ nope"))))
           (ok (search "Validation errors" body))
           (let ((nb-after (get-user-notebook-by-id id)))
             (ok (string= "Before" (user-notebook-title nb-after)))))))))
+
+(deftest update-handler-persists-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "Vis"
+                :body-md "===prose===
+hi"
+                :cells '() :author dao
+                :status "published" :visibility "private"
+                :published-at (local-time:now)))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-update-handler
+                    (list (cons :id id)
+                          (cons "title" "Vis")
+                          (cons "body" "===prose===
+hi")
+                          (cons "status" "published")
+                          (cons "visibility" "public")))))
+          (ok (= 302 (response-status res)))
+          (let ((after (get-user-notebook-by-id id)))
+            (ok (string= "public" (user-notebook-visibility after))
+                "visibility flips from private to public")))))))
 
 (deftest update-handler-preserves-cell-ids-on-rewrite
   (testing "rewriting unchanged body keeps stable cell ids in the JSONB cache"

@@ -44,6 +44,7 @@
                 #:course-slug
                 #:course-summary
                 #:course-status
+                #:course-visibility
                 #:course-published-at)
   (:import-from #:uuid
                 #:make-v4-uuid))
@@ -177,6 +178,44 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (string= "published" (course-status c)))
             (ok (course-published-at c))))))))
 
+(deftest course-new-handler-form-has-visibility-select
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-new-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body))
+          (ok (search "value=private" body))
+          (ok (search "value=public" body)))))))
+
+(deftest course-create-handler-persists-visibility-public
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Vis Course")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "published")
+                        ("visibility" . "public"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "vis-course")))
+            (ok c)
+            (ok (string= "public" (course-visibility c)))))))))
+
+(deftest course-create-handler-defaults-visibility-private
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Default Priv C")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "draft"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "default-priv-c")))
+            (ok c)
+            (ok (string= "private" (course-visibility c)))))))))
+
 ;;; --- edit ---
 
 (deftest course-edit-handler-404-for-missing
@@ -210,6 +249,28 @@ HX-Request header is included so htmx-request-p returns T."
           (ok (= 200 (response-status res)))
           (ok (search "Edit Course" body))
           (ok (search "Mine" body)))))))
+
+(deftest course-edit-handler-form-shows-existing-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Public C"
+                              :status "published"
+                              :visibility "public"
+                              :published-at (local-time:now)
+                              :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-edit-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body))
+          (let* ((vis-pos (search "name=visibility" body))
+                 (segment (and vis-pos (subseq body vis-pos
+                                               (min (length body)
+                                                    (+ vis-pos 400))))))
+            (ok segment)
+            (ok (search "value=public selected" segment))))))))
 
 (deftest course-edit-handler-eligible-list-excludes-private-notebook
   (with-test-db
@@ -267,6 +328,26 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (string= "After" (course-title updated)))
             (ok (string= "published" (course-status updated)))
             (ok (course-published-at updated))))))))
+
+(deftest course-update-handler-persists-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Vis"
+                              :status "published"
+                              :visibility "private"
+                              :published-at (local-time:now)
+                              :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-update-handler
+                    (list (cons :id id)
+                          (cons "title" "Vis")
+                          (cons "status" "published")
+                          (cons "visibility" "public")))))
+          (ok (= 302 (response-status res)))
+          (let ((after (get-course-by-id id)))
+            (ok (string= "public" (course-visibility after)))))))))
 
 (deftest course-toggle-status-401-anonymous
   (with-mock-session (make-session)
