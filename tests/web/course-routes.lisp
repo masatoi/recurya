@@ -19,7 +19,8 @@
                 #:course-notebook-move-up-handler
                 #:course-notebook-move-down-handler
                 #:course-notebook-remove-handler
-                #:public-course-handler)
+                #:public-course-handler
+                #:courses-public-handler)
   (:import-from #:recurya/db/user-notebooks
                 #:create-user-notebook!
                 #:user-notebook-id
@@ -743,3 +744,51 @@ where the lists are aligned with the attached positions."
           (ok pc)
           (ok (and pa pb (< pa pb)))
           (ok (and pb pc (< pb pc))))))))
+
+(deftest courses-public-handler-shows-published-only
+  (with-test-db
+    (let* ((author (mk-user))
+           (dao (get-user-by-id (getf author :id))))
+      (create-course! :title "Pub Course"
+                      :status "published"
+                      :published-at (local-time:now)
+                      :author dao)
+      (create-course! :title "Drafty Course"
+                      :status "draft"
+                      :author dao)
+      (with-mock-session (make-session)
+        (let* ((res (courses-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Pub Course" body))
+          (ng (search "Drafty Course" body)))))))
+
+(deftest courses-public-handler-anonymous-200
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (courses-public-handler nil)))
+        (ok (= 200 (response-status res)))
+        (ok (search "Courses" (first (response-body res))))))))
+
+(deftest courses-public-handler-includes-slug-link
+  (with-test-db
+    (let* ((author (mk-user))
+           (dao (get-user-by-id (getf author :id)))
+           (course (create-course! :title "Slug Linked"
+                                   :status "published"
+                                   :published-at (local-time:now)
+                                   :author dao))
+           (slug (course-slug course)))
+      (with-mock-session (make-session)
+        (let* ((res (courses-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search (format nil "/c/~A" slug) body)))))))
+
+(deftest courses-public-handler-empty-state
+  (with-test-db
+    (with-mock-session (make-session)
+      (let* ((res (courses-public-handler nil))
+             (body (first (response-body res))))
+        (ok (= 200 (response-status res)))
+        (ok (search "No courses yet" body))))))

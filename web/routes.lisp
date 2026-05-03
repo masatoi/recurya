@@ -25,6 +25,7 @@
   (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
   (:import-from #:recurya/web/ui/course)
+  (:import-from #:recurya/web/ui/course-list)
   (:import-from #:recurya/web/ui/courses)
   (:import-from #:recurya/web/ui/course-form)
   (:import-from #:recurya/db/posts
@@ -150,7 +151,8 @@
            #:course-notebook-move-up-handler
            #:course-notebook-move-down-handler
            #:course-notebook-remove-handler
-           #:public-course-handler))
+           #:public-course-handler
+           #:courses-public-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -1338,6 +1340,34 @@ preview their own draft. Anything else is 404."
            :user user
            :passed-by-notebook nil)))))))
 
+(defun course-public-plist (c)
+  "Convert a course DAO to a plist for the public listing UI."
+  (let* ((author (course-author c))
+         (author-name
+          (when author (recurya/models/users:users-display-name author))))
+    (list :slug (course-slug c)
+          :title (course-title c)
+          :summary (course-summary c)
+          :published-at (course-published-at c)
+          :author-name (or author-name "Anonymous")
+          :notebook-count (count-course-notebooks (course-id c)))))
+
+(defun courses-public-handler (params)
+  "Handle GET /courses - public listing of published courses.
+No authentication required."
+  (let* ((page (parse-page-param params))
+         (total-count (count-courses :status "published"))
+         (offset (* (1- page) *page-size*))
+         (raw (list-courses :status "published"
+                            :limit *page-size*
+                            :offset offset))
+         (courses (mapcar #'course-public-plist raw))
+         (pagination
+          (make-pagination page total-count *page-size* "/courses")))
+    (html-response
+     (recurya/web/ui/course-list:render :courses courses
+                                        :pagination pagination))))
+
 (defun %maybe-persist-user-notebook-cell-run (uid nb-uuid cell result code)
   "Persist saved code, submission, and progress for a user-notebook cell run.
 Anonymous users (UID NIL) are skipped silently; DB errors are logged but
@@ -1708,6 +1738,8 @@ without restarting the server."
   ;; Public course routes (no auth)
   (setf (ningle/app:route app "/c/:slug")
           (make-dynamic-handler 'public-course-handler))
+  (setf (ningle/app:route app "/courses")
+          (make-dynamic-handler 'courses-public-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))
