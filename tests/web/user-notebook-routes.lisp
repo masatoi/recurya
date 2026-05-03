@@ -614,6 +614,29 @@ mine"
           (ok (= 200 (response-status res)))
           (ok (search "Owner Private Pub" body)))))))
 
+(deftest run-cell-published-private-404-for-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (dao (get-user-by-id (getf owner :id)))
+           (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+           (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                          (recurya/game/notebook-parser:parse-notebook-body body))))
+      (create-user-notebook!
+       :title "PrivPub" :slug "priv-pub-run" :body-md body
+       :cells cells :author dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-cell-run-handler
+                    '((:slug . "priv-pub-run") (:index . "1")
+                      ("codes[]" . "")
+                      ("codes[]" . "(+ 1 2)")))))
+          (ok (= 404 (response-status res))))))))
+
 (deftest public-page-renders-code-cell-with-correct-run-url
   (testing "code cells use /n/<slug>/cells/<i>/run, not the SICP route"
     (with-test-db
@@ -703,7 +726,7 @@ hi")
       (create-user-notebook!
        :title "P" :slug "p1" :body-md body
        :cells cells :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let ((res (public-user-notebook-cell-run-handler
                     '((:slug . "p1") (:index . "0")))))
@@ -723,7 +746,7 @@ hi
       (create-user-notebook!
        :title "Eval" :slug "ev" :body-md body
        :cells cells :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let* ((res (public-user-notebook-cell-run-handler
                      '((:slug . "ev") (:index . "1")
@@ -746,7 +769,7 @@ hi
            (nb (create-user-notebook!
                 :title "Pers" :slug "pers" :body-md body
                 :cells cells :author dao :status "published"
-                :published-at (local-time:now)))
+                :visibility "public" :published-at (local-time:now)))
            (nb-uuid (princ-to-string (user-notebook-id nb))))
       (with-mock-session (make-session :user other)
         (let ((res (public-user-notebook-cell-run-handler
