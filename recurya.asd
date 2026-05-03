@@ -1,3 +1,9 @@
+;;;; Map external package names to their ASDF systems so that
+;;;; package-inferred-system can resolve `(:import-from #:clack.test ...)`
+;;;; into the `clack-test` system. Without this, ASDF would search for a
+;;;; system literally named `clack.test` and fail.
+(asdf:register-system-packages "clack-test" '(:clack.test))
+
 (defsystem "recurya"
   :class :package-inferred-system
   :version "0.1.0"
@@ -126,6 +132,7 @@
                "recurya/tests/web/user-notebook-routes"
                "recurya/tests/web/course-routes"
                "recurya/tests/web/learn-routes"
+               "recurya/tests/web/csrf"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
