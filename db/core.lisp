@@ -163,7 +163,7 @@ If an error is signaled, the transaction is rolled back.
 
 Returns:
   The value(s) returned by the last form in BODY."
-  `(dbi:with-transaction ((datasource))
+  `(dbi.driver:with-transaction (datasource)
      ,@body))
 
 ;;; ============================================================
