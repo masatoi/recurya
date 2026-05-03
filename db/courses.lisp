@@ -36,7 +36,9 @@
            #:course-updated-at
            #:create-course!
            #:get-course-by-id
-           #:get-course-by-slug))
+           #:get-course-by-slug
+           #:update-course!
+           #:delete-course!))
 
 (in-package #:recurya/db/courses)
 
@@ -79,3 +81,29 @@ Returns:
 Returns:
   COURSE instance if found, NIL otherwise."
   (find-dao 'course :slug slug))
+
+(defun update-course! (course-id &key title slug summary status published-at)
+  "Update course attributes. Only provided fields are updated.
+
+SLUG is updated only when non-nil and non-empty (mirroring update-user-notebook!).
+
+Returns:
+  The updated COURSE instance, or NIL if not found."
+  (let ((c (find-dao 'course :id (ensure-uuid course-id))))
+    (when c
+      (when title (setf (course-title c) title))
+      (when (and slug (not (string= "" slug)))
+        (setf (course-slug c) slug))
+      (when summary (setf (course-summary c) summary))
+      (when status (setf (course-status c) status))
+      (when published-at (setf (course-published-at c) published-at))
+      (save-dao c))
+    c))
+
+(defun delete-course! (course-id)
+  "Delete a course by UUID.
+
+Returns:
+  T if deleted, NIL if not found."
+  (let ((c (find-dao 'course :id (ensure-uuid course-id))))
+    (when c (delete-dao c) t)))

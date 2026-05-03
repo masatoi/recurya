@@ -11,10 +11,13 @@
                 #:course-slug
                 #:course-title
                 #:course-status
+                #:course-published-at
                 #:course-author-id
                 #:create-course!
                 #:get-course-by-id
-                #:get-course-by-slug)
+                #:get-course-by-slug
+                #:update-course!
+                #:delete-course!)
   (:import-from #:recurya/db/users
                 #:users-id))
 
@@ -46,3 +49,43 @@
 (deftest get-course-by-id-missing-returns-nil
   (with-test-db
     (ok (null (get-course-by-id "00000000-0000-0000-0000-000000000000")))))
+
+(deftest update-course-test
+  (testing "update-course! modifies provided fields and returns instance"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (c (create-course! :title "Before" :author u))
+             (ts (local-time:now))
+             (updated
+              (update-course! (course-id c)
+                              :title "After"
+                              :status "published"
+                              :published-at ts)))
+        (ok updated)
+        (ok (string= "After" (course-title updated)))
+        (ok (string= "published" (course-status updated)))
+        (ok (course-published-at updated))))))
+
+(deftest update-course-missing-returns-nil
+  (testing "update on missing id returns NIL"
+    (with-test-db
+      (ok
+       (null
+        (update-course! "00000000-0000-0000-0000-000000000000"
+                        :title "X"))))))
+
+(deftest delete-course-test
+  (testing "delete-course! removes row and returns T"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (c (create-course! :title "To Delete" :author u))
+             (id (course-id c)))
+        (ok (eq t (delete-course! id)))
+        (ok (null (get-course-by-id id)))))))
+
+(deftest delete-course-missing-returns-nil
+  (testing "delete on missing id returns NIL"
+    (with-test-db
+      (ok
+       (null
+        (delete-course! "00000000-0000-0000-0000-000000000000"))))))
