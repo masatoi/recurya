@@ -143,8 +143,10 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 .user-banner strong { color: #f8fafc; }")
 
 (defun notebook-url-id (notebook)
-  "Lowercase symbol-name of the notebook ID, for use in URLs."
-  (string-downcase (symbol-name (notebook-id notebook))))
+  "Lowercase id of the notebook, for use in URLs.
+Accepts both keyword (legacy SICP) and string (UUID) ids."
+  (let ((id (notebook-id notebook)))
+    (string-downcase (if (keywordp id) (symbol-name id) (string id)))))
 
 (defun %chapter-prefix (notebook)
   "Return the chapter number string (e.g. '1') from notebook-chapter '1.1.1'."

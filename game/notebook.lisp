@@ -35,7 +35,7 @@
 
 (defstruct notebook
   "A SICP-style notebook: a list of cells rendered top-down."
-  (id nil :type keyword)
+  (id nil :type (or null keyword string))
   (chapter "" :type string)
   (title "" :type string)
   (summary "" :type string)
