@@ -118,7 +118,11 @@
                 #:user-cell-codes
                 #:user-passed-cells
                 #:mark-cell-passed
-                #:record-submission)
+                #:record-submission
+                #:merge-localstorage)
+  (:import-from #:recurya/utils/common
+                #:parse-json
+                #:json->string)
   (:import-from #:recurya/game/puzzle
                 #:test-case-input
                 #:test-case-expected
@@ -152,7 +156,12 @@
            #:course-notebook-move-down-handler
            #:course-notebook-remove-handler
            #:public-course-handler
-           #:courses-public-handler))
+           #:courses-public-handler
+           #:learn-sync-handler
+           #:sicp-learn-redirect-handler
+           #:sicp-notebook-redirect-handler
+           #:sicp-cell-run-redirect-handler
+           #:learn-sync-redirect-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -165,6 +174,25 @@
 (defun redirect (location)
   "Create a redirect response."
   (list 302 (list :location location) (list "")))
+
+(defun json-response (data &key (status 200))
+  "Return a Clack ring response with JSON content."
+  (list status
+        '(:content-type "application/json; charset=utf-8")
+        (list (json->string data))))
+
+(defun %read-request-body ()
+  "Read the raw POST body as a UTF-8 string, or empty string if unavailable."
+  (let* ((env (lack/request:request-env ningle/context:*request*))
+         (stream (getf env :raw-body))
+         (content-length (or (getf env :content-length) 0)))
+    (cond
+      ((and stream (plusp content-length))
+       (ignore-errors (file-position stream 0))
+       (let ((buf (make-array content-length :element-type '(unsigned-byte 8))))
+         (read-sequence buf stream)
+         (babel:octets-to-string buf :encoding :utf-8)))
+      (t ""))))
 
 (defun get-session ()
   "Get the session hash table from the context."
@@ -1709,6 +1737,87 @@ For HTMX requests, returns HX-Redirect header. For normal requests, redirects."
 
 ;;; Dynamic dispatch support for REPL-driven development
 
+(defun %parse-sync-payload (raw-json)
+  "Convert JSON payload {\"notebooks\":[{...}]} into the plist shape
+   expected by recurya/db/learn:merge-localstorage. Tolerates missing or
+   JSON-null fields (jzon decodes JSON null as the symbol NULL)."
+  (let* ((parsed (parse-json raw-json))
+         (notebooks (and (hash-table-p parsed) (gethash "notebooks" parsed))))
+    (when (and notebooks (vectorp notebooks))
+      (loop for nb across notebooks
+            when (hash-table-p nb)
+              collect (list :notebook-id (gethash "notebook_id" nb)
+                            :passed
+                            (let ((arr (gethash "passed" nb)))
+                              (when (vectorp arr)
+                                (loop for x across arr collect x)))
+                            :codes
+                            (let ((codes-ht (gethash "codes" nb)))
+                              (when (hash-table-p codes-ht)
+                                (let (acc)
+                                  (maphash (lambda (k v) (push (cons k v) acc))
+                                           codes-ht)
+                                  acc))))))))
+
+(defun learn-sync-handler (params)
+  "POST /learn/sync — merge localStorage payload into DB.
+   Auth required."
+  (declare (ignore params))
+  (let* ((session ningle/context:*session*)
+         (user (and session (gethash :user session)))
+         (uid (and user (getf user :id))))
+    (cond
+      ((null uid)
+       (let ((h (make-hash-table :test 'equal)))
+         (setf (gethash "error" h) "auth required")
+         (json-response h :status 401)))
+      (t
+       (handler-case
+           (let* ((raw (%read-request-body))
+                  (notebooks (%parse-sync-payload raw))
+                  (summary (merge-localstorage uid notebooks))
+                  (out (make-hash-table :test 'equal)))
+             (loop for (k v) on summary by #'cddr
+                   do (setf (gethash (string-downcase (symbol-name k)) out) v))
+             (json-response out))
+         (error (e)
+           (log:warn "Failed /learn/sync: ~A" e)
+           (let ((h (make-hash-table :test 'equal)))
+             (setf (gethash "error" h) "server error")
+             (json-response h :status 500))))))))
+
+(defun sicp-learn-redirect-handler (params)
+  "GET /wardlisp/learn -> 301 /c/sicp.
+   Permanent redirect from the legacy SICP listing to the public course page."
+  (declare (ignore params))
+  (list 301 (list :location "/c/sicp") (list "")))
+
+(defun sicp-notebook-redirect-handler (params)
+  "GET /wardlisp/learn/:id -> 301 /n/:id.
+   Permanent redirect from the legacy notebook URL to the public user-notebook URL.
+   The :id path parameter is reused verbatim as the new slug."
+  (let ((id (get-path-param params :id)))
+    (list 301
+          (list :location (format nil "/n/~A" (or id "")))
+          (list ""))))
+
+(defun sicp-cell-run-redirect-handler (params)
+  "POST /wardlisp/learn/:id/cells/:index/run -> 308 /n/:id/cells/:index/run.
+   308 preserves the request method and body so HTMX POSTs are forwarded
+   correctly to the new endpoint."
+  (let ((id (get-path-param params :id))
+        (index (get-path-param params :index)))
+    (list 308
+          (list :location (format nil "/n/~A/cells/~A/run" (or id "") (or index "")))
+          (list ""))))
+
+(defun learn-sync-redirect-handler (params)
+  "POST /wardlisp/learn/sync -> 308 /learn/sync.
+   308 preserves the POST method and body so existing browser localStorage
+   sync clients keep working without changes."
+  (declare (ignore params))
+  (list 308 (list :location "/learn/sync") (list "")))
+
 (defun make-dynamic-handler (handler-symbol)
   "Create a handler that looks up the function by symbol at call time.
 This allows function redefinitions via SLIME to take effect immediately
@@ -1822,4 +1931,6 @@ without restarting the server."
           (make-dynamic-handler 'account-confirm-delete-handler))
   (setf (ningle/app:route app "/account/delete" :method :post)
           (make-dynamic-handler 'account-delete-handler))
+  (setf (ningle/app:route app "/learn/sync" :method :post)
+          (make-dynamic-handler 'learn-sync-handler))
   app)
