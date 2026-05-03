@@ -17,7 +17,9 @@
                 #:get-course-by-id
                 #:get-course-by-slug
                 #:update-course!
-                #:delete-course!)
+                #:delete-course!
+                #:list-courses
+                #:count-courses)
   (:import-from #:recurya/db/users
                 #:users-id))
 
@@ -89,3 +91,48 @@
       (ok
        (null
         (delete-course! "00000000-0000-0000-0000-000000000000"))))))
+
+(deftest list-courses-test
+  (testing "list-courses returns newest first; status and author filters work"
+    (with-test-db
+      (let* ((u1 (create-test-user :email-prefix "alice"))
+             (u2 (create-test-user :email-prefix "bob")))
+        (create-course! :title "A1" :author u1 :status "published")
+        (create-course! :title "A2" :author u1 :status "draft")
+        (create-course! :title "B1" :author u2 :status "published")
+        (let ((all (list-courses)))
+          (ok (= 3 (length all))))
+        (let ((pubs (list-courses :status "published")))
+          (ok (= 2 (length pubs)))
+          (ok (every (lambda (c) (string= "published" (course-status c)))
+                     pubs)))
+        (let ((u1-cs (list-courses :author-id (users-id u1))))
+          (ok (= 2 (length u1-cs)))
+          (ok (every (lambda (c) (equal (users-id u1) (course-author-id c)))
+                     u1-cs))))))
+  (testing "limit and offset paginate"
+    (with-test-db
+      (let ((u (create-test-user)))
+        (dotimes (i 5)
+          (create-course! :title (format nil "T~A" i)
+                          :slug (format nil "t~A" i)
+                          :author u))
+        (let ((page1 (list-courses :limit 2)))
+          (ok (= 2 (length page1))))
+        (let ((page2 (list-courses :limit 2 :offset 2)))
+          (ok (= 2 (length page2))))
+        (let ((page3 (list-courses :limit 2 :offset 4)))
+          (ok (= 1 (length page3))))))))
+
+(deftest count-courses-test
+  (testing "count-courses returns total and filters by status / author"
+    (with-test-db
+      (let* ((u1 (create-test-user :email-prefix "carol"))
+             (u2 (create-test-user :email-prefix "dave")))
+        (create-course! :title "C1" :author u1 :status "published")
+        (create-course! :title "C2" :author u1 :status "draft")
+        (create-course! :title "D1" :author u2 :status "published")
+        (ok (= 3 (count-courses)))
+        (ok (= 2 (count-courses :status "published")))
+        (ok (= 1 (count-courses :status "draft")))
+        (ok (= 2 (count-courses :author-id (users-id u1))))))))

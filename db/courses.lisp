@@ -38,7 +38,9 @@
            #:get-course-by-id
            #:get-course-by-slug
            #:update-course!
-           #:delete-course!))
+           #:delete-course!
+           #:list-courses
+           #:count-courses))
 
 (in-package #:recurya/db/courses)
 
@@ -107,3 +109,66 @@ Returns:
   T if deleted, NIL if not found."
   (let ((c (find-dao 'course :id (ensure-uuid course-id))))
     (when c (delete-dao c) t)))
+
+(defun list-courses (&key status author-id (limit 50) offset)
+  "List courses, optionally filtered by status and/or author, newest first.
+
+Arguments:
+  STATUS    - Filter by status string (optional)
+  AUTHOR-ID - Filter by author UUID (optional)
+  LIMIT     - Maximum results (default: 50)
+  OFFSET    - Number to skip (optional)
+
+Returns:
+  List of COURSE instances."
+  (let ((all
+         (cond
+           ((and status author-id)
+            (select-dao 'course
+              (where (:and (:= :status status) (:= :author_id author-id)))
+              (order-by (:desc :created-at))))
+           (status
+            (select-dao 'course
+              (where (:= :status status))
+              (order-by (:desc :created-at))))
+           (author-id
+            (select-dao 'course
+              (where (:= :author_id author-id))
+              (order-by (:desc :created-at))))
+           (t
+            (select-dao 'course
+              (order-by (:desc :created-at)))))))
+    (cond
+      ((and offset limit)
+       (subseq all (min offset (length all))
+               (min (+ offset limit) (length all))))
+      (limit (subseq all 0 (min limit (length all))))
+      (offset (subseq all (min offset (length all))))
+      (t all))))
+
+(defun count-courses (&key status author-id)
+  "Count courses, optionally filtered by status and/or author.
+
+Returns:
+  Integer count."
+  (let ((conditions nil)
+        (binds nil))
+    (when status
+      (push "status = ?" conditions)
+      (push status binds))
+    (when author-id
+      (push "author_id = ?" conditions)
+      (push (princ-to-string author-id) binds))
+    (let* ((where-clause
+            (if conditions
+                (format nil " WHERE ~{~A~^ AND ~}" (nreverse conditions))
+                ""))
+           (sql
+            (concatenate 'string
+                         "SELECT COUNT(*) as count FROM course"
+                         where-clause))
+           (binds (nreverse binds)))
+      (let ((result (mito.db:retrieve-by-sql sql :binds binds)))
+        (if result
+            (getf (first result) :count)
+            0)))))
