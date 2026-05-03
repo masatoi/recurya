@@ -8,7 +8,8 @@
                 #:*color-vars*
                 #:*base-styles*)
   (:export #:not-found
-           #:server-error))
+           #:server-error
+           #:csrf-failure))
 
 (in-package #:recurya/web/ui/errors)
 
@@ -67,3 +68,21 @@
           (:h1 "500")
           (:p (or message "Something went wrong on our end."))
           (:a :href "/dashboard" "Go to Dashboard"))))))
+
+(defun csrf-failure ()
+  "Render a 400 page returned when a state-changing request arrives
+without a valid CSRF token (typically because the form was submitted
+from a stale tab or a cross-origin attacker page)."
+  (spinneret:with-html-string
+    (:doctype)
+    (:html
+      (:head
+        (:meta :charset "utf-8")
+        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
+        (:title "400 - Invalid request")
+        (:style (:raw (error-styles))))
+      (:body
+        (:div :class "error-container"
+          (:h1 "400")
+          (:p "セッションの有効期限が切れたか、リクエストが無効です。ブラウザの戻るボタンで前のページに戻り、再読み込みしてから再操作してください。")
+          (:a :href "/" "Home"))))))
