@@ -36,7 +36,11 @@
         (parse-integer port-str :junk-allowed t)
         *default-port*)))
 
-(defparameter *csrf-skip-paths* '("/learn/sync")
+(defparameter *csrf-skip-paths* '("/learn/sync"
+    ;; Legacy 308 redirect target. The redirect handler itself runs
+    ;; after the middleware, so the upstream POST must bypass csrf
+    ;; here just like its modern equivalent.
+    "/wardlisp/learn/sync")
   "Paths bypassed by the CSRF middleware (JSON endpoints with their
 own protection).")
 

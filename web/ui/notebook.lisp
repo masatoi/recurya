@@ -2,15 +2,18 @@
 
 (defpackage #:recurya/web/ui/notebook
   (:use #:cl)
-  (:import-from #:spinneret
-                #:with-html-string
-                #:with-html)
-  (:import-from #:alexandria
-                #:when-let*)
+  (:import-from #:spinneret #:with-html-string #:with-html)
+  (:import-from #:alexandria #:when-let*)
   (:import-from #:recurya/game/notebook
-                #:notebook-id #:notebook-chapter #:notebook-title
-                #:notebook-summary #:notebook-cells
-                #:cell-id #:cell-kind #:cell-body #:cell-description
+                #:notebook-id
+                #:notebook-chapter
+                #:notebook-title
+                #:notebook-summary
+                #:notebook-cells
+                #:cell-id
+                #:cell-kind
+                #:cell-body
+                #:cell-description
                 #:notebook-cell-result-cell-id
                 #:notebook-cell-result-kind
                 #:notebook-cell-result-status
@@ -20,11 +23,8 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
-  (:import-from #:recurya/web/ui/editor
-                #:editor-head-tags
-                #:editor-textarea)
-  (:import-from #:recurya/web/ui/csrf
-                #:csrf-form-block)
+  (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -295,6 +295,7 @@ notebooks within the same course."
                               (:strong (or (getf *user* :name) "User")) " · "
                               (:form :method "post" :action "/logout"
                                      :style "display:inline;"
+                                     (:raw (or (csrf-input) ""))
                                      (:button :type "submit"
                                               :class "user-banner__logout"
                                               :style
