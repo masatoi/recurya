@@ -128,6 +128,8 @@
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
                "recurya/tests/game/notebook-parser"
+               ;; Integration tests
+               "recurya/tests/integration/sicp-canonical-solutions"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner

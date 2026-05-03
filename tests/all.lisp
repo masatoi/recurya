@@ -28,7 +28,9 @@
     :recurya/tests/game/puzzle
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
-    :recurya/tests/game/notebook-parser)
+    :recurya/tests/game/notebook-parser
+    ;; Integration tests
+    :recurya/tests/integration/sicp-canonical-solutions)
   "List of all test packages to run.")
 
 (defun run-all-tests ()
