@@ -18,6 +18,7 @@
                 #:course-title
                 #:course-summary
                 #:course-status
+                #:course-visibility
                 #:course-published-at
                 #:course-author
                 #:course-author-id
@@ -29,6 +30,7 @@
            #:course-title
            #:course-summary
            #:course-status
+           #:course-visibility
            #:course-published-at
            #:course-author
            #:course-author-id

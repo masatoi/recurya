@@ -9,6 +9,7 @@
            #:course-title
            #:course-summary
            #:course-status
+           #:course-visibility
            #:course-published-at
            #:course-author
            #:course-author-id
@@ -25,6 +26,8 @@
             :initarg :summary :initform nil :accessor course-summary)
    (status :col-type (:varchar 32) :initarg :status :initform "draft"
            :accessor course-status)
+   (visibility :col-type (:varchar 32) :initarg :visibility
+               :initform "private" :accessor course-visibility)
    (published-at :col-type (or :timestamptz :null)
                  :initarg :published-at :initform nil
                  :accessor course-published-at)

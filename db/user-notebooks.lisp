@@ -21,6 +21,7 @@
                 #:user-notebook-body-md
                 #:user-notebook-cells
                 #:user-notebook-status
+                #:user-notebook-visibility
                 #:user-notebook-published-at
                 #:user-notebook-author
                 #:user-notebook-author-id
@@ -34,6 +35,7 @@
            #:user-notebook-body-md
            #:user-notebook-cells
            #:user-notebook-status
+           #:user-notebook-visibility
            #:user-notebook-published-at
            #:user-notebook-author
            #:user-notebook-author-id
