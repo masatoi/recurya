@@ -1273,9 +1273,11 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
   "Handle GET /notebooks - public listing of published user-notebooks.
 No authentication required."
   (let* ((page (parse-page-param params))
-         (total-count (count-user-notebooks :status "published"))
+         (total-count (count-user-notebooks :status "published"
+                                             :visibility "public"))
          (offset (* (1- page) *page-size*))
          (raw (list-user-notebooks :status "published"
+                                   :visibility "public"
                                    :limit *page-size*
                                    :offset offset))
          (notebooks (mapcar #'user-notebook-public-plist raw))

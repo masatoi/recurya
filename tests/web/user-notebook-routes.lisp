@@ -491,7 +491,7 @@ hi"
        :title "Pub" :slug "pub" :body-md "===prose===
 hi"
        :cells '() :author alice-dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (create-user-notebook!
        :title "Drafty" :slug "drafty" :body-md "===prose===
 sh"
@@ -503,6 +503,27 @@ sh"
           (ok (search "Pub" body))
           (ng (search "Drafty" body))
           (ok (search "/n/pub" body)))))))
+
+(deftest public-list-shows-only-public
+  (with-test-db
+    (let* ((alice (mk-user))
+           (alice-dao (get-user-by-id (getf alice :id))))
+      (create-user-notebook!
+       :title "PubPublic" :slug "pub-public" :body-md "===prose===
+hi"
+       :cells '() :author alice-dao :status "published"
+       :visibility "public" :published-at (local-time:now))
+      (create-user-notebook!
+       :title "PubPrivate" :slug "pub-private" :body-md "===prose===
+shh"
+       :cells '() :author alice-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session)
+        (let* ((res (notebooks-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "PubPublic" body))
+          (ng (search "PubPrivate" body)))))))
 
 (deftest public-list-anonymous-200
   (with-test-db
