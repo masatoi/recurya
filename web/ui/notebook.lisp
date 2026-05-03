@@ -269,10 +269,7 @@ notebooks within the same course."
         (:meta :charset "utf-8")
         (:meta :name "viewport"
                :content "width=device-width, initial-scale=1")
-        (:title
-         (format nil "~A — SICP ~A"
-                 (notebook-title notebook)
-                 (notebook-chapter notebook)))
+        (:title (notebook-title notebook))
         (:style (:raw *styles*))
         (:script :src "https://unpkg.com/htmx.org@2.0.4"
                  :integrity
@@ -316,12 +313,7 @@ notebooks within the same course."
                                          (if href
                                              (:a :href href text)
                                              (:span text))))))
-                       ((and (notebook-chapter notebook)
-                             (plusp (length (notebook-chapter notebook))))
-                        (:div :class "breadcrumb"
-                              (:a :href "/wardlisp/" "WardLisp") " > "
-                              (:a :href "/wardlisp/learn" "SICPコース") " > "
-                              (notebook-chapter notebook))))
+                       (t nil))
                      (when (or course-prev-url course-next-url)
                        (:div :class "course-nav"
                              :style "margin-bottom: 1rem; font-size: 0.9rem;"
