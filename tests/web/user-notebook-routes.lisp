@@ -13,6 +13,7 @@
                 #:user-notebook-edit-handler
                 #:user-notebook-update-handler
                 #:user-notebook-toggle-status-handler
+                #:user-notebook-set-state-handler
                 #:user-notebook-confirm-delete-handler
                 #:user-notebook-delete-handler
                 #:notebooks-public-handler
@@ -29,7 +30,8 @@
                 #:user-notebook-id
                 #:user-notebook-title
                 #:user-notebook-body-md
-                #:user-notebook-status)
+                #:user-notebook-status
+                #:user-notebook-visibility)
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:course-id
@@ -169,6 +171,52 @@ hi")
             (ok (string= "published" (user-notebook-status nb)))
             (ok (recurya/db/user-notebooks:user-notebook-published-at nb))))))))
 
+(deftest new-handler-form-has-visibility-select
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let* ((res (user-notebook-new-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body)
+              "form has a visibility select")
+          (ok (search "value=private" body)
+              "private option is rendered")
+          (ok (search "value=public" body)
+              "public option is rendered"))))))
+
+(deftest create-handler-persists-visibility-public
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Vis NB")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "published")
+                        ("visibility" . "public"))))
+          (user-notebook-create-handler params)
+          (let ((nb (get-user-notebook-by-slug "vis-nb")))
+            (ok nb)
+            (ok (string= "public" (user-notebook-visibility nb)))))))))
+
+(deftest create-handler-defaults-visibility-private
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Default Priv")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "draft"))))
+          (user-notebook-create-handler params)
+          (let ((nb (get-user-notebook-by-slug "default-priv")))
+            (ok nb)
+            (ok (string= "private" (user-notebook-visibility nb))
+                "absent visibility param defaults to private")))))))
+
 ;;; --- listing ---
 
 (deftest list-handler-redirects-anonymous
@@ -238,6 +286,34 @@ hi"
           (ok (search "Edit Notebook" body))
           (ok (search "Mine" body)))))))
 
+(deftest edit-handler-form-shows-existing-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "Public NB"
+                :body-md "===prose===
+hi"
+                :cells '() :author dao
+                :status "published" :visibility "public"
+                :published-at (local-time:now)))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (user-notebook-edit-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body)
+              "edit form has visibility select")
+          ;; The public option must be marked selected for an existing public
+          ;; notebook. The order of attributes is "value=public ... selected".
+          (let* ((vis-pos (search "name=visibility" body))
+                 (segment (and vis-pos (subseq body vis-pos
+                                               (min (length body)
+                                                    (+ vis-pos 400))))))
+            (ok segment)
+            (ok (search "value=public selected" segment)
+                "the public option is marked selected")))))))
+
 (deftest update-handler-403-for-non-owner
   (with-test-db
     (let* ((owner (mk-user))
@@ -302,6 +378,31 @@ nope"))))
           (ok (search "Validation errors" body))
           (let ((nb-after (get-user-notebook-by-id id)))
             (ok (string= "Before" (user-notebook-title nb-after)))))))))
+
+(deftest update-handler-persists-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "Vis"
+                :body-md "===prose===
+hi"
+                :cells '() :author dao
+                :status "published" :visibility "private"
+                :published-at (local-time:now)))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-update-handler
+                    (list (cons :id id)
+                          (cons "title" "Vis")
+                          (cons "body" "===prose===
+hi")
+                          (cons "status" "published")
+                          (cons "visibility" "public")))))
+          (ok (= 302 (response-status res)))
+          (let ((after (get-user-notebook-by-id id)))
+            (ok (string= "public" (user-notebook-visibility after))
+                "visibility flips from private to public")))))))
 
 (deftest update-handler-preserves-cell-ids-on-rewrite
   (testing "rewriting unchanged body keeps stable cell ids in the JSONB cache"
@@ -383,6 +484,185 @@ hi"
             (ok (string= "draft" (user-notebook-status after)))
             (ok (recurya/db/user-notebooks:user-notebook-published-at after)
                 "published_at is preserved on un-publish")))))))
+
+(deftest list-renders-3-state-pill-classes
+  (testing "Notebooks listing emits status-{draft|private|public} CSS classes
+that drive the 3-state pill colour, computed from (status, visibility)."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-user-notebook!
+         :title "DraftA" :slug "drafta" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "draft"
+         :visibility "private")
+        (create-user-notebook!
+         :title "PrivPub" :slug "priv-pub-listing" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published"
+         :visibility "private" :published-at (local-time:now))
+        (create-user-notebook!
+         :title "PublicPub" :slug "public-pub-listing" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published"
+         :visibility "public" :published-at (local-time:now))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebooks-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body)
+                "draft notebook gets status-draft class")
+            (ok (search "status-private" body)
+                "published+private gets status-private class")
+            (ok (search "status-public" body)
+                "published+public gets status-public class")))))))
+
+(deftest toggle-status-pill-from-draft-emits-private-state
+  (testing "Legacy toggle-status flips draft to published while preserving
+visibility, so the returned pill shows status-private when visibility was
+already private."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "T" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-toggle-status-handler
+                       (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-private" body)
+                "pill turns purple/private after publish")
+            (ng (search "status-draft" body)
+                "draft class no longer applies")))))))
+
+(deftest set-state-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (user-notebook-set-state-handler
+                '((:id . "x") ("state" . "published-public")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest set-state-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (nb (create-user-notebook!
+                :title "Owned" :body-md "===prose===
+hi"
+                :cells '() :author owner-dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (let ((res (user-notebook-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "published-public")))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest set-state-decodes-published-public
+  (testing "POST /notebooks/:id/state with state=published-public sets
+status=published, visibility=public, sets published_at, and returns the
+full <details> dropdown markup (summary pill + 3 hx-post state buttons),
+not a bare pill span."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-public"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-public" body))
+            ;; The dropdown markup must include the <details>/<summary>
+            ;; wrapper and three hx-post buttons (one per state token),
+            ;; otherwise repeated clicks will destroy the dropdown.
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
+            (ok (search "status-pill-menu" body))
+            ;; spinneret HTML-escapes the inner double quotes of hx-vals.
+            (ok (search "&quot;state&quot;:&quot;draft&quot;" body))
+            (ok (search "&quot;state&quot;:&quot;published-private&quot;"
+                        body))
+            (ok (search "&quot;state&quot;:&quot;published-public&quot;"
+                        body))
+            (let ((after (get-user-notebook-by-id id)))
+              (ok (string= "published" (user-notebook-status after)))
+              (ok (string= "public" (user-notebook-visibility after)))
+              (ok (recurya/db/user-notebooks:user-notebook-published-at
+                   after)))))))))
+
+(deftest set-state-decodes-draft-preserves-visibility
+  (testing "state=draft from a published+public notebook turns it back to
+draft while preserving published_at; the response body contains the full
+<details> dropdown markup with the status-draft summary pill."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "published" :visibility "public"
+                  :published-at (local-time:now)))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "draft"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body))
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
+            (let ((after (get-user-notebook-by-id id)))
+              (ok (string= "draft" (user-notebook-status after))))))))))
+
+(deftest set-state-rejects-invalid-state
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "S" :body-md "===prose===
+hi"
+                :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "garbage")))))
+          (ok (= 400 (response-status res))))))))
+
+(deftest list-pill-renders-state-dropdown
+  (testing "Each row renders a Draft/Private/Public dropdown that posts to
+/notebooks/:id/state."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "Rowable" :body-md "===prose===
+hi"
+                  :cells '() :author dao :status "draft"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebooks-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search (format nil "/notebooks/~A/state" id) body)
+                "row links the new /state endpoint")
+            (ok (search "published-public" body)
+                "Public option is present in the dropdown")
+            (ok (search "published-private" body)
+                "Private option is present")))))))
 
 (deftest confirm-delete-401-anonymous
   (with-mock-session (make-session)
@@ -491,7 +771,7 @@ hi"
        :title "Pub" :slug "pub" :body-md "===prose===
 hi"
        :cells '() :author alice-dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (create-user-notebook!
        :title "Drafty" :slug "drafty" :body-md "===prose===
 sh"
@@ -503,6 +783,27 @@ sh"
           (ok (search "Pub" body))
           (ng (search "Drafty" body))
           (ok (search "/n/pub" body)))))))
+
+(deftest public-list-shows-only-public
+  (with-test-db
+    (let* ((alice (mk-user))
+           (alice-dao (get-user-by-id (getf alice :id))))
+      (create-user-notebook!
+       :title "PubPublic" :slug "pub-public" :body-md "===prose===
+hi"
+       :cells '() :author alice-dao :status "published"
+       :visibility "public" :published-at (local-time:now))
+      (create-user-notebook!
+       :title "PubPrivate" :slug "pub-private" :body-md "===prose===
+shh"
+       :cells '() :author alice-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session)
+        (let* ((res (notebooks-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "PubPublic" body))
+          (ng (search "PubPrivate" body)))))))
 
 (deftest public-list-anonymous-200
   (with-test-db
@@ -555,10 +856,66 @@ mine"
        :title "Open" :slug "open" :body-md "===prose===
 hello"
        :cells '() :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let ((res (public-user-notebook-handler '((:slug . "open")))))
           (ok (= 200 (response-status res))))))))
+
+(deftest public-page-published-private-404-for-others
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Private Pub" :slug "priv-pub" :body-md "===prose===
+shh"
+       :cells '() :author owner-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-handler '((:slug . "priv-pub")))))
+          (ok (= 404 (response-status res)))))
+      (with-mock-session (make-session)
+        (let ((res (public-user-notebook-handler '((:slug . "priv-pub")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest public-page-published-private-200-for-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Owner Private Pub" :slug "owner-priv-pub" :body-md "===prose===
+mine"
+       :cells '() :author owner-dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user owner)
+        (let* ((res (public-user-notebook-handler
+                     '((:slug . "owner-priv-pub"))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Owner Private Pub" body)))))))
+
+(deftest run-cell-published-private-404-for-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (dao (get-user-by-id (getf owner :id)))
+           (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+           (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                          (recurya/game/notebook-parser:parse-notebook-body body))))
+      (create-user-notebook!
+       :title "PrivPub" :slug "priv-pub-run" :body-md body
+       :cells cells :author dao :status "published"
+       :visibility "private" :published-at (local-time:now))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-cell-run-handler
+                    '((:slug . "priv-pub-run") (:index . "1")
+                      ("codes[]" . "")
+                      ("codes[]" . "(+ 1 2)")))))
+          (ok (= 404 (response-status res))))))))
 
 (deftest public-page-renders-code-cell-with-correct-run-url
   (testing "code cells use /n/<slug>/cells/<i>/run, not the SICP route"
@@ -575,7 +932,7 @@ hi
         (create-user-notebook!
          :title "Code" :slug "with-code" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler '((:slug . "with-code"))))
                  (html (first (response-body res))))
@@ -596,7 +953,7 @@ hi
         (create-user-notebook!
          :title "Prose" :slug "prose-md" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler '((:slug . "prose-md"))))
                  (html (first (response-body res))))
@@ -622,7 +979,7 @@ hi
         (create-user-notebook!
          :title "Solo" :slug "with-solution" :body-md body
          :cells cells :author dao :status "published"
-         :published-at (local-time:now))
+         :visibility "public" :published-at (local-time:now))
         (with-mock-session (make-session)
           (let* ((res (public-user-notebook-handler
                        '((:slug . "with-solution"))))
@@ -649,7 +1006,7 @@ hi")
       (create-user-notebook!
        :title "P" :slug "p1" :body-md body
        :cells cells :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let ((res (public-user-notebook-cell-run-handler
                     '((:slug . "p1") (:index . "0")))))
@@ -669,7 +1026,7 @@ hi
       (create-user-notebook!
        :title "Eval" :slug "ev" :body-md body
        :cells cells :author dao :status "published"
-       :published-at (local-time:now))
+       :visibility "public" :published-at (local-time:now))
       (with-mock-session (make-session)
         (let* ((res (public-user-notebook-cell-run-handler
                      '((:slug . "ev") (:index . "1")
@@ -692,7 +1049,7 @@ hi
            (nb (create-user-notebook!
                 :title "Pers" :slug "pers" :body-md body
                 :cells cells :author dao :status "published"
-                :published-at (local-time:now)))
+                :visibility "public" :published-at (local-time:now)))
            (nb-uuid (princ-to-string (user-notebook-id nb))))
       (with-mock-session (make-session :user other)
         (let ((res (public-user-notebook-cell-run-handler
@@ -723,6 +1080,7 @@ and the breadcrumb shows Notebooks > Course Title > Notebook Title."
 hi"
                   :cells nil
                   :status "published"
+                  :visibility "public"
                   :published-at (local-time:now)
                   :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb)
@@ -753,18 +1111,21 @@ preserving the ?course=<slug> query string."
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Middle" :slug "middle"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb3 (create-user-notebook!
                    :title "Last" :slug "last"
                    :body-md "===prose===
 c"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -795,12 +1156,14 @@ c"
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Second" :slug "second"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -830,12 +1193,14 @@ b"
                    :body-md "===prose===
 a"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao))
              (nb2 (create-user-notebook!
                    :title "Second" :slug "second"
                    :body-md "===prose===
 b"
                    :cells nil :status "published"
+                   :visibility "public"
                    :published-at (local-time:now) :author dao)))
         (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
                                  :position 0)
@@ -861,6 +1226,7 @@ b"
                   :body-md "===prose===
 hi"
                   :cells nil :status "published"
+                  :visibility "public"
                   :published-at (local-time:now) :author dao)))
         (declare (ignore nb))
         (with-mock-session (make-session)

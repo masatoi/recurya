@@ -12,6 +12,7 @@
                 #:user-notebook-title
                 #:user-notebook-body-md
                 #:user-notebook-status
+                #:user-notebook-visibility
                 #:user-notebook-author-id
                 #:create-user-notebook!
                 #:get-user-notebook-by-id
@@ -161,6 +162,45 @@ d1" :cells '() :author u2 :status "published")
         (ok (= 2 (count-user-notebooks :status "published")))
         (ok (= 1 (count-user-notebooks :status "draft")))
         (ok (= 2 (count-user-notebooks :author-id (users-id u1))))))))
+
+(deftest list-user-notebooks-filters-visibility
+  (testing "list-user-notebooks filters by :visibility"
+    (with-test-db
+      (let ((u (create-test-user)))
+        (create-user-notebook! :title "P" :body-md "===prose===
+p" :cells '() :author u
+                                :status "published" :visibility "public")
+        (create-user-notebook! :title "Q" :body-md "===prose===
+q" :cells '() :author u
+                                :status "published" :visibility "private")
+        (let ((pub (list-user-notebooks :status "published" :visibility "public"))
+              (pri (list-user-notebooks :status "published" :visibility "private")))
+          (ok (= 1 (length pub)))
+          (ok (every (lambda (nb)
+                       (string= "public" (user-notebook-visibility nb)))
+                     pub))
+          (ok (= 1 (length pri)))
+          (ok (every (lambda (nb)
+                       (string= "private" (user-notebook-visibility nb)))
+                     pri)))))))
+
+(deftest count-user-notebooks-filters-visibility
+  (testing "count-user-notebooks filters by :visibility"
+    (with-test-db
+      (let ((u (create-test-user)))
+        (create-user-notebook! :title "P" :body-md "===prose===
+p" :cells '() :author u
+                                :status "published" :visibility "public")
+        (create-user-notebook! :title "Q" :body-md "===prose===
+q" :cells '() :author u
+                                :status "published" :visibility "private")
+        (create-user-notebook! :title "R" :body-md "===prose===
+r" :cells '() :author u
+                                :status "draft" :visibility "private")
+        (ok (= 1 (count-user-notebooks :visibility "public")))
+        (ok (= 2 (count-user-notebooks :visibility "private")))
+        (ok (= 1 (count-user-notebooks :status "published" :visibility "public")))
+        (ok (= 1 (count-user-notebooks :status "published" :visibility "private")))))))
 
 (deftest cells-jsonb-roundtrip
   (testing "cells written as a list come back parseable as a 2-element collection"

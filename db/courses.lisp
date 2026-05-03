@@ -18,6 +18,7 @@
                 #:course-title
                 #:course-summary
                 #:course-status
+                #:course-visibility
                 #:course-published-at
                 #:course-author
                 #:course-author-id
@@ -29,6 +30,7 @@
            #:course-title
            #:course-summary
            #:course-status
+           #:course-visibility
            #:course-published-at
            #:course-author
            #:course-author-id
@@ -44,7 +46,8 @@
 
 (in-package #:recurya/db/courses)
 
-(defun create-course! (&key title summary slug status published-at author course-id)
+(defun create-course! (&key title summary slug status visibility published-at
+                            author course-id)
   "Create a new course and return the created instance.
 
 Arguments:
@@ -52,6 +55,7 @@ Arguments:
   SUMMARY       - Short summary, max 500 chars (optional)
   SLUG          - URL slug (auto-generated from title if omitted)
   STATUS        - \"draft\" or \"published\" (default: \"draft\")
+  VISIBILITY    - \"private\" or \"public\" (default: \"private\")
   PUBLISHED-AT  - Timestamp when published (optional)
   AUTHOR        - Users instance (required, FK is NOT NULL)
   COURSE-ID     - Pre-generated UUID (optional)
@@ -67,6 +71,7 @@ Returns:
                     :title title
                     :summary summary
                     :status (or status "draft")
+                    :visibility (or visibility "private")
                     :published-at published-at
                     :author author))))
 
@@ -84,7 +89,8 @@ Returns:
   COURSE instance if found, NIL otherwise."
   (find-dao 'course :slug slug))
 
-(defun update-course! (course-id &key title slug summary status published-at)
+(defun update-course! (course-id &key title slug summary status visibility
+                                      published-at)
   "Update course attributes. Only provided fields are updated.
 
 SLUG is updated only when non-nil and non-empty (mirroring update-user-notebook!).
@@ -94,10 +100,10 @@ Returns:
   (let ((c (find-dao 'course :id (ensure-uuid course-id))))
     (when c
       (when title (setf (course-title c) title))
-      (when (and slug (not (string= "" slug)))
-        (setf (course-slug c) slug))
+      (when (and slug (not (string= "" slug))) (setf (course-slug c) slug))
       (when summary (setf (course-summary c) summary))
       (when status (setf (course-status c) status))
+      (when visibility (setf (course-visibility c) visibility))
       (when published-at (setf (course-published-at c) published-at))
       (save-dao c))
     c))
@@ -110,34 +116,49 @@ Returns:
   (let ((c (find-dao 'course :id (ensure-uuid course-id))))
     (when c (delete-dao c) t)))
 
-(defun list-courses (&key status author-id (limit 50) offset)
-  "List courses, optionally filtered by status and/or author, newest first.
+(defun list-courses (&key status author-id visibility (limit 50) offset)
+  "List courses, optionally filtered by status, author, and/or visibility, newest first.
 
 Arguments:
-  STATUS    - Filter by status string (optional)
-  AUTHOR-ID - Filter by author UUID (optional)
-  LIMIT     - Maximum results (default: 50)
-  OFFSET    - Number to skip (optional)
+  STATUS     - Filter by status string (optional)
+  AUTHOR-ID  - Filter by author UUID (optional)
+  VISIBILITY - Filter by visibility string (optional)
+  LIMIT      - Maximum results (default: 50)
+  OFFSET     - Number to skip (optional)
 
 Returns:
   List of COURSE instances."
   (let ((all
          (cond
+           ((and status author-id visibility)
+            (select-dao 'course
+              (where (:and (:= :status status)
+                           (:= :author_id author-id)
+                           (:= :visibility visibility)))
+              (order-by (:desc :created-at))))
            ((and status author-id)
             (select-dao 'course
               (where (:and (:= :status status) (:= :author_id author-id)))
               (order-by (:desc :created-at))))
-           (status
+           ((and status visibility)
             (select-dao 'course
-              (where (:= :status status))
+              (where (:and (:= :status status) (:= :visibility visibility)))
+              (order-by (:desc :created-at))))
+           ((and author-id visibility)
+            (select-dao 'course
+              (where (:and (:= :author_id author-id)
+                           (:= :visibility visibility)))
+              (order-by (:desc :created-at))))
+           (status
+            (select-dao 'course (where (:= :status status))
               (order-by (:desc :created-at))))
            (author-id
-            (select-dao 'course
-              (where (:= :author_id author-id))
+            (select-dao 'course (where (:= :author_id author-id))
               (order-by (:desc :created-at))))
-           (t
-            (select-dao 'course
-              (order-by (:desc :created-at)))))))
+           (visibility
+            (select-dao 'course (where (:= :visibility visibility))
+              (order-by (:desc :created-at))))
+           (t (select-dao 'course (order-by (:desc :created-at)))))))
     (cond
       ((and offset limit)
        (subseq all (min offset (length all))
@@ -146,27 +167,26 @@ Returns:
       (offset (subseq all (min offset (length all))))
       (t all))))
 
-(defun count-courses (&key status author-id)
-  "Count courses, optionally filtered by status and/or author.
+(defun count-courses (&key status author-id visibility)
+  "Count courses, optionally filtered by status, author, and/or visibility.
 
 Returns:
   Integer count."
-  (let ((conditions nil)
-        (binds nil))
-    (when status
-      (push "status = ?" conditions)
-      (push status binds))
+  (let ((conditions nil) (binds nil))
+    (when status (push "status = ?" conditions) (push status binds))
     (when author-id
       (push "author_id = ?" conditions)
       (push (princ-to-string author-id) binds))
+    (when visibility
+      (push "visibility = ?" conditions)
+      (push visibility binds))
     (let* ((where-clause
-            (if conditions
-                (format nil " WHERE ~{~A~^ AND ~}" (nreverse conditions))
-                ""))
+             (if conditions
+                 (format nil " WHERE ~{~A~^ AND ~}" (nreverse conditions))
+                 ""))
            (sql
-            (concatenate 'string
-                         "SELECT COUNT(*) as count FROM course"
-                         where-clause))
+             (concatenate 'string "SELECT COUNT(*) as count FROM course"
+                          where-clause))
            (binds (nreverse binds)))
       (let ((result (mito.db:retrieve-by-sql sql :binds binds)))
         (if result

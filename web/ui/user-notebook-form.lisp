@@ -81,6 +81,7 @@ a list of plists like (:line N :message \"...\")."
          (nb-summary (or (getf notebook :summary) ""))
          (nb-body    (or (getf notebook :body-md) ""))
          (nb-status  (or (getf notebook :status) "draft"))
+         (nb-visibility (or (getf notebook :visibility) "private"))
          (action-url (if editing-p
                          (format nil "/notebooks/~A" nb-id)
                          "/notebooks"))
@@ -150,6 +151,17 @@ a list of plists like (:line N :message \"...\")."
                                                     :selected
                                                     (when (equal nb-status "published") "selected")
                                                     "Published")))
+                            (:div :class "form-group"
+                                  (:label :for "visibility" "Visibility")
+                                  (:select :id "visibility" :name "visibility"
+                                           (:option :value "private"
+                                                    :selected
+                                                    (when (equal nb-visibility "private") "selected")
+                                                    "Private (only you)")
+                                           (:option :value "public"
+                                                    :selected
+                                                    (when (equal nb-visibility "public") "selected")
+                                                    "Public (anyone)")))
                             (:div :class "form-actions"
                                   (:button :type "submit" :class "btn-primary"
                                            (if editing-p "Update Notebook" "Create Notebook"))

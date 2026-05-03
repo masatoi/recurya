@@ -18,6 +18,7 @@
            #:user-notebook-body-md
            #:user-notebook-cells
            #:user-notebook-status
+           #:user-notebook-visibility
            #:user-notebook-published-at
            #:user-notebook-author
            #:user-notebook-author-id
@@ -51,6 +52,10 @@
            :initarg :status
            :initform "draft"
            :accessor user-notebook-status)
+   (visibility :col-type (:varchar 32)
+               :initarg :visibility
+               :initform "private"
+               :accessor user-notebook-visibility)
    (published-at :col-type (or :timestamptz :null)
                  :initarg :published-at
                  :initform nil

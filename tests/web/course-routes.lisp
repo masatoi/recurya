@@ -13,6 +13,7 @@
                 #:course-edit-handler
                 #:course-update-handler
                 #:course-toggle-status-handler
+                #:course-set-state-handler
                 #:course-confirm-delete-handler
                 #:course-delete-handler
                 #:course-add-notebook-handler
@@ -44,6 +45,7 @@
                 #:course-slug
                 #:course-summary
                 #:course-status
+                #:course-visibility
                 #:course-published-at)
   (:import-from #:uuid
                 #:make-v4-uuid))
@@ -177,6 +179,44 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (string= "published" (course-status c)))
             (ok (course-published-at c))))))))
 
+(deftest course-new-handler-form-has-visibility-select
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-new-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body))
+          (ok (search "value=private" body))
+          (ok (search "value=public" body)))))))
+
+(deftest course-create-handler-persists-visibility-public
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Vis Course")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "published")
+                        ("visibility" . "public"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "vis-course")))
+            (ok c)
+            (ok (string= "public" (course-visibility c)))))))))
+
+(deftest course-create-handler-defaults-visibility-private
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Default Priv C")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "draft"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "default-priv-c")))
+            (ok c)
+            (ok (string= "private" (course-visibility c)))))))))
+
 ;;; --- edit ---
 
 (deftest course-edit-handler-404-for-missing
@@ -211,6 +251,51 @@ HX-Request header is included so htmx-request-p returns T."
           (ok (search "Edit Course" body))
           (ok (search "Mine" body)))))))
 
+(deftest course-edit-handler-form-shows-existing-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Public C"
+                              :status "published"
+                              :visibility "public"
+                              :published-at (local-time:now)
+                              :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-edit-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "name=visibility" body))
+          (let* ((vis-pos (search "name=visibility" body))
+                 (segment (and vis-pos (subseq body vis-pos
+                                               (min (length body)
+                                                    (+ vis-pos 400))))))
+            (ok segment)
+            (ok (search "value=public selected" segment))))))))
+
+(deftest course-edit-handler-eligible-list-excludes-private-notebook
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Mine" :author dao))
+           (id (princ-to-string (course-id c))))
+      (create-user-notebook!
+       :title "EligPub"
+       :body-md (format nil "===prose===~%hi")
+       :cells nil :status "published" :visibility "public"
+       :published-at (local-time:now) :author dao)
+      (create-user-notebook!
+       :title "EligPriv"
+       :body-md (format nil "===prose===~%shh")
+       :cells nil :status "published" :visibility "private"
+       :published-at (local-time:now) :author dao)
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-edit-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "EligPub" body))
+          (ng (search "EligPriv" body)))))))
+
 ;;; --- update ---
 
 (deftest course-update-handler-403-for-non-owner
@@ -244,6 +329,26 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (string= "After" (course-title updated)))
             (ok (string= "published" (course-status updated)))
             (ok (course-published-at updated))))))))
+
+(deftest course-update-handler-persists-visibility
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Vis"
+                              :status "published"
+                              :visibility "private"
+                              :published-at (local-time:now)
+                              :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-update-handler
+                    (list (cons :id id)
+                          (cons "title" "Vis")
+                          (cons "status" "published")
+                          (cons "visibility" "public")))))
+          (ok (= 302 (response-status res)))
+          (let ((after (get-course-by-id id)))
+            (ok (string= "public" (course-visibility after)))))))))
 
 (deftest course-toggle-status-401-anonymous
   (with-mock-session (make-session)
@@ -289,6 +394,123 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (string= "draft" (course-status after)))
             (ok (course-published-at after)
                 "published_at is preserved on un-publish")))))))
+
+(deftest course-list-renders-3-state-pill-classes
+  (testing "Courses listing emits status-{draft|private|public} CSS classes."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-course! :title "DraftC" :status "draft"
+                        :visibility "private" :author dao)
+        (create-course! :title "PrivPubC" :status "published"
+                        :visibility "private"
+                        :published-at (local-time:now) :author dao)
+        (create-course! :title "PublicPubC" :status "published"
+                        :visibility "public"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session :user user)
+          (let* ((res (courses-me-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body))
+            (ok (search "status-private" body))
+            (ok (search "status-public" body))))))))
+
+(deftest course-toggle-status-pill-from-draft-emits-private-state
+  (testing "Legacy course toggle-status preserves visibility so a draft+private
+course flips to published+private and the pill shows status-private."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "C" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-toggle-status-handler (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-private" body))
+            (ng (search "status-draft" body))))))))
+
+(deftest course-set-state-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-set-state-handler
+                '((:id . "x") ("state" . "published-public")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-set-state-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (let ((res (course-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "published-public")))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest course-set-state-decodes-published-public
+  (testing "POST /courses/:id/state with state=published-public sets
+status=published, visibility=public, sets published_at, and returns the
+full <details> dropdown markup (summary pill + 3 hx-post state buttons),
+not a bare pill span."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "S" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-public"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-public" body))
+            ;; The dropdown markup must include the <details>/<summary>
+            ;; wrapper and three hx-post buttons (one per state token),
+            ;; otherwise repeated clicks will destroy the dropdown.
+            (ok (search "<details" body))
+            (ok (search "<summary" body))
+            (ok (search "status-pill-menu" body))
+            ;; spinneret HTML-escapes the inner double quotes of hx-vals.
+            (ok (search "&quot;state&quot;:&quot;draft&quot;" body))
+            (ok (search "&quot;state&quot;:&quot;published-private&quot;"
+                        body))
+            (ok (search "&quot;state&quot;:&quot;published-public&quot;"
+                        body))
+            (let ((after (get-course-by-id id)))
+              (ok (string= "published" (course-status after)))
+              (ok (string= "public" (course-visibility after)))
+              (ok (course-published-at after)))))))))
+
+(deftest course-set-state-rejects-invalid-state
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "S" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "garbage")))))
+          (ok (= 400 (response-status res))))))))
+
+(deftest course-list-pill-renders-state-dropdown
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Rowable" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (courses-me-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search (format nil "/courses/~A/state" id) body))
+          (ok (search "published-public" body))
+          (ok (search "published-private" body)))))))
 
 (deftest course-confirm-delete-401-anonymous
   (with-mock-session (make-session)
@@ -651,6 +873,7 @@ where the lists are aligned with the attached positions."
            (course (create-course! :title "Public Course"
                                    :summary "Course summary text."
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (slug (course-slug course))
@@ -698,12 +921,47 @@ where the lists are aligned with the attached positions."
           (ok (= 200 (response-status res)))
           (ok (search "Owner Draft" body)))))))
 
+(deftest public-course-handler-published-private-404-for-others
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (course (create-course! :title "Pub Priv Course"
+                                   :status "published"
+                                   :visibility "private"
+                                   :published-at (local-time:now)
+                                   :author owner-dao))
+           (slug (course-slug course)))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-course-handler (list (cons :slug slug)))))
+          (ok (= 404 (response-status res)))))
+      (with-mock-session (make-session)
+        (let ((res (public-course-handler (list (cons :slug slug)))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest public-course-handler-published-private-200-for-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (course (create-course! :title "Owner Pub Priv"
+                                   :status "published"
+                                   :visibility "private"
+                                   :published-at (local-time:now)
+                                   :author owner-dao))
+           (slug (course-slug course)))
+      (with-mock-session (make-session :user owner)
+        (let* ((res (public-course-handler (list (cons :slug slug))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Owner Pub Priv" body)))))))
+
 (deftest public-course-handler-shows-attached-notebooks-in-order
   (with-test-db
     (let* ((author (mk-user))
            (dao (get-user-by-id (getf author :id)))
            (course (create-course! :title "Ordered"
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (course-uuid (course-id course))
@@ -751,6 +1009,7 @@ where the lists are aligned with the attached positions."
            (dao (get-user-by-id (getf author :id))))
       (create-course! :title "Pub Course"
                       :status "published"
+                      :visibility "public"
                       :published-at (local-time:now)
                       :author dao)
       (create-course! :title "Drafty Course"
@@ -762,6 +1021,23 @@ where the lists are aligned with the attached positions."
           (ok (= 200 (response-status res)))
           (ok (search "Pub Course" body))
           (ng (search "Drafty Course" body)))))))
+
+(deftest courses-public-handler-shows-only-public
+  (with-test-db
+    (let* ((author (mk-user))
+           (dao (get-user-by-id (getf author :id))))
+      (create-course! :title "PubPub Course"
+                      :status "published" :visibility "public"
+                      :published-at (local-time:now) :author dao)
+      (create-course! :title "PubPriv Course"
+                      :status "published" :visibility "private"
+                      :published-at (local-time:now) :author dao)
+      (with-mock-session (make-session)
+        (let* ((res (courses-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "PubPub Course" body))
+          (ng (search "PubPriv Course" body)))))))
 
 (deftest courses-public-handler-anonymous-200
   (with-test-db
@@ -776,6 +1052,7 @@ where the lists are aligned with the attached positions."
            (dao (get-user-by-id (getf author :id)))
            (course (create-course! :title "Slug Linked"
                                    :status "published"
+                                   :visibility "public"
                                    :published-at (local-time:now)
                                    :author dao))
            (slug (course-slug course)))

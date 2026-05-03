@@ -21,12 +21,14 @@
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:lack/request #:request-env)
   (:import-from #:recurya/web/ui/blog-post)
-  (:import-from #:recurya/web/ui/user-notebooks)
+  (:import-from #:recurya/web/ui/user-notebooks
+                #:render-user-notebook-state-dropdown)
   (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
   (:import-from #:recurya/web/ui/course)
   (:import-from #:recurya/web/ui/course-list)
-  (:import-from #:recurya/web/ui/courses)
+  (:import-from #:recurya/web/ui/courses
+                #:render-course-state-dropdown)
   (:import-from #:recurya/web/ui/course-form)
   (:import-from #:recurya/db/posts
                 #:create-post!
@@ -63,6 +65,7 @@
                 #:user-notebook-body-md
                 #:user-notebook-cells
                 #:user-notebook-status
+                #:user-notebook-visibility
                 #:user-notebook-published-at
                 #:user-notebook-author
                 #:user-notebook-author-id
@@ -81,6 +84,7 @@
                 #:course-title
                 #:course-summary
                 #:course-status
+                #:course-visibility
                 #:course-published-at
                 #:course-author
                 #:course-author-id
@@ -138,6 +142,7 @@
            #:user-notebook-edit-handler
            #:user-notebook-update-handler
            #:user-notebook-toggle-status-handler
+           #:user-notebook-set-state-handler
            #:user-notebook-confirm-delete-handler
            #:user-notebook-delete-handler
            #:notebooks-public-handler
@@ -149,6 +154,7 @@
            #:course-edit-handler
            #:course-update-handler
            #:course-toggle-status-handler
+           #:course-set-state-handler
            #:course-confirm-delete-handler
            #:course-delete-handler
            #:course-add-notebook-handler
@@ -570,16 +576,17 @@ so cell ids stay stable across edits."
 
 (defun user-notebook->plist (nb)
   "Convert a user-notebook DAO into a plist for UI rendering."
-  (list :id           (princ-to-string (user-notebook-id nb))
-        :slug         (user-notebook-slug nb)
-        :title        (user-notebook-title nb)
-        :summary      (user-notebook-summary nb)
-        :body-md      (user-notebook-body-md nb)
-        :status       (user-notebook-status nb)
+  (list :id (princ-to-string (user-notebook-id nb))
+        :slug (user-notebook-slug nb)
+        :title (user-notebook-title nb)
+        :summary (user-notebook-summary nb)
+        :body-md (user-notebook-body-md nb)
+        :status (user-notebook-status nb)
+        :visibility (user-notebook-visibility nb)
         :published-at (user-notebook-published-at nb)
-        :created-at   (user-notebook-created-at nb)
-        :updated-at   (user-notebook-updated-at nb)
-        :author-id    (user-notebook-author-id nb)))
+        :created-at (user-notebook-created-at nb)
+        :updated-at (user-notebook-updated-at nb)
+        :author-id (user-notebook-author-id nb)))
 
 (defun user-notebooks-handler (params)
   "Handle GET /notebooks/me - admin user-notebook list (own notebooks)."
@@ -614,25 +621,32 @@ so cell ids stay stable across edits."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
-        (let ((title (get-param params "title"))
-              (slug (get-param params "slug"))
-              (summary (get-param params "summary"))
-              (body (get-param params "body"))
-              (status (get-param params "status")))
+        (let* ((title (get-param params "title"))
+               (slug (get-param params "slug"))
+               (summary (get-param params "summary"))
+               (body (get-param params "body"))
+               (status (get-param params "status"))
+               (visibility-raw (get-param params "visibility"))
+               (visibility
+                 (if (member visibility-raw '("private" "public") :test #'equal)
+                     visibility-raw
+                     "private")))
           (cond
             ((or (null title) (equal title ""))
              (html-response
               (recurya/web/ui/user-notebook-form:render
                :user user
                :notebook (list :title title :slug slug :summary summary
-                               :body-md body :status status)
+                               :body-md body :status status
+                               :visibility visibility)
                :errors '((:line nil :message "Title is required.")))))
             ((or (null body) (equal body ""))
              (html-response
               (recurya/web/ui/user-notebook-form:render
                :user user
                :notebook (list :title title :slug slug :summary summary
-                               :body-md body :status status)
+                               :body-md body :status status
+                               :visibility visibility)
                :errors '((:line nil :message "Body is required.")))))
             (t
              (multiple-value-bind (cells parse-errors)
@@ -643,7 +657,8 @@ so cell ids stay stable across edits."
                    (recurya/web/ui/user-notebook-form:render
                     :user user
                     :notebook (list :title title :slug slug :summary summary
-                                    :body-md body :status status)
+                                    :body-md body :status status
+                                    :visibility visibility)
                     :errors parse-errors)))
                  (t
                   (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
@@ -655,6 +670,7 @@ so cell ids stay stable across edits."
                      :title title :slug slug-val :summary summary-val
                      :body-md body :cells cells-plists
                      :status (or status "draft")
+                     :visibility visibility
                      :published-at published-at
                      :author (get-session-user-object))
                     (redirect "/notebooks/me")))))))))))
@@ -695,11 +711,19 @@ description) match."
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
-             (let ((title (get-param params "title"))
-                   (slug (get-param params "slug"))
-                   (summary (get-param params "summary"))
-                   (body (get-param params "body"))
-                   (status (get-param params "status")))
+             (let* ((title (get-param params "title"))
+                    (slug (get-param params "slug"))
+                    (summary (get-param params "summary"))
+                    (body (get-param params "body"))
+                    (status (get-param params "status"))
+                    (visibility-raw (get-param params "visibility"))
+                    (visibility
+                      (cond
+                        ((member visibility-raw '("private" "public")
+                                 :test #'equal)
+                         visibility-raw)
+                        (visibility-raw "private")
+                        (t (user-notebook-visibility existing)))))
                (cond
                  ((or (null title) (equal title ""))
                   (html-response
@@ -707,7 +731,7 @@ description) match."
                     :user user
                     :notebook (list :id id :title title :slug slug
                                     :summary summary :body-md body
-                                    :status status)
+                                    :status status :visibility visibility)
                     :errors '((:line nil :message "Title is required.")))))
                  ((or (null body) (equal body ""))
                   (html-response
@@ -715,14 +739,13 @@ description) match."
                     :user user
                     :notebook (list :id id :title title :slug slug
                                     :summary summary :body-md body
-                                    :status status)
+                                    :status status :visibility visibility)
                     :errors '((:line nil :message "Body is required.")))))
                  (t
                   (let ((existing-cells
                           (mapcar #'jsonb-hash->cell
                                   (coerce
-                                   (recurya/db/user-notebooks:user-notebook-cells-parsed
-                                    existing)
+                                   (recurya/db/user-notebooks:user-notebook-cells-parsed existing)
                                    'list))))
                     (multiple-value-bind (cells parse-errors)
                         (parse-notebook-body body existing-cells)
@@ -733,46 +756,46 @@ description) match."
                            :user user
                            :notebook (list :id id :title title :slug slug
                                            :summary summary :body-md body
-                                           :status status)
+                                           :status status
+                                           :visibility visibility)
                            :errors parse-errors)))
                         (t
                          (let* ((slug-val
                                   (if (and slug (string/= slug "")) slug nil))
                                 (summary-val
                                   (if (and summary (string/= summary ""))
-                                      summary nil))
+                                      summary
+                                      nil))
                                 (published-at
                                   (when (and (equal status "published")
                                              (not (equal
-                                                    (user-notebook-status existing)
-                                                    "published")))
+                                                   (user-notebook-status existing)
+                                                   "published")))
                                     (local-time:now)))
                                 (cells-plists
                                   (mapcar #'cell->jsonb-form cells)))
                            (update-user-notebook!
-                            id
-                            :title title
-                            :slug slug-val
-                            :summary summary-val
-                            :body-md body
-                            :cells cells-plists
+                            id :title title :slug slug-val :summary summary-val
+                            :body-md body :cells cells-plists
                             :status (or status "draft")
+                            :visibility visibility
                             :published-at published-at)
                            (redirect "/notebooks/me")))))))))))))))
 
 (defun course->plist (c)
   "Convert a course DAO into a plist for UI rendering. The :notebook-count
 field is the number of notebooks attached to the course via course_notebook."
-  (list :id              (princ-to-string (course-id c))
-        :slug            (course-slug c)
-        :title           (course-title c)
-        :summary         (course-summary c)
-        :status          (course-status c)
-        :published-at    (course-published-at c)
-        :created-at      (course-created-at c)
-        :updated-at      (course-updated-at c)
-        :author-id       (course-author-id c)
-        :notebook-count  (count-course-notebooks (course-id c))))
+  (list :id (princ-to-string (course-id c))
+        :slug (course-slug c)
+        :title (course-title c)
+        :summary (course-summary c)
+        :status (course-status c)
+        :visibility (course-visibility c)
+        :published-at (course-published-at c)
+        :created-at (course-created-at c)
+        :updated-at (course-updated-at c)
+        :author-id (course-author-id c)
+        :notebook-count (count-course-notebooks (course-id c))))
 
 (defun courses-me-handler (params)
   "Handle GET /courses/me - admin course list (own courses)."
@@ -807,17 +830,22 @@ field is the number of notebooks attached to the course via course_notebook."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
-        (let ((title (get-param params "title"))
-              (slug (get-param params "slug"))
-              (summary (get-param params "summary"))
-              (status (get-param params "status")))
+        (let* ((title (get-param params "title"))
+               (slug (get-param params "slug"))
+               (summary (get-param params "summary"))
+               (status (get-param params "status"))
+               (visibility-raw (get-param params "visibility"))
+               (visibility
+                 (if (member visibility-raw '("private" "public") :test #'equal)
+                     visibility-raw
+                     "private")))
           (cond
             ((or (null title) (equal title ""))
              (html-response
               (recurya/web/ui/course-form:render
                :user user
                :course (list :title title :slug slug :summary summary
-                             :status status)
+                             :status status :visibility visibility)
                :errors '((:line nil :message "Title is required.")))))
             (t
              (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
@@ -827,6 +855,7 @@ field is the number of notebooks attached to the course via course_notebook."
                (create-course!
                 :title title :slug slug-val :summary summary-val
                 :status (or status "draft")
+                :visibility visibility
                 :published-at published-at
                 :author (get-session-user-object))
                (redirect "/courses/me"))))))))
@@ -849,7 +878,8 @@ field is the number of notebooks attached to the course via course_notebook."
   "Return plists (:id :title) of USER-ID's published notebooks that are
 not already attached. ATTACHED-NOTEBOOK-IDS is a list of UUID strings."
   (let* ((own
-          (list-user-notebooks :status "published" :author-id user-id
+          (list-user-notebooks :status "published" :visibility "public"
+                               :author-id user-id
                                :limit 1000))
          (attached-set
           (mapcar (lambda (x) (princ-to-string x)) attached-notebook-ids)))
@@ -902,76 +932,155 @@ populated with the user's other published notebooks."
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
-             (let ((title (get-param params "title"))
-                   (slug (get-param params "slug"))
-                   (summary (get-param params "summary"))
-                   (status (get-param params "status")))
+             (let* ((title (get-param params "title"))
+                    (slug (get-param params "slug"))
+                    (summary (get-param params "summary"))
+                    (status (get-param params "status"))
+                    (visibility-raw (get-param params "visibility"))
+                    (visibility
+                      (cond
+                        ((member visibility-raw '("private" "public")
+                                 :test #'equal)
+                         visibility-raw)
+                        (visibility-raw "private")
+                        (t (course-visibility existing)))))
                (cond
                  ((or (null title) (equal title ""))
                   (html-response
                    (recurya/web/ui/course-form:render
                     :user user
                     :course (list :id id :title title :slug slug
-                                  :summary summary :status status)
+                                  :summary summary :status status
+                                  :visibility visibility)
                     :errors '((:line nil :message "Title is required.")))))
                  (t
-                  (let* ((slug-val
-                           (if (and slug (string/= slug "")) slug nil))
-                         (summary-val
-                           (if (and summary (string/= summary ""))
-                               summary nil))
+                  (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
+                         (summary-val (if (and summary (string/= summary ""))
+                                          summary
+                                          nil))
                          (published-at
                            (when (and (equal status "published")
-                                      (not (equal
-                                             (course-status existing)
-                                             "published")))
+                                      (not (equal (course-status existing)
+                                                  "published")))
                              (local-time:now))))
                     (update-course!
-                     id
-                     :title title
-                     :slug slug-val
-                     :summary summary-val
+                     id :title title :slug slug-val :summary summary-val
                      :status (or status "draft")
+                     :visibility visibility
                      :published-at published-at)
                     (redirect "/courses/me")))))))))))
 
-(defun render-course-status-pill (id status)
-  "Render the course status pill HTML fragment for HTMX swap."
-  (let ((status-lower (string-downcase (or status "draft"))))
+(defun render-course-status-pill (id status &optional (visibility "private"))
+  "Render the course status pill HTML fragment for HTMX swap.
+
+Renders a 3-state pill computed from (STATUS, VISIBILITY):
+  (draft, *)               -> Draft (yellow, class=status-draft)
+  (published, private)     -> Private (purple, class=status-private)
+  (published, public)      -> Public (green, class=status-public)
+
+Click POSTs to /courses/:id/toggle-status (legacy 2-state toggle)."
+  (let* ((status-lower (string-downcase (or status "draft")))
+         (visibility-lower (string-downcase (or visibility "private")))
+         (state-class (cond ((equal status-lower "draft") "status-draft")
+                            ((equal visibility-lower "public") "status-public")
+                            (t "status-private")))
+         (label (cond ((equal status-lower "draft") "Draft")
+                      ((equal visibility-lower "public") "Public")
+                      (t "Private"))))
     (with-html-string
-      (:span :class "status-pill"
-             :id (format nil "status-~A" id)
-             :data-status status-lower
-             :hx-post (format nil "/courses/~A/toggle-status" id)
-             :hx-target (format nil "#status-~A" id)
-             :hx-swap "outerHTML"
-             (string-capitalize status-lower)))))
+     (:span :class (format nil "status-pill ~A" state-class)
+      :id (format nil "status-~A" id)
+      :data-status status-lower :data-visibility visibility-lower
+      :hx-post (format nil "/courses/~A/toggle-status" id)
+      :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
+      label))))
 
 (defun course-toggle-status-handler (params)
-  "Handle POST /courses/:id/toggle-status - toggle between draft and published.
-Returns the updated status pill HTML fragment for HTMX swap."
+  "Handle POST /courses/:id/toggle-status - legacy 2-state toggle.
+Toggles between draft and published while preserving the visibility column.
+Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
         (let* ((id (get-path-param params :id))
                (c (and id (get-course-by-id id))))
           (cond ((null c) (html-response "Not found" :status 404))
-                ((not (equal (princ-to-string (course-author-id c))
-                             (princ-to-string (getf user :id))))
+                ((not
+                  (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
                  (html-response "Forbidden" :status 403))
                 (t
                  (let* ((current (course-status c))
-                        (new-status (if (equal current "published")
-                                        "draft"
-                                        "published"))
+                        (current-vis (course-visibility c))
+                        (new-status
+                          (if (equal current "published")
+                              "draft"
+                              "published"))
                         (published-at
-                         (when (equal new-status "published")
-                           (local-time:now))))
-                   (update-course! id
-                                   :status new-status
+                          (when (equal new-status "published")
+                            (local-time:now))))
+                   (update-course! id :status new-status :published-at
+                                   published-at)
+                   (html-response
+                    (render-course-status-pill id new-status
+                                               current-vis)))))))))
+
+(defun %decode-state-token (token)
+  "Decode the new pill state TOKEN into (values STATUS VISIBILITY) or
+NIL if invalid.
+
+Tokens are:
+  \"draft\"               -> (\"draft\" nil)         ; visibility unchanged
+  \"published-private\"   -> (\"published\" \"private\")
+  \"published-public\"    -> (\"published\" \"public\")"
+  (cond ((equal token "draft") (values "draft" nil))
+        ((equal token "published-private")
+         (values "published" "private"))
+        ((equal token "published-public")
+         (values "published" "public"))
+        (t nil)))
+
+(defun course-set-state-handler (params)
+  "Handle POST /courses/:id/state with form param state= one of
+draft|published-private|published-public.
+
+Decodes into (status, visibility), updates the course, and returns the
+updated <details> dropdown markup (summary pill + 3 state buttons) so
+HTMX can swap the entire dropdown via outerHTML and keep it functional
+after subsequent clicks. Owner-only."
+  (let ((user (get-current-user)))
+    (cond
+      ((null user)
+       (html-response "Unauthorized" :status 401))
+      (t
+       (let* ((id (get-path-param params :id))
+              (state-token (get-param params "state"))
+              (c (and id (get-course-by-id id))))
+         (cond
+           ((null c) (html-response "Not found" :status 404))
+           ((not (equal (princ-to-string (course-author-id c))
+                        (princ-to-string (getf user :id))))
+            (html-response "Forbidden" :status 403))
+           (t
+            (multiple-value-bind (new-status new-vis)
+                (%decode-state-token state-token)
+              (cond
+                ((null new-status)
+                 (html-response "Bad request" :status 400))
+                (t
+                 (let* ((current-status (course-status c))
+                        (current-vis (course-visibility c))
+                        (effective-vis (or new-vis current-vis))
+                        (published-at
+                          (when (and (equal new-status "published")
+                                     (not (equal current-status "published")))
+                            (local-time:now))))
+                   (update-course! id :status new-status
+                                   :visibility effective-vis
                                    :published-at published-at)
                    (html-response
-                    (render-course-status-pill id new-status)))))))))
+                    (render-course-state-dropdown id new-status
+                                                  effective-vis)))))))))))))
 
 (defun course-confirm-delete-handler (params)
   "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
@@ -1175,43 +1284,103 @@ notebooks dropdown in sync."
                   (%render-course-notebook-list-fragment
                    c (getf user :id)))))))))))
 
-(defun render-user-notebook-status-pill (id status)
-  "Render the user-notebook status pill HTML fragment for HTMX swap."
-  (let ((status-lower (string-downcase (or status "draft"))))
+(defun render-user-notebook-status-pill (id status &optional (visibility "private"))
+  "Render the user-notebook status pill HTML fragment for HTMX swap.
+
+Renders a 3-state pill computed from (STATUS, VISIBILITY):
+  (draft, *)               -> Draft (yellow, class=status-draft)
+  (published, private)     -> Private (purple, class=status-private)
+  (published, public)      -> Public (green, class=status-public)
+
+Click POSTs to /notebooks/:id/toggle-status (legacy 2-state toggle).
+The Task 14 dropdown is layered on top of this in the listing template."
+  (let* ((status-lower (string-downcase (or status "draft")))
+         (visibility-lower (string-downcase (or visibility "private")))
+         (state-class (cond ((equal status-lower "draft") "status-draft")
+                            ((equal visibility-lower "public") "status-public")
+                            (t "status-private")))
+         (label (cond ((equal status-lower "draft") "Draft")
+                      ((equal visibility-lower "public") "Public")
+                      (t "Private"))))
     (with-html-string
-      (:span :class "status-pill"
-             :id (format nil "status-~A" id)
-             :data-status status-lower
-             :hx-post (format nil "/notebooks/~A/toggle-status" id)
-             :hx-target (format nil "#status-~A" id)
-             :hx-swap "outerHTML"
-             (string-capitalize status-lower)))))
+     (:span :class (format nil "status-pill ~A" state-class)
+      :id (format nil "status-~A" id)
+      :data-status status-lower :data-visibility visibility-lower
+      :hx-post (format nil "/notebooks/~A/toggle-status" id)
+      :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
+      label))))
 
 (defun user-notebook-toggle-status-handler (params)
-  "Handle POST /notebooks/:id/toggle-status - toggle between draft and published.
-Returns the updated status pill HTML fragment for HTMX swap."
+  "Handle POST /notebooks/:id/toggle-status - legacy 2-state toggle.
+Toggles between draft and published while preserving the visibility column.
+Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
         (let* ((id (get-path-param params :id))
                (nb (and id (get-user-notebook-by-id id))))
-          (cond
-            ((null nb) (html-response "Not found" :status 404))
-            ((not (equal (princ-to-string (user-notebook-author-id nb))
+          (cond ((null nb) (html-response "Not found" :status 404))
+                ((not
+                  (equal (princ-to-string (user-notebook-author-id nb))
                          (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (let* ((current (user-notebook-status nb))
-                    (new-status (if (equal current "published")
-                                    "draft"
-                                    "published"))
-                    (published-at (when (equal new-status "published")
-                                    (local-time:now))))
-               (update-user-notebook! id
-                                      :status new-status
-                                      :published-at published-at)
-               (html-response
-                (render-user-notebook-status-pill id new-status)))))))))
+                 (html-response "Forbidden" :status 403))
+                (t
+                 (let* ((current (user-notebook-status nb))
+                        (current-vis (user-notebook-visibility nb))
+                        (new-status
+                          (if (equal current "published")
+                              "draft"
+                              "published"))
+                        (published-at
+                          (when (equal new-status "published")
+                            (local-time:now))))
+                   (update-user-notebook! id :status new-status :published-at
+                                          published-at)
+                   (html-response
+                    (render-user-notebook-status-pill id new-status
+                                                      current-vis)))))))))
+
+(defun user-notebook-set-state-handler (params)
+  "Handle POST /notebooks/:id/state with form param state= one of
+draft|published-private|published-public.
+
+Decodes into (status, visibility), updates the notebook, and returns
+the updated <details> dropdown markup (summary pill + 3 state buttons)
+so HTMX can swap the entire dropdown via outerHTML and keep it
+functional after subsequent clicks. Owner-only."
+  (let ((user (get-current-user)))
+    (cond
+      ((null user)
+       (html-response "Unauthorized" :status 401))
+      (t
+       (let* ((id (get-path-param params :id))
+              (state-token (get-param params "state"))
+              (nb (and id (get-user-notebook-by-id id))))
+         (cond
+           ((null nb) (html-response "Not found" :status 404))
+           ((not (equal (princ-to-string (user-notebook-author-id nb))
+                        (princ-to-string (getf user :id))))
+            (html-response "Forbidden" :status 403))
+           (t
+            (multiple-value-bind (new-status new-vis)
+                (%decode-state-token state-token)
+              (cond
+                ((null new-status)
+                 (html-response "Bad request" :status 400))
+                (t
+                 (let* ((current-status (user-notebook-status nb))
+                        (current-vis (user-notebook-visibility nb))
+                        (effective-vis (or new-vis current-vis))
+                        (published-at
+                          (when (and (equal new-status "published")
+                                     (not (equal current-status "published")))
+                            (local-time:now))))
+                   (update-user-notebook! id :status new-status
+                                          :visibility effective-vis
+                                          :published-at published-at)
+                   (html-response
+                    (render-user-notebook-state-dropdown id new-status
+                                                         effective-vis)))))))))))))
 
 (defun user-notebook-confirm-delete-handler (params)
   "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
@@ -1273,9 +1442,11 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
   "Handle GET /notebooks - public listing of published user-notebooks.
 No authentication required."
   (let* ((page (parse-page-param params))
-         (total-count (count-user-notebooks :status "published"))
+         (total-count (count-user-notebooks :status "published"
+                                             :visibility "public"))
          (offset (* (1- page) *page-size*))
          (raw (list-user-notebooks :status "published"
+                                   :visibility "public"
                                    :limit *page-size*
                                    :offset offset))
          (notebooks (mapcar #'user-notebook-public-plist raw))
@@ -1314,15 +1485,11 @@ course (preserving the ?course=<slug> query string)."
   (let* ((slug (get-path-param params :slug))
          (nb-row (and slug (get-user-notebook-by-slug slug)))
          (user (get-current-user))
-         (uid (and user (getf user :id)))
-         (owner-p
-          (and nb-row uid
-               (equal (princ-to-string (user-notebook-author-id nb-row))
-                      (princ-to-string uid)))))
+         (uid (and user (getf user :id))))
     (cond
       ((null nb-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
-      ((and (string= "draft" (user-notebook-status nb-row)) (not owner-p))
+      ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
        (let* ((notebook (user-notebook-row->notebook-struct nb-row))
@@ -1415,16 +1582,11 @@ Anonymous and other users see published courses; the owner can also
 preview their own draft. Anything else is 404."
   (let* ((slug (get-path-param params :slug))
          (course-row (and slug (get-course-by-slug slug)))
-         (user (get-current-user))
-         (uid (and user (getf user :id)))
-         (owner-p
-          (and course-row uid
-               (equal (princ-to-string (course-author-id course-row))
-                      (princ-to-string uid)))))
+         (user (get-current-user)))
     (cond
       ((null course-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
-      ((and (string= "draft" (course-status course-row)) (not owner-p))
+      ((not (recurya/utils/access-control:can-view-course-p user course-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
        (let* ((rows (list-course-notebooks (course-id course-row)))
@@ -1452,9 +1614,11 @@ preview their own draft. Anything else is 404."
   "Handle GET /courses - public listing of published courses.
 No authentication required."
   (let* ((page (parse-page-param params))
-         (total-count (count-courses :status "published"))
+         (total-count (count-courses :status "published"
+                                      :visibility "public"))
          (offset (* (1- page) *page-size*))
          (raw (list-courses :status "published"
+                            :visibility "public"
                             :limit *page-size*
                             :offset offset))
          (courses (mapcar #'course-public-plist raw))
@@ -1488,13 +1652,10 @@ Drafts are visible (and runnable) only to the owner."
   (let* ((slug (get-path-param params :slug))
          (nb-row (and slug (get-user-notebook-by-slug slug)))
          (user (get-current-user))
-         (uid (and user (getf user :id)))
-         (owner-p (and nb-row uid
-                       (equal (princ-to-string (user-notebook-author-id nb-row))
-                              (princ-to-string uid)))))
+         (uid (and user (getf user :id))))
     (cond
       ((null nb-row) (html-response "Notebook not found" :status 404))
-      ((and (string= "draft" (user-notebook-status nb-row)) (not owner-p))
+      ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response "Notebook not found" :status 404))
       (t
        (let* ((notebook (user-notebook-row->notebook-struct nb-row))
@@ -1877,6 +2038,8 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-update-handler))
   (setf (ningle/app:route app "/notebooks/:id/toggle-status" :method :post)
           (make-dynamic-handler 'user-notebook-toggle-status-handler))
+  (setf (ningle/app:route app "/notebooks/:id/state" :method :post)
+          (make-dynamic-handler 'user-notebook-set-state-handler))
   (setf (ningle/app:route app "/notebooks/:id/confirm-delete")
           (make-dynamic-handler 'user-notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
@@ -1894,6 +2057,8 @@ without restarting the server."
           (make-dynamic-handler 'course-update-handler))
   (setf (ningle/app:route app "/courses/:id/toggle-status" :method :post)
           (make-dynamic-handler 'course-toggle-status-handler))
+  (setf (ningle/app:route app "/courses/:id/state" :method :post)
+          (make-dynamic-handler 'course-set-state-handler))
   (setf (ningle/app:route app "/courses/:id/confirm-delete")
           (make-dynamic-handler 'course-confirm-delete-handler))
   (setf (ningle/app:route app "/courses/:id/delete" :method :post)
