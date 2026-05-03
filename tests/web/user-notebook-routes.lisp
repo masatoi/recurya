@@ -13,6 +13,7 @@
                 #:user-notebook-edit-handler
                 #:user-notebook-update-handler
                 #:user-notebook-toggle-status-handler
+                #:user-notebook-set-state-handler
                 #:user-notebook-confirm-delete-handler
                 #:user-notebook-delete-handler
                 #:notebooks-public-handler
@@ -538,6 +539,114 @@ hi"
                 "pill turns purple/private after publish")
             (ng (search "status-draft" body)
                 "draft class no longer applies")))))))
+
+(deftest set-state-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (user-notebook-set-state-handler
+                '((:id . "x") ("state" . "published-public")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest set-state-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (nb (create-user-notebook!
+                :title "Owned" :body-md "===prose===
+hi"
+                :cells '() :author owner-dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (let ((res (user-notebook-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "published-public")))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest set-state-decodes-published-public
+  (testing "POST /notebooks/:id/state with state=published-public sets
+status=published, visibility=public, sets published_at, and returns the
+status-public pill HTML."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-public"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-public" body))
+            (let ((after (get-user-notebook-by-id id)))
+              (ok (string= "published" (user-notebook-status after)))
+              (ok (string= "public" (user-notebook-visibility after)))
+              (ok (recurya/db/user-notebooks:user-notebook-published-at
+                   after)))))))))
+
+(deftest set-state-decodes-draft-preserves-visibility
+  (testing "state=draft from a published+public notebook turns it back to
+draft while preserving published_at; pill becomes status-draft."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "published" :visibility "public"
+                  :published-at (local-time:now)))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "draft"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-draft" body))
+            (let ((after (get-user-notebook-by-id id)))
+              (ok (string= "draft" (user-notebook-status after))))))))))
+
+(deftest set-state-rejects-invalid-state
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook!
+                :title "S" :body-md "===prose===
+hi"
+                :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "garbage")))))
+          (ok (= 400 (response-status res))))))))
+
+(deftest list-pill-renders-state-dropdown
+  (testing "Each row renders a Draft/Private/Public dropdown that posts to
+/notebooks/:id/state."
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-user-notebook!
+                  :title "Rowable" :body-md "===prose===
+hi"
+                  :cells '() :author dao :status "draft"))
+             (id (princ-to-string (user-notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (user-notebooks-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search (format nil "/notebooks/~A/state" id) body)
+                "row links the new /state endpoint")
+            (ok (search "published-public" body)
+                "Public option is present in the dropdown")
+            (ok (search "published-private" body)
+                "Private option is present")))))))
 
 (deftest confirm-delete-401-anonymous
   (with-mock-session (make-session)

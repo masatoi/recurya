@@ -13,6 +13,7 @@
                 #:course-edit-handler
                 #:course-update-handler
                 #:course-toggle-status-handler
+                #:course-set-state-handler
                 #:course-confirm-delete-handler
                 #:course-delete-handler
                 #:course-add-notebook-handler
@@ -430,6 +431,70 @@ course flips to published+private and the pill shows status-private."
             (ok (= 200 (response-status res)))
             (ok (search "status-private" body))
             (ng (search "status-draft" body))))))))
+
+(deftest course-set-state-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-set-state-handler
+                '((:id . "x") ("state" . "published-public")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-set-state-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (let ((res (course-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "published-public")))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest course-set-state-decodes-published-public
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "S" :author dao
+                              :status "draft" :visibility "private"))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-set-state-handler
+                     (list (cons :id id)
+                           (cons "state" "published-public"))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "status-public" body))
+          (let ((after (get-course-by-id id)))
+            (ok (string= "published" (course-status after)))
+            (ok (string= "public" (course-visibility after)))
+            (ok (course-published-at after))))))))
+
+(deftest course-set-state-rejects-invalid-state
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "S" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-set-state-handler
+                    (list (cons :id id)
+                          (cons "state" "garbage")))))
+          (ok (= 400 (response-status res))))))))
+
+(deftest course-list-pill-renders-state-dropdown
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Rowable" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (courses-me-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search (format nil "/courses/~A/state" id) body))
+          (ok (search "published-public" body))
+          (ok (search "published-private" body)))))))
 
 (deftest course-confirm-delete-401-anonymous
   (with-mock-session (make-session)

@@ -140,6 +140,7 @@
            #:user-notebook-edit-handler
            #:user-notebook-update-handler
            #:user-notebook-toggle-status-handler
+           #:user-notebook-set-state-handler
            #:user-notebook-confirm-delete-handler
            #:user-notebook-delete-handler
            #:notebooks-public-handler
@@ -151,6 +152,7 @@
            #:course-edit-handler
            #:course-update-handler
            #:course-toggle-status-handler
+           #:course-set-state-handler
            #:course-confirm-delete-handler
            #:course-delete-handler
            #:course-add-notebook-handler
@@ -1021,6 +1023,61 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
                     (render-course-status-pill id new-status
                                                current-vis)))))))))
 
+(defun %decode-state-token (token)
+  "Decode the new pill state TOKEN into (values STATUS VISIBILITY) or
+NIL if invalid.
+
+Tokens are:
+  \"draft\"               -> (\"draft\" nil)         ; visibility unchanged
+  \"published-private\"   -> (\"published\" \"private\")
+  \"published-public\"    -> (\"published\" \"public\")"
+  (cond ((equal token "draft") (values "draft" nil))
+        ((equal token "published-private")
+         (values "published" "private"))
+        ((equal token "published-public")
+         (values "published" "public"))
+        (t nil)))
+
+(defun course-set-state-handler (params)
+  "Handle POST /courses/:id/state with form param state= one of
+draft|published-private|published-public.
+
+Decodes into (status, visibility), updates the course, and returns the
+updated 3-state pill HTML for HTMX swap. Owner-only."
+  (let ((user (get-current-user)))
+    (cond
+      ((null user)
+       (html-response "Unauthorized" :status 401))
+      (t
+       (let* ((id (get-path-param params :id))
+              (state-token (get-param params "state"))
+              (c (and id (get-course-by-id id))))
+         (cond
+           ((null c) (html-response "Not found" :status 404))
+           ((not (equal (princ-to-string (course-author-id c))
+                        (princ-to-string (getf user :id))))
+            (html-response "Forbidden" :status 403))
+           (t
+            (multiple-value-bind (new-status new-vis)
+                (%decode-state-token state-token)
+              (cond
+                ((null new-status)
+                 (html-response "Bad request" :status 400))
+                (t
+                 (let* ((current-status (course-status c))
+                        (current-vis (course-visibility c))
+                        (effective-vis (or new-vis current-vis))
+                        (published-at
+                          (when (and (equal new-status "published")
+                                     (not (equal current-status "published")))
+                            (local-time:now))))
+                   (update-course! id :status new-status
+                                   :visibility effective-vis
+                                   :published-at published-at)
+                   (html-response
+                    (render-course-status-pill id new-status
+                                               effective-vis)))))))))))))
+
 (defun course-confirm-delete-handler (params)
   "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
   (let ((user (get-current-user)))
@@ -1278,6 +1335,46 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
                    (html-response
                     (render-user-notebook-status-pill id new-status
                                                       current-vis)))))))))
+
+(defun user-notebook-set-state-handler (params)
+  "Handle POST /notebooks/:id/state with form param state= one of
+draft|published-private|published-public.
+
+Decodes into (status, visibility), updates the notebook, and returns
+the updated 3-state pill HTML for HTMX swap. Owner-only."
+  (let ((user (get-current-user)))
+    (cond
+      ((null user)
+       (html-response "Unauthorized" :status 401))
+      (t
+       (let* ((id (get-path-param params :id))
+              (state-token (get-param params "state"))
+              (nb (and id (get-user-notebook-by-id id))))
+         (cond
+           ((null nb) (html-response "Not found" :status 404))
+           ((not (equal (princ-to-string (user-notebook-author-id nb))
+                        (princ-to-string (getf user :id))))
+            (html-response "Forbidden" :status 403))
+           (t
+            (multiple-value-bind (new-status new-vis)
+                (%decode-state-token state-token)
+              (cond
+                ((null new-status)
+                 (html-response "Bad request" :status 400))
+                (t
+                 (let* ((current-status (user-notebook-status nb))
+                        (current-vis (user-notebook-visibility nb))
+                        (effective-vis (or new-vis current-vis))
+                        (published-at
+                          (when (and (equal new-status "published")
+                                     (not (equal current-status "published")))
+                            (local-time:now))))
+                   (update-user-notebook! id :status new-status
+                                          :visibility effective-vis
+                                          :published-at published-at)
+                   (html-response
+                    (render-user-notebook-status-pill id new-status
+                                                      effective-vis)))))))))))))
 
 (defun user-notebook-confirm-delete-handler (params)
   "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
@@ -1935,6 +2032,8 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-update-handler))
   (setf (ningle/app:route app "/notebooks/:id/toggle-status" :method :post)
           (make-dynamic-handler 'user-notebook-toggle-status-handler))
+  (setf (ningle/app:route app "/notebooks/:id/state" :method :post)
+          (make-dynamic-handler 'user-notebook-set-state-handler))
   (setf (ningle/app:route app "/notebooks/:id/confirm-delete")
           (make-dynamic-handler 'user-notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
@@ -1952,6 +2051,8 @@ without restarting the server."
           (make-dynamic-handler 'course-update-handler))
   (setf (ningle/app:route app "/courses/:id/toggle-status" :method :post)
           (make-dynamic-handler 'course-toggle-status-handler))
+  (setf (ningle/app:route app "/courses/:id/state" :method :post)
+          (make-dynamic-handler 'course-set-state-handler))
   (setf (ningle/app:route app "/courses/:id/confirm-delete")
           (make-dynamic-handler 'course-confirm-delete-handler))
   (setf (ningle/app:route app "/courses/:id/delete" :method :post)

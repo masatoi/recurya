@@ -32,6 +32,24 @@
 .status-pill.status-private { background: #6b21a8; color: #f3e8ff; }
 .status-pill.status-public { background: var(--color-success-bg);
                              color: var(--color-success-text); }
+.status-pill-menu { position: relative; display: inline-block; }
+.status-pill-menu > summary { list-style: none; cursor: pointer; }
+.status-pill-menu > summary::-webkit-details-marker { display: none; }
+.status-pill-menu .pill-menu {
+  position: absolute; top: 100%; left: 0; z-index: 10;
+  background: var(--color-surface, #1e293b);
+  border: 1px solid var(--color-border, #334155);
+  border-radius: 6px; padding: 0.25rem; margin-top: 0.25rem;
+  display: flex; flex-direction: column; min-width: 100px;
+}
+.status-pill-menu .pill-menu button {
+  background: none; border: none; color: inherit;
+  text-align: left; padding: 0.4rem 0.75rem; cursor: pointer;
+  border-radius: 4px; font-size: 0.85rem;
+}
+.status-pill-menu .pill-menu button:hover {
+  background: var(--color-bg, #0f172a);
+}
 .actions-cell { display: flex; gap: 0.75rem; align-items: center; }
 .actions-cell form { margin: 0; }
 .flash-message { padding: 0.75rem 1rem; border-radius: 6px;
@@ -114,18 +132,49 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                                                       title)
                                                   title))
                                              (:td
-                                              (:span :class (format nil
-                                                                    "status-pill ~A"
-                                                                    state-class)
-                                                     :id (format nil "status-~A" id)
-                                                     :data-status status-lower
-                                                     :data-visibility visibility-lower
-                                                     :hx-post (format nil
-                                                                      "/notebooks/~A/toggle-status"
-                                                                      id)
-                                                     :hx-target (format nil "#status-~A" id)
-                                                     :hx-swap "outerHTML"
-                                                     label))
+                                              (:details :class "status-pill-menu"
+                                                        (:summary
+                                                         :class (format nil
+                                                                        "status-pill ~A"
+                                                                        state-class)
+                                                         :id (format nil "status-~A" id)
+                                                         :data-status status-lower
+                                                         :data-visibility visibility-lower
+                                                         label)
+                                                        (:div :class "pill-menu"
+                                                              (:button :type "button"
+                                                                       :hx-post (format nil
+                                                                                        "/notebooks/~A/state"
+                                                                                        id)
+                                                                       :hx-vals
+                                                                       "{\"state\":\"draft\"}"
+                                                                       :hx-target
+                                                                       (format nil
+                                                                               "#status-~A" id)
+                                                                       :hx-swap "outerHTML"
+                                                                       "Draft")
+                                                              (:button :type "button"
+                                                                       :hx-post (format nil
+                                                                                        "/notebooks/~A/state"
+                                                                                        id)
+                                                                       :hx-vals
+                                                                       "{\"state\":\"published-private\"}"
+                                                                       :hx-target
+                                                                       (format nil
+                                                                               "#status-~A" id)
+                                                                       :hx-swap "outerHTML"
+                                                                       "Private")
+                                                              (:button :type "button"
+                                                                       :hx-post (format nil
+                                                                                        "/notebooks/~A/state"
+                                                                                        id)
+                                                                       :hx-vals
+                                                                       "{\"state\":\"published-public\"}"
+                                                                       :hx-target
+                                                                       (format nil
+                                                                               "#status-~A" id)
+                                                                       :hx-swap "outerHTML"
+                                                                       "Public"))))
                                              (:td (if published-at
                                                       (or (format-timestamp published-at
                                                                             user-timezone)
