@@ -827,14 +827,16 @@ preview their own draft. Anything else is 404."
        (let* ((notebook (user-notebook-row->notebook-struct nb-row))
               (nb-id-str (princ-to-string (user-notebook-id nb-row)))
               (saved (when uid (user-cell-codes uid nb-id-str)))
-              (passed (when uid (user-passed-cells uid nb-id-str))))
+              (passed (when uid (user-passed-cells uid nb-id-str)))
+              (run-cell-base (format nil "/n/~A" (user-notebook-slug nb-row))))
          (html-response
           (recurya/web/ui/notebook:render
            notebook
            :user user
            :saved-codes saved
            :passed-cells passed
-           :sidebar-notebooks nil)))))))
+           :sidebar-notebooks nil
+           :run-cell-base run-cell-base)))))))
 
 (defun %maybe-persist-user-notebook-cell-run (uid nb-uuid cell result code)
   "Persist saved code, submission, and progress for a user-notebook cell run.

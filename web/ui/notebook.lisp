@@ -38,6 +38,11 @@
 (defparameter *user* nil
   "Current user plist (with :id, :name, etc.), or nil for anonymous.")
 
+(defparameter *run-cell-base* nil
+  "URL prefix used to build run-cell HTMX endpoints for the cell currently
+being rendered. Set by `render'. The full URL is
+\"<base>/cells/<index>/run\".")
+
 (defparameter *chapter-titles*
   '(("1" . "第1章 手続きによる抽象化")
     ("2" . "第2章 データによる抽象化")
@@ -148,6 +153,14 @@ Accepts both keyword (legacy SICP) and string (UUID) ids."
   (let ((id (notebook-id notebook)))
     (string-downcase (if (keywordp id) (symbol-name id) (string id)))))
 
+(defun %cell-id->string (id)
+  "Stringify a cell or notebook id, accepting both keyword (legacy SICP)
+and string (UUID) representations. NIL becomes \"\"."
+  (cond ((null id) "")
+        ((keywordp id) (string-downcase (symbol-name id)))
+        ((symbolp id) (string-downcase (symbol-name id)))
+        (t (string id))))
+
 (defun %chapter-prefix (notebook)
   "Return the chapter number string (e.g. '1') from notebook-chapter '1.1.1'."
   (let ((c (notebook-chapter notebook)))
@@ -230,23 +243,24 @@ Accepts both keyword (legacy SICP) and string (UUID) ids."
             :value "")))
 
 (defun render-code-cell (cell index nb-id exercise-p)
+  (declare (ignore nb-id))
   (let* ((result-id (format nil "cell-~D-result" index))
          (id-suffix (format nil "-~D" index))
-         (cid-str (string-downcase (symbol-name (cell-id cell))))
+         (cid-str (%cell-id->string (cell-id cell)))
          (saved
-          (and *saved-codes*
-               (cdr (assoc cid-str *saved-codes* :test #'string=))))
+           (and *saved-codes*
+                (cdr (assoc cid-str *saved-codes* :test #'string=))))
          (original-code (or (cell-body cell) ""))
          (initial-code (or saved original-code ""))
          (passed-p
-          (and exercise-p (member cid-str *passed-cells* :test #'string=))))
+           (and exercise-p (member cid-str *passed-cells* :test #'string=)))
+         (run-url (format nil "~A/cells/~D/run" (or *run-cell-base* "") index)))
     (with-html
       (:div :class
             (if exercise-p
                 "cell cell--code cell--exercise"
                 "cell cell--code")
-            :data-cell-id cid-str
-            :data-original-code original-code
+            :data-cell-id cid-str :data-original-code original-code
             :data-textarea-id (format nil "editor-source~A" id-suffix)
             (when exercise-p (:div :class "cell__desc" (cell-description cell)))
             (when passed-p (:span :class "badge-pass" "✓ done"))
@@ -254,8 +268,7 @@ Accepts both keyword (legacy SICP) and string (UUID) ids."
              (editor-textarea "codes[]" initial-code :id-suffix id-suffix
                               :textarea-class "notebook-code"))
             (:button :type "button" :class "btn-run"
-                     :hx-post (format nil "/wardlisp/learn/~A/cells/~D/run"
-                                      nb-id index)
+                     :hx-post run-url
                      :hx-target (format nil "#~A" result-id)
                      :hx-include ".notebook-code"
                      :hx-swap "innerHTML"
@@ -272,17 +285,23 @@ Accepts both keyword (legacy SICP) and string (UUID) ids."
     (:code-exercise (render-code-cell cell index nb-id t))))
 
 (defun render (notebook &key user saved-codes passed-cells
-                        (sidebar-notebooks t))
+                        (sidebar-notebooks t)
+                        run-cell-base)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
 SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
 PASSED-CELLS is a list of cell-id strings this user has passed.
 SIDEBAR-NOTEBOOKS controls the left TOC: T (default) uses (all-notebooks),
 NIL omits the sidebar entirely (used for stand-alone user-authored
-notebooks at /n/:slug), or pass an explicit list to use a custom set."
+notebooks at /n/:slug), or pass an explicit list to use a custom set.
+RUN-CELL-BASE is the URL prefix for run-cell HTMX endpoints. Defaults
+to the SICP route /wardlisp/learn/<id> when omitted."
   (let* ((*saved-codes* saved-codes)
          (*passed-cells* passed-cells)
          (*user* user)
+         (*run-cell-base*
+           (or run-cell-base
+               (format nil "/wardlisp/learn/~A" (notebook-url-id notebook))))
          (sidebar (cond ((null sidebar-notebooks) nil)
                         ((eq sidebar-notebooks t) (all-notebooks))
                         (t sidebar-notebooks))))
@@ -370,7 +389,7 @@ notebooks at /n/:slug), or pass an explicit list to use a custom set."
              (:pre :class "result-error"
                    (if origin
                        (format nil "セル「~A」でエラー: ~A"
-                               (string-downcase (symbol-name origin))
+                               (%cell-id->string origin)
                                (notebook-cell-result-error-message result))
                        (notebook-cell-result-error-message result)))
              (:div :class "error-hint"

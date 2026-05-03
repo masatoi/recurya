@@ -553,6 +553,30 @@ hello"
         (let ((res (public-user-notebook-handler '((:slug . "open")))))
           (ok (= 200 (response-status res))))))))
 
+(deftest public-page-renders-code-cell-with-correct-run-url
+  (testing "code cells use /n/<slug>/cells/<i>/run, not the SICP route"
+    (with-test-db
+      (let* ((owner (mk-user))
+             (dao (get-user-by-id (getf owner :id)))
+             (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+             (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                            (recurya/game/notebook-parser:parse-notebook-body body))))
+        (create-user-notebook!
+         :title "Code" :slug "with-code" :body-md body
+         :cells cells :author dao :status "published"
+         :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler '((:slug . "with-code"))))
+                 (html (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "data-cell-id=" html))
+            (ok (search "hx-post=\"/n/with-code/cells/1/run\"" html))
+            (ng (search "/wardlisp/learn/" html))))))))
+
 (deftest run-cell-404-missing-slug
   (with-test-db
     (with-mock-session (make-session)
