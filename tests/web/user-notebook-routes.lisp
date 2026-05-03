@@ -577,6 +577,26 @@ hi
             (ok (search "hx-post=\"/n/with-code/cells/1/run\"" html))
             (ng (search "/wardlisp/learn/" html))))))))
 
+(deftest public-page-renders-prose-markdown-not-literal
+  (testing "prose body markdown is rendered to sanitized HTML, not escaped verbatim"
+    (with-test-db
+      (let* ((owner (mk-user))
+             (dao (get-user-by-id (getf owner :id)))
+             (body "===prose===
+**bold** *italic* hello.")
+             (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                            (recurya/game/notebook-parser:parse-notebook-body body))))
+        (create-user-notebook!
+         :title "Prose" :slug "prose-md" :body-md body
+         :cells cells :author dao :status "published"
+         :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler '((:slug . "prose-md"))))
+                 (html (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "<strong>bold</strong>" html))
+            (ng (search "**bold**" html))))))))
+
 (deftest run-cell-404-missing-slug
   (with-test-db
     (with-mock-session (make-session)

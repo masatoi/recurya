@@ -231,16 +231,15 @@ and string (UUID) representations. NIL becomes \"\"."
   (with-html-string (spinneret:interpret-html-tree tree)))
 
 (defun render-prose-cell (cell)
-  (with-html
-    (:div :class "cell cell--prose"
-          (:raw (render-prose-tree (cell-body cell))))
-    ;; Positional placeholder so codes[] on the wire stays index-aligned
-    ;; with notebook-cells. The value is always empty; prose cells carry
-    ;; no user code.
-    (:input :type "hidden"
-            :class "notebook-code"
-            :name "codes[]"
-            :value "")))
+  (let ((body (cell-body cell)))
+    (with-html
+      (:div :class "cell cell--prose"
+            (cond
+              ((stringp body)
+               (:raw (recurya/game/notebook-parser:render-cell-prose-html body)))
+              (t
+               (:raw (render-prose-tree body)))))
+      (:input :type "hidden" :class "notebook-code" :name "codes[]" :value ""))))
 
 (defun render-code-cell (cell index nb-id exercise-p)
   (declare (ignore nb-id))
