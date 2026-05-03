@@ -22,6 +22,8 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-form-block)
   (:export #:render
            #:render-result))
 
@@ -132,6 +134,7 @@ h1 { font-size: 1.5rem; color: #f8fafc; }
       (:style (:raw *styles*))
         (:raw (editor-head-tags)))
      (:body
+      (:raw (or (csrf-form-block) ""))
       (:main
        (:div :class "breadcrumb"
         (:a :href "/wardlisp/" "WardLisp") " / Arena")
@@ -150,7 +153,7 @@ h1 { font-size: 1.5rem; color: #f8fafc; }
                                :placeholder "Write your decide-action function..."))
         (:button :class "btn-run" :type "button"
                  :hx-post "/wardlisp/arena/run"
-                 :hx-include "closest form"
+                 :hx-include "closest form, #csrf-form"
                  :hx-target "#arena-panel"
                  :hx-swap "innerHTML"
                  "Run Simulation"))

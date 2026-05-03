@@ -10,6 +10,8 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-form-block)
   (:export #:render
            #:render-result))
 
@@ -56,6 +58,7 @@ h1 { font-size: 1.5rem; letter-spacing: -0.02em; color: #f8fafc; }
        :crossorigin "anonymous")
       (:style (:raw *styles*)) (:raw (editor-head-tags)))
      (:body
+      (:raw (or (csrf-form-block) ""))
       (:main
        (:div :class "breadcrumb" (:a :href "/wardlisp/" "WardLisp") " / Playground")
        (:h1 "Playground")
@@ -67,7 +70,7 @@ h1 { font-size: 1.5rem; letter-spacing: -0.02em; color: #f8fafc; }
                           :placeholder "Write WardLisp code here..."))
         (:button :class "btn-run" :type "button"
          :hx-post "/wardlisp/playground/run"
-         :hx-include "closest form"
+         :hx-include "closest form, #csrf-form"
          :hx-target "#output-panel"
          :hx-swap "innerHTML"
          "Run"))
