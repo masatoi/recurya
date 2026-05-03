@@ -30,6 +30,13 @@
                 #:user-notebook-title
                 #:user-notebook-body-md
                 #:user-notebook-status)
+  (:import-from #:recurya/db/courses
+                #:create-course!
+                #:course-id
+                #:course-slug
+                #:course-title)
+  (:import-from #:recurya/db/course-notebooks
+                #:add-notebook-to-course!)
   (:import-from #:uuid
                 #:make-v4-uuid))
 
@@ -597,6 +604,33 @@ hi
             (ok (search "<strong>bold</strong>" html))
             (ng (search "**bold**" html))))))))
 
+(deftest public-page-renders-200-when-body-has-solution-cells
+  (testing "viewer survives notebooks that contain ===solution=== cells (hidden)"
+    (with-test-db
+      (let* ((owner (mk-user))
+             (dao (get-user-by-id (getf owner :id)))
+             (body "===exercise: square===
+(define (square x) ???)
+
+===expect: square===
+4
+
+===solution: square===
+(define (square x) (* x x))")
+             (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                            (recurya/game/notebook-parser:parse-notebook-body body))))
+        (create-user-notebook!
+         :title "Solo" :slug "with-solution" :body-md body
+         :cells cells :author dao :status "published"
+         :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "with-solution"))))
+                 (html (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ng (search "(* x x)" html)
+                "solution body must not leak to public viewers")))))))
+
 (deftest run-cell-404-missing-slug
   (with-test-db
     (with-mock-session (make-session)
@@ -670,3 +704,172 @@ hi
                       (getf other :id) nb-uuid)))
           (ok (= 1 (length codes)))
           (ok (search "(+ 1 2)" (cdar codes))))))))
+
+(deftest notebook-page-with-course-shows-sidebar
+  (testing "?course=<slug> renders the course sidebar with course title link
+and the breadcrumb shows Notebooks > Course Title > Notebook Title."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (course (create-course! :title "SICP"
+                                     :slug "sicp"
+                                     :status "published"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (nb (create-user-notebook!
+                  :title "1.1.1 Expressions"
+                  :slug "sicp-1-1-1"
+                  :body-md "===prose===
+hi"
+                  :cells nil
+                  :status "published"
+                  :published-at (local-time:now)
+                  :author dao)))
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb)
+                                 :position 0)
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "sicp-1-1-1") ("course" . "sicp"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "href=\"/c/sicp\"" body))
+            (ok (search "SICP" body))
+            (ok (search "href=\"/notebooks\"" body))
+            (ok (search "1.1.1 Expressions" body))))))))
+
+(deftest notebook-page-with-course-shows-prev-next
+  (testing "middle notebook in course gets prev=first, next=last URLs
+preserving the ?course=<slug> query string."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (course (create-course! :title "SICP"
+                                     :slug "sicp"
+                                     :status "published"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (nb1 (create-user-notebook!
+                   :title "First" :slug "first"
+                   :body-md "===prose===
+a"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao))
+             (nb2 (create-user-notebook!
+                   :title "Middle" :slug "middle"
+                   :body-md "===prose===
+b"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao))
+             (nb3 (create-user-notebook!
+                   :title "Last" :slug "last"
+                   :body-md "===prose===
+c"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao)))
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
+                                 :position 0)
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb2)
+                                 :position 1)
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb3)
+                                 :position 2)
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "middle") ("course" . "sicp"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "/n/first?course=sicp" body))
+            (ok (search "/n/last?course=sicp" body))))))))
+
+(deftest notebook-page-with-course-no-prev-at-first
+  (testing "first notebook in course renders next URL but no prev URL."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (course (create-course! :title "SICP"
+                                     :slug "sicp"
+                                     :status "published"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (nb1 (create-user-notebook!
+                   :title "First" :slug "first"
+                   :body-md "===prose===
+a"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao))
+             (nb2 (create-user-notebook!
+                   :title "Second" :slug "second"
+                   :body-md "===prose===
+b"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao)))
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
+                                 :position 0)
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb2)
+                                 :position 1)
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "first") ("course" . "sicp"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "/n/second?course=sicp" body))
+            (ng (search "/n/first?course=sicp" body)
+                "the current page does not link to itself as prev")))))))
+
+(deftest notebook-page-with-course-no-next-at-last
+  (testing "last notebook in course renders prev URL but no next URL."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (course (create-course! :title "SICP"
+                                     :slug "sicp"
+                                     :status "published"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (nb1 (create-user-notebook!
+                   :title "First" :slug "first"
+                   :body-md "===prose===
+a"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao))
+             (nb2 (create-user-notebook!
+                   :title "Second" :slug "second"
+                   :body-md "===prose===
+b"
+                   :cells nil :status "published"
+                   :published-at (local-time:now) :author dao)))
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb1)
+                                 :position 0)
+        (add-notebook-to-course! (course-id course) (user-notebook-id nb2)
+                                 :position 1)
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "second") ("course" . "sicp"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "/n/first?course=sicp" body))
+            (ng (search "/n/second?course=sicp" body)
+                "the current page does not link to itself as next")))))))
+
+(deftest notebook-page-with-invalid-course-falls-back-no-context
+  (testing "?course=<unknown-slug> falls back to no-course-context render
+(no sidebar header link, no prev/next URLs, default breadcrumb logic)."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (nb (create-user-notebook!
+                  :title "Standalone" :slug "standalone"
+                  :body-md "===prose===
+hi"
+                  :cells nil :status "published"
+                  :published-at (local-time:now) :author dao)))
+        (declare (ignore nb))
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "standalone") ("course" . "no-such-course"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ng (search "/c/no-such-course" body)
+                "no link to a non-existent course")
+            (ng (search "?course=no-such-course" body)
+                "no prev/next URLs referencing the unknown course")
+            (ok (search "Standalone" body))))))))

@@ -108,6 +108,9 @@
                            (:a :class "app-header__brand" :href "/posts" "Recurya")
                            (:nav :class "app-header__nav"
                                  (:a :class "app-header__link" :href "/blog" "Blog")
+                                 (:a :class "app-header__link" :href "/courses" "Courses")
+                                 (when user
+                                   (:a :class "app-header__link" :href "/courses/me" "My Courses"))
                                  (:a :class "app-header__link" :href "/notebooks" "Notebooks")
                                  (when user
                                    (:a :class "app-header__link" :href "/notebooks/me" "My Notebooks"))
