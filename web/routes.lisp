@@ -24,6 +24,7 @@
   (:import-from #:recurya/web/ui/user-notebooks)
   (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
+  (:import-from #:recurya/web/ui/course)
   (:import-from #:recurya/web/ui/courses)
   (:import-from #:recurya/web/ui/course-form)
   (:import-from #:recurya/db/posts
@@ -148,7 +149,8 @@
            #:course-add-notebook-handler
            #:course-notebook-move-up-handler
            #:course-notebook-move-down-handler
-           #:course-notebook-remove-handler))
+           #:course-notebook-remove-handler
+           #:public-course-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -1298,6 +1300,44 @@ preview their own draft. Anything else is 404."
            :sidebar-notebooks nil
            :run-cell-base run-cell-base)))))))
 
+(defun course-notebook-row->public-plist (cn)
+  "Convert a course-notebook DAO into a plist for the public course view.
+
+CN's underlying user-notebook is fetched via course-notebook-notebook
+and projected into (:slug :title :summary :position)."
+  (let ((nb (course-notebook-notebook cn)))
+    (list :slug (when nb (user-notebook-slug nb))
+          :title (when nb (user-notebook-title nb))
+          :summary (when nb (user-notebook-summary nb))
+          :position (course-notebook-position cn))))
+
+(defun public-course-handler (params)
+  "Handle GET /c/:slug - public single course page.
+Anonymous and other users see published courses; the owner can also
+preview their own draft. Anything else is 404."
+  (let* ((slug (get-path-param params :slug))
+         (course-row (and slug (get-course-by-slug slug)))
+         (user (get-current-user))
+         (uid (and user (getf user :id)))
+         (owner-p
+          (and course-row uid
+               (equal (princ-to-string (course-author-id course-row))
+                      (princ-to-string uid)))))
+    (cond
+      ((null course-row)
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      ((and (string= "draft" (course-status course-row)) (not owner-p))
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      (t
+       (let* ((rows (list-course-notebooks (course-id course-row)))
+              (notebooks (mapcar #'course-notebook-row->public-plist rows)))
+         (html-response
+          (recurya/web/ui/course:render
+           :course (course->plist course-row)
+           :notebooks notebooks
+           :user user
+           :passed-by-notebook nil)))))))
+
 (defun %maybe-persist-user-notebook-cell-run (uid nb-uuid cell result code)
   "Persist saved code, submission, and progress for a user-notebook cell run.
 Anonymous users (UID NIL) are skipped silently; DB errors are logged but
@@ -1665,6 +1705,9 @@ without restarting the server."
           (make-dynamic-handler 'public-user-notebook-handler))
   (setf (ningle/app:route app "/n/:slug/cells/:index/run" :method :post)
           (make-dynamic-handler 'public-user-notebook-cell-run-handler))
+  ;; Public course routes (no auth)
+  (setf (ningle/app:route app "/c/:slug")
+          (make-dynamic-handler 'public-course-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))

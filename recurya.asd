@@ -137,6 +137,7 @@
                "recurya/web/ui/blog"
                "recurya/web/ui/blog-post"
                "recurya/web/ui/notebook-list"
+               "recurya/web/ui/course"
                "recurya/web/routes"
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
