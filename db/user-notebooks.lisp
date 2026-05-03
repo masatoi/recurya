@@ -52,9 +52,9 @@
 
 (in-package #:recurya/db/user-notebooks)
 
-(defun create-user-notebook!
-    (&key title body-md cells slug summary
-       (status "draft") published-at author notebook-id)
+(defun create-user-notebook! (&key title body-md cells slug summary
+                                   (status "draft") visibility published-at
+                                   author notebook-id)
   "Create a new user-authored notebook and return the created instance.
 
 Arguments:
@@ -64,6 +64,7 @@ Arguments:
   SLUG          - URL slug (auto-generated from title if omitted)
   SUMMARY       - Short summary, max 500 chars (optional)
   STATUS        - \"draft\" or \"published\" (default: \"draft\")
+  VISIBILITY    - \"private\" or \"public\" (default: \"private\")
   PUBLISHED-AT  - Timestamp when published (optional)
   AUTHOR        - Users instance (required, FK is NOT NULL)
   NOTEBOOK-ID   - Pre-generated UUID (optional)
@@ -72,7 +73,10 @@ Returns:
   The newly created USER-NOTEBOOK instance."
   (let ((id (or notebook-id (generate-uuid)))
         (slug (or slug (slugify title)))
-        (cells-json (if (null cells) "[]" (lisp->jsonb cells))))
+        (cells-json
+         (if (null cells)
+             "[]"
+             (lisp->jsonb cells))))
     (insert-dao
      (make-instance 'user-notebook
                     :id id
@@ -82,6 +86,7 @@ Returns:
                     :body-md body-md
                     :cells cells-json
                     :status status
+                    :visibility (or visibility "private")
                     :published-at published-at
                     :author author))))
 
@@ -100,7 +105,7 @@ Returns:
   (find-dao 'user-notebook :slug slug))
 
 (defun update-user-notebook! (notebook-id &key title slug summary body-md cells
-                                            status published-at)
+                                               status visibility published-at)
   "Update user-notebook attributes. Only provided fields are updated.
 
 CELLS, when provided, is JSON-serialized via lisp->jsonb before write
@@ -116,8 +121,11 @@ Returns:
       (when body-md (setf (user-notebook-body-md nb) body-md))
       (when cells
         (setf (user-notebook-cells nb)
-              (if (null cells) "[]" (lisp->jsonb cells))))
+              (if (null cells)
+                  "[]"
+                  (lisp->jsonb cells))))
       (when status (setf (user-notebook-status nb) status))
+      (when visibility (setf (user-notebook-visibility nb) visibility))
       (when published-at (setf (user-notebook-published-at nb) published-at))
       (save-dao nb))
     nb))

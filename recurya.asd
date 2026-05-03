@@ -51,6 +51,7 @@
                "recurya/db/posts"
                "recurya/db/user-notebooks"
                "recurya/db/courses"
+               "recurya/utils/access-control"
                "recurya/db/course-notebooks"
                "recurya/db/learn"
                "recurya/db"
@@ -108,6 +109,7 @@
                ;; Utils tests
                "recurya/tests/utils/common"
                "recurya/tests/utils/html-sanitize"
+               "recurya/tests/utils/access-control"
                ;; DB tests
                "recurya/tests/db/core"
                "recurya/tests/db/jsonb"

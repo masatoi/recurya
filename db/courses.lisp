@@ -46,7 +46,8 @@
 
 (in-package #:recurya/db/courses)
 
-(defun create-course! (&key title summary slug status published-at author course-id)
+(defun create-course! (&key title summary slug status visibility published-at
+                            author course-id)
   "Create a new course and return the created instance.
 
 Arguments:
@@ -54,6 +55,7 @@ Arguments:
   SUMMARY       - Short summary, max 500 chars (optional)
   SLUG          - URL slug (auto-generated from title if omitted)
   STATUS        - \"draft\" or \"published\" (default: \"draft\")
+  VISIBILITY    - \"private\" or \"public\" (default: \"private\")
   PUBLISHED-AT  - Timestamp when published (optional)
   AUTHOR        - Users instance (required, FK is NOT NULL)
   COURSE-ID     - Pre-generated UUID (optional)
@@ -69,6 +71,7 @@ Returns:
                     :title title
                     :summary summary
                     :status (or status "draft")
+                    :visibility (or visibility "private")
                     :published-at published-at
                     :author author))))
 
@@ -86,7 +89,8 @@ Returns:
   COURSE instance if found, NIL otherwise."
   (find-dao 'course :slug slug))
 
-(defun update-course! (course-id &key title slug summary status published-at)
+(defun update-course! (course-id &key title slug summary status visibility
+                                      published-at)
   "Update course attributes. Only provided fields are updated.
 
 SLUG is updated only when non-nil and non-empty (mirroring update-user-notebook!).
@@ -96,10 +100,10 @@ Returns:
   (let ((c (find-dao 'course :id (ensure-uuid course-id))))
     (when c
       (when title (setf (course-title c) title))
-      (when (and slug (not (string= "" slug)))
-        (setf (course-slug c) slug))
+      (when (and slug (not (string= "" slug))) (setf (course-slug c) slug))
       (when summary (setf (course-summary c) summary))
       (when status (setf (course-status c) status))
+      (when visibility (setf (course-visibility c) visibility))
       (when published-at (setf (course-published-at c) published-at))
       (save-dao c))
     c))
