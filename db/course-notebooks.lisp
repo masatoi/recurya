@@ -25,6 +25,7 @@
            #:move-notebook-up!
            #:move-notebook-down!
            #:list-course-notebooks
+           #:count-course-notebooks
            #:get-course-notebook
            ;; re-exports for caller convenience
            #:course-notebook
@@ -158,6 +159,14 @@ Returns:
   (select-dao 'course-notebook
     (where (:= :course_id (ensure-uuid course-id)))
     (order-by :position)))
+
+(defun count-course-notebooks (course-id)
+  "Return the number of notebooks attached to COURSE-ID."
+  (let ((result
+          (mito.db:retrieve-by-sql
+           "SELECT COUNT(*) AS count FROM course_notebook WHERE course_id = ?"
+           :binds (list (princ-to-string (ensure-uuid course-id))))))
+    (if result (getf (first result) :count) 0)))
 
 (defun get-course-notebook (course-notebook-id)
   "Fetch a join row by its BIGSERIAL primary key.

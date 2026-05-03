@@ -18,6 +18,7 @@
                 #:move-notebook-up!
                 #:move-notebook-down!
                 #:list-course-notebooks
+                #:count-course-notebooks
                 #:get-course-notebook
                 #:course-notebook-position
                 #:course-notebook-id
@@ -162,3 +163,15 @@ positions 0..N-1. Returns (values course (list notebook ...)
   (testing "missing PK returns NIL"
     (with-test-db
       (ok (null (get-course-notebook -1))))))
+
+(deftest count-course-notebooks-test
+  (testing "count-course-notebooks returns 0 for an empty course"
+    (with-test-db
+      (let* ((u (create-test-user))
+             (c (create-course! :title "Empty" :author u)))
+        (ok (= 0 (count-course-notebooks (course-id c)))))))
+  (testing "count-course-notebooks returns the number of attached notebooks"
+    (with-test-db
+      (multiple-value-bind (c notebooks cns) (%make-course-with-notebooks 3)
+        (declare (ignore notebooks cns))
+        (ok (= 3 (count-course-notebooks (course-id c))))))))

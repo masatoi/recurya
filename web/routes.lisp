@@ -24,6 +24,8 @@
   (:import-from #:recurya/web/ui/user-notebooks)
   (:import-from #:recurya/web/ui/user-notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
+  (:import-from #:recurya/web/ui/courses)
+  (:import-from #:recurya/web/ui/course-form)
   (:import-from #:recurya/db/posts
                 #:create-post!
                 #:get-post-by-id
@@ -64,6 +66,26 @@
                 #:user-notebook-author-id
                 #:user-notebook-created-at
                 #:user-notebook-updated-at)
+  (:import-from #:recurya/db/courses
+                #:create-course!
+                #:get-course-by-id
+                #:get-course-by-slug
+                #:update-course!
+                #:delete-course!
+                #:list-courses
+                #:count-courses
+                #:course-id
+                #:course-slug
+                #:course-title
+                #:course-summary
+                #:course-status
+                #:course-published-at
+                #:course-author
+                #:course-author-id
+                #:course-created-at
+                #:course-updated-at)
+  (:import-from #:recurya/db/course-notebooks
+                #:count-course-notebooks)
   (:import-from #:recurya/game/notebook-parser
                 #:parse-notebook-body)
   (:import-from #:recurya/game/notebook
@@ -103,7 +125,12 @@
            #:user-notebook-delete-handler
            #:notebooks-public-handler
            #:public-user-notebook-handler
-           #:public-user-notebook-cell-run-handler))
+           #:public-user-notebook-cell-run-handler
+           #:courses-me-handler
+           #:course-new-handler
+           #:course-create-handler
+           #:course-edit-handler
+           #:course-update-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -683,6 +710,143 @@ description) match."
                             :published-at published-at)
                            (redirect "/notebooks/me")))))))))))))))
 
+(defun course->plist (c)
+  "Convert a course DAO into a plist for UI rendering. The :notebook-count
+field is the number of notebooks attached to the course via course_notebook."
+  (list :id              (princ-to-string (course-id c))
+        :slug            (course-slug c)
+        :title           (course-title c)
+        :summary         (course-summary c)
+        :status          (course-status c)
+        :published-at    (course-published-at c)
+        :created-at      (course-created-at c)
+        :updated-at      (course-updated-at c)
+        :author-id       (course-author-id c)
+        :notebook-count  (count-course-notebooks (course-id c))))
+
+(defun courses-me-handler (params)
+  "Handle GET /courses/me - admin course list (own courses)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((user-id (getf user :id))
+               (page (parse-page-param params))
+               (total-count (count-courses :author-id user-id))
+               (offset (* (1- page) *page-size*))
+               (raw (list-courses :author-id user-id
+                                  :limit *page-size*
+                                  :offset offset))
+               (courses (mapcar #'course->plist raw))
+               (pagination (make-pagination page total-count *page-size*
+                                            "/courses/me")))
+          (html-response
+           (recurya/web/ui/courses:render
+            :user user :courses courses :pagination pagination))))))
+
+(defun course-new-handler (params)
+  "Handle GET /courses/new - show new course form."
+  (declare (ignore params))
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (html-response
+         (recurya/web/ui/course-form:render :user user)))))
+
+(defun course-create-handler (params)
+  "Handle POST /courses - create a new course."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let ((title (get-param params "title"))
+              (slug (get-param params "slug"))
+              (summary (get-param params "summary"))
+              (status (get-param params "status")))
+          (cond
+            ((or (null title) (equal title ""))
+             (html-response
+              (recurya/web/ui/course-form:render
+               :user user
+               :course (list :title title :slug slug :summary summary
+                             :status status)
+               :errors '((:line nil :message "Title is required.")))))
+            (t
+             (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
+                    (summary-val (if (and summary (string/= summary "")) summary nil))
+                    (published-at
+                      (when (equal status "published") (local-time:now))))
+               (create-course!
+                :title title :slug slug-val :summary summary-val
+                :status (or status "draft")
+                :published-at published-at
+                :author (get-session-user-object))
+               (redirect "/courses/me"))))))))
+
+(defun course-edit-handler (params)
+  "Handle GET /courses/:id/edit - show edit form for an existing course
+(owner only)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond
+            ((null c)
+             (html-response (recurya/web/ui/errors:not-found) :status 404))
+            ((not (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (html-response
+              (recurya/web/ui/course-form:render
+               :user user :course (course->plist c)))))))))
+
+(defun course-update-handler (params)
+  "Handle POST /courses/:id - update an existing course (owner only)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (existing (and id (get-course-by-id id))))
+          (cond
+            ((null existing)
+             (html-response (recurya/web/ui/errors:not-found) :status 404))
+            ((not (equal (princ-to-string (course-author-id existing))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let ((title (get-param params "title"))
+                   (slug (get-param params "slug"))
+                   (summary (get-param params "summary"))
+                   (status (get-param params "status")))
+               (cond
+                 ((or (null title) (equal title ""))
+                  (html-response
+                   (recurya/web/ui/course-form:render
+                    :user user
+                    :course (list :id id :title title :slug slug
+                                  :summary summary :status status)
+                    :errors '((:line nil :message "Title is required.")))))
+                 (t
+                  (let* ((slug-val
+                           (if (and slug (string/= slug "")) slug nil))
+                         (summary-val
+                           (if (and summary (string/= summary ""))
+                               summary nil))
+                         (published-at
+                           (when (and (equal status "published")
+                                      (not (equal
+                                             (course-status existing)
+                                             "published")))
+                             (local-time:now))))
+                    (update-course!
+                     id
+                     :title title
+                     :slug slug-val
+                     :summary summary-val
+                     :status (or status "draft")
+                     :published-at published-at)
+                    (redirect "/courses/me")))))))))))
+
 (defun render-user-notebook-status-pill (id status)
   "Render the user-notebook status pill HTML fragment for HTMX swap."
   (let ((status-lower (string-downcase (or status "draft"))))
@@ -1173,6 +1337,17 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
           (make-dynamic-handler 'user-notebook-delete-handler))
+  ;; Course admin routes (auth required)
+  (setf (ningle/app:route app "/courses/me")
+          (make-dynamic-handler 'courses-me-handler))
+  (setf (ningle/app:route app "/courses/new")
+          (make-dynamic-handler 'course-new-handler))
+  (setf (ningle/app:route app "/courses" :method :post)
+          (make-dynamic-handler 'course-create-handler))
+  (setf (ningle/app:route app "/courses/:id/edit")
+          (make-dynamic-handler 'course-edit-handler))
+  (setf (ningle/app:route app "/courses/:id" :method :post)
+          (make-dynamic-handler 'course-update-handler))
   ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
