@@ -142,7 +142,6 @@
                "recurya/web/routes"
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
-               "recurya/web/ui/learn-home"
                "recurya/web/ui/notebook"
                "recurya/web/ui/editor"
                "recurya/web/ui/puzzle"
