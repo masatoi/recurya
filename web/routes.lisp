@@ -130,7 +130,10 @@
            #:course-new-handler
            #:course-create-handler
            #:course-edit-handler
-           #:course-update-handler))
+           #:course-update-handler
+           #:course-toggle-status-handler
+           #:course-confirm-delete-handler
+           #:course-delete-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -847,6 +850,86 @@ field is the number of notebooks attached to the course via course_notebook."
                      :published-at published-at)
                     (redirect "/courses/me")))))))))))
 
+(defun render-course-status-pill (id status)
+  "Render the course status pill HTML fragment for HTMX swap."
+  (let ((status-lower (string-downcase (or status "draft"))))
+    (with-html-string
+      (:span :class "status-pill"
+             :id (format nil "status-~A" id)
+             :data-status status-lower
+             :hx-post (format nil "/courses/~A/toggle-status" id)
+             :hx-target (format nil "#status-~A" id)
+             :hx-swap "outerHTML"
+             (string-capitalize status-lower)))))
+
+(defun course-toggle-status-handler (params)
+  "Handle POST /courses/:id/toggle-status - toggle between draft and published.
+Returns the updated status pill HTML fragment for HTMX swap."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond ((null c) (html-response "Not found" :status 404))
+                ((not (equal (princ-to-string (course-author-id c))
+                             (princ-to-string (getf user :id))))
+                 (html-response "Forbidden" :status 403))
+                (t
+                 (let* ((current (course-status c))
+                        (new-status (if (equal current "published")
+                                        "draft"
+                                        "published"))
+                        (published-at
+                         (when (equal new-status "published")
+                           (local-time:now))))
+                   (update-course! id
+                                   :status new-status
+                                   :published-at published-at)
+                   (html-response
+                    (render-course-status-pill id new-status)))))))))
+
+(defun course-confirm-delete-handler (params)
+  "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond ((null c) (html-response "Not found" :status 404))
+                ((not (equal (princ-to-string (course-author-id c))
+                             (princ-to-string (getf user :id))))
+                 (html-response "Forbidden" :status 403))
+                (t
+                 (html-response
+                  (render-confirm-modal
+                   :title "Delete this course?"
+                   :message (format nil
+                                    "\"~A\" will be permanently deleted. This cannot be undone."
+                                    (course-title c))
+                   :confirm-hx-post (format nil "/courses/~A/delete" id)
+                   :confirm-label "Delete course"))))))))
+
+(defun course-delete-handler (params)
+  "Handle POST /courses/:id/delete - delete course (owner only).
+For HTMX requests returns an empty OOB row swap; otherwise redirects."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond ((null c) (html-response (not-found) :status 404))
+                ((not (equal (princ-to-string (course-author-id c))
+                             (princ-to-string (getf user :id))))
+                 (html-response "Forbidden" :status 403))
+                (t
+                 (delete-course! id)
+                 (if (htmx-request-p)
+                     (html-response
+                      (with-html-string
+                        (:tr :id (format nil "course-row-~A" id)
+                             :hx-swap-oob "outerHTML")))
+                     (redirect "/courses/me"))))))))
+
 (defun render-user-notebook-status-pill (id status)
   "Render the user-notebook status pill HTML fragment for HTMX swap."
   (let ((status-lower (string-downcase (or status "draft"))))
@@ -1348,6 +1431,12 @@ without restarting the server."
           (make-dynamic-handler 'course-edit-handler))
   (setf (ningle/app:route app "/courses/:id" :method :post)
           (make-dynamic-handler 'course-update-handler))
+  (setf (ningle/app:route app "/courses/:id/toggle-status" :method :post)
+          (make-dynamic-handler 'course-toggle-status-handler))
+  (setf (ningle/app:route app "/courses/:id/confirm-delete")
+          (make-dynamic-handler 'course-confirm-delete-handler))
+  (setf (ningle/app:route app "/courses/:id/delete" :method :post)
+          (make-dynamic-handler 'course-delete-handler))
   ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))

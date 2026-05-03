@@ -11,7 +11,10 @@
                 #:course-new-handler
                 #:course-create-handler
                 #:course-edit-handler
-                #:course-update-handler)
+                #:course-update-handler
+                #:course-toggle-status-handler
+                #:course-confirm-delete-handler
+                #:course-delete-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -34,6 +37,18 @@
 
 (defmacro with-mock-session (session-hash &body body)
   `(let ((ningle/context:*session* ,session-hash))
+     ,@body))
+
+(defmacro with-mock-request ((&key htmx) &body body)
+  "Bind ningle/context:*request* to a mock Lack request. When HTMX is true the
+HX-Request header is included so htmx-request-p returns T."
+  `(let* ((headers (make-hash-table :test 'equal))
+          (env (append (list :request-method :get
+                             :path-info "/test"
+                             :headers headers)
+                       (when ,htmx
+                         (list :http-hx-request "true"))))
+          (ningle/context:*request* (lack/request:make-request env)))
      ,@body))
 
 (defun make-session (&key user)
@@ -212,3 +227,132 @@
             (ok (string= "After" (course-title updated)))
             (ok (string= "published" (course-status updated)))
             (ok (course-published-at updated))))))))
+
+(deftest course-toggle-status-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-toggle-status-handler '((:id . "x")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-toggle-status-404-missing
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-toggle-status-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest course-toggle-status-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (let ((res (course-toggle-status-handler (list (cons :id id)))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest course-toggle-status-flips-and-sets-published-at
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "T" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-toggle-status-handler (list (cons :id id)))))
+          (ok (= 200 (response-status res)))
+          (ok (search "data-status=published" (first (response-body res))))
+          (let ((after (get-course-by-id id)))
+            (ok (string= "published" (course-status after)))
+            (ok (course-published-at after))))
+        (let ((res2 (course-toggle-status-handler (list (cons :id id)))))
+          (ok (= 200 (response-status res2)))
+          (ok (search "data-status=draft" (first (response-body res2))))
+          (let ((after (get-course-by-id id)))
+            (ok (string= "draft" (course-status after)))
+            (ok (course-published-at after)
+                "published_at is preserved on un-publish")))))))
+
+(deftest course-confirm-delete-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-confirm-delete-handler '((:id . "x")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-confirm-delete-404-missing
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-confirm-delete-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest course-confirm-delete-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (let ((res (course-confirm-delete-handler (list (cons :id id)))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest course-confirm-delete-renders-modal-for-owner
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Doomed" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-confirm-delete-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "modal-overlay" body))
+          (ok (search "Delete this course?" body))
+          (ok (search (format nil "hx-post=\"/courses/~A/delete\"" id) body))
+          (ok (search "Delete course" body)))))))
+
+(deftest course-delete-redirects-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-delete-handler '((:id . "x")))))
+      (ok (= 302 (response-status res)))
+      (ok (string= "/login" (response-location res))))))
+
+(deftest course-delete-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (with-mock-request (:htmx t)
+          (let ((res (course-delete-handler (list (cons :id id)))))
+            (ok (= 403 (response-status res)))))))))
+
+(deftest course-delete-htmx-returns-oob-row
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Bye" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (with-mock-request (:htmx t)
+          (let* ((res (course-delete-handler (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search (format nil "course-row-~A" id) body))
+            (ok (search "hx-swap-oob" body))
+            (ok (null (get-course-by-id id)))))))))
+
+(deftest course-delete-non-htmx-redirects
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Bye" :author dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user user)
+        (with-mock-request (:htmx nil)
+          (let ((res (course-delete-handler (list (cons :id id)))))
+            (ok (= 302 (response-status res)))
+            (ok (string= "/courses/me" (response-location res)))))))))
