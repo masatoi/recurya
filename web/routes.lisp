@@ -993,6 +993,7 @@ Click POSTs to /courses/:id/toggle-status (legacy 2-state toggle)."
       :data-status status-lower :data-visibility visibility-lower
       :hx-post (format nil "/courses/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
+      :hx-include "#csrf-form"
       label))))
 
 (defun course-toggle-status-handler (params)
@@ -1308,6 +1309,7 @@ The Task 14 dropdown is layered on top of this in the listing template."
       :data-status status-lower :data-visibility visibility-lower
       :hx-post (format nil "/notebooks/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
+      :hx-include "#csrf-form"
       label))))
 
 (defun user-notebook-toggle-status-handler (params)
@@ -1704,6 +1706,7 @@ ID is the post UUID, STATUS is the current status string."
        :hx-post (format nil "/posts/~A/toggle-status" id)
        :hx-target (format nil "#status-~A" id)
        :hx-swap "outerHTML"
+       :hx-include "#csrf-form"
        (string-capitalize status-lower)))))
 
 (defun render-confirm-modal (&key title message confirm-hx-post
