@@ -8,7 +8,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
-  (:export #:render))
+  (:export #:render
+           #:render-course-notebooks-list))
 
 (in-package #:recurya/web/ui/course-form)
 
@@ -33,14 +34,98 @@
 .error-list li { padding: 0.25rem 0; font-size: 0.85rem; }
 .error-list .line { display: inline-block; min-width: 4rem;
                     color: var(--color-text-muted);
-                    font-family: monospace; }")
+                    font-family: monospace; }
+.course-notebooks-section { margin-top: 2rem;
+                            border-top: 1px solid var(--color-border);
+                            padding-top: 1.5rem; }
+.course-notebooks-list { list-style: none; padding: 0; margin: 0; }
+.course-notebooks-list li { display: flex; align-items: center;
+                            gap: 0.5rem; padding: 0.5rem 0;
+                            border-bottom: 1px solid var(--color-border); }
+.course-notebooks-list .nb-title { flex: 1; }
+.course-notebooks-list .nb-controls { display: flex; gap: 0.25rem; }
+.course-notebooks-empty { color: var(--color-text-muted);
+                          font-size: 0.9rem; padding: 0.5rem 0; }
+.add-notebook-form { display: flex; gap: 0.5rem; align-items: end;
+                     margin-top: 1rem; }
+.add-notebook-form .form-group { flex: 1; }")
 
-(defun render (&key user course message errors)
+(defun render-course-notebooks-list (course course-notebooks eligible-notebooks
+                                     &key message)
+  "Render the notebooks-list section of the course edit form as an HTML fragment.
+
+Returns a `<div id=\"course-notebooks-list\">` element suitable for HTMX
+outerHTML swap.
+
+Arguments:
+  COURSE              - Course plist with at least :id.
+  COURSE-NOTEBOOKS    - List of plists for already-attached notebooks. Each
+                        plist has :id (notebook UUID), :title, :position.
+  ELIGIBLE-NOTEBOOKS  - List of plists for notebooks the user can still add.
+                        Each plist has :id (notebook UUID) and :title.
+  MESSAGE             - Optional flash message rendered above the list."
+  (let ((course-id (getf course :id)))
+    (spinneret:with-html-string
+      (:div :id "course-notebooks-list"
+            :class "course-notebooks-section"
+            (:h2 "Notebooks")
+            (when message
+              (:div :class "flash-message error" message))
+            (cond
+              ((null course-notebooks)
+               (:p :class "course-notebooks-empty"
+                   "No notebooks attached yet. Add one below."))
+              (t
+               (:ul :class "course-notebooks-list"
+                    (dolist (nb course-notebooks)
+                      (:li :data-notebook-id (getf nb :id)
+                           (:span :class "nb-title" (getf nb :title))
+                           (:span :class "nb-controls"
+                                  (:button :type "button"
+                                           :class "btn-secondary"
+                                           :disabled t
+                                           "Up")
+                                  (:button :type "button"
+                                           :class "btn-secondary"
+                                           :disabled t
+                                           "Down")
+                                  (:button :type "button"
+                                           :class "btn-secondary"
+                                           :disabled t
+                                           "Remove")))))))
+            (cond
+              ((null eligible-notebooks)
+               (:p :class "course-notebooks-empty"
+                   "No more notebooks available to add."))
+              (t
+               (:form :class "add-notebook-form"
+                      :hx-post (format nil "/courses/~A/notebooks" course-id)
+                      :hx-target "#course-notebooks-list"
+                      :hx-swap "outerHTML"
+                      (:div :class "form-group"
+                            (:label :for "notebook_id" "Add notebook")
+                            (:select :id "notebook_id" :name "notebook_id"
+                                     :required t
+                                     (dolist (nb eligible-notebooks)
+                                       (:option :value (getf nb :id)
+                                                (getf nb :title)))))
+                      (:button :type "submit" :class "btn-primary"
+                               "Add"))))))))
+
+(defun render (&key user course message errors course-notebooks
+                 eligible-notebooks)
   "Render the course create/edit form as an HTML string.
 
 COURSE is a plist with :id :title :slug :summary :status when editing.
 When COURSE is NIL, renders a new-course form. ERRORS is a list of
-plists like (:line N :message \"...\")."
+plists like (:line N :message \"...\").
+
+When editing an existing COURSE, the caller may also supply:
+  COURSE-NOTEBOOKS    - List of plists for currently attached notebooks
+                        (:id :title :position).
+  ELIGIBLE-NOTEBOOKS  - List of plists describing the user's other
+                        published notebooks not yet attached
+                        (:id :title), used as the Add dropdown source."
   (let* ((editing-p (not (null course)))
          (c-id      (getf course :id))
          (c-title   (or (getf course :title) ""))
@@ -113,4 +198,7 @@ plists like (:line N :message \"...\")."
                                            (if editing-p "Update Course" "Create Course"))
                                   (:a :class "btn-secondary" :href "/courses/me"
                                       :style "text-decoration:none;text-align:center"
-                                      "Cancel"))))))))))
+                                      "Cancel")))
+                     (when editing-p
+                       (:raw (render-course-notebooks-list
+                              course course-notebooks eligible-notebooks))))))))))

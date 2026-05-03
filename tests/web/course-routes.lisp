@@ -14,7 +14,15 @@
                 #:course-update-handler
                 #:course-toggle-status-handler
                 #:course-confirm-delete-handler
-                #:course-delete-handler)
+                #:course-delete-handler
+                #:course-add-notebook-handler)
+  (:import-from #:recurya/db/user-notebooks
+                #:create-user-notebook!
+                #:user-notebook-id
+                #:user-notebook-title)
+  (:import-from #:recurya/db/course-notebooks
+                #:add-notebook-to-course!
+                #:list-course-notebooks)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -356,3 +364,86 @@ HX-Request header is included so htmx-request-p returns T."
           (let ((res (course-delete-handler (list (cons :id id)))))
             (ok (= 302 (response-status res)))
             (ok (string= "/courses/me" (response-location res)))))))))
+
+(deftest course-add-notebook-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (course-add-notebook-handler
+                '((:id . "00000000-0000-0000-0000-000000000000")
+                  ("notebook_id" . "x")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest course-add-notebook-404-missing-course
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-add-notebook-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")
+                      ("notebook_id" . "x")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest course-add-notebook-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (c (create-course! :title "Owned" :author owner-dao))
+           (id (princ-to-string (course-id c))))
+      (with-mock-session (make-session :user other)
+        (let ((res (course-add-notebook-handler
+                    (list (cons :id id)
+                          (cons "notebook_id" "x")))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest course-add-notebook-attaches-and-renders-list
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Course" :author dao))
+           (course-uuid (course-id c))
+           (course-id-str (princ-to-string course-uuid))
+           (nb (create-user-notebook!
+                :title "Attachable"
+                :body-md "===prose===
+hi"
+                :cells nil
+                :status "published"
+                :published-at (local-time:now)
+                :author dao))
+           (nb-id-str (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-add-notebook-handler
+                     (list (cons :id course-id-str)
+                           (cons "notebook_id" nb-id-str))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "course-notebooks-list" body))
+          (ok (search "Attachable" body))
+          (let ((rows (list-course-notebooks course-uuid)))
+            (ok (= 1 (length rows)))))))))
+
+(deftest course-add-notebook-rejects-duplicate
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (c (create-course! :title "Course" :author dao))
+           (course-uuid (course-id c))
+           (course-id-str (princ-to-string course-uuid))
+           (nb (create-user-notebook!
+                :title "Once"
+                :body-md "===prose===
+hi"
+                :cells nil
+                :status "published"
+                :published-at (local-time:now)
+                :author dao))
+           (nb-id-str (princ-to-string (user-notebook-id nb))))
+      (add-notebook-to-course! course-uuid (user-notebook-id nb))
+      (with-mock-session (make-session :user user)
+        (let* ((res (course-add-notebook-handler
+                     (list (cons :id course-id-str)
+                           (cons "notebook_id" nb-id-str))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "already attached" body))
+          (let ((rows (list-course-notebooks course-uuid)))
+            (ok (= 1 (length rows)))))))))

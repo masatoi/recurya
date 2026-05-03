@@ -85,7 +85,12 @@
                 #:course-created-at
                 #:course-updated-at)
   (:import-from #:recurya/db/course-notebooks
-                #:count-course-notebooks)
+                #:count-course-notebooks
+                #:list-course-notebooks
+                #:add-notebook-to-course!
+                #:course-notebook-position
+                #:course-notebook-notebook
+                #:course-notebook-notebook-id)
   (:import-from #:recurya/game/notebook-parser
                 #:parse-notebook-body)
   (:import-from #:recurya/game/notebook
@@ -133,7 +138,8 @@
            #:course-update-handler
            #:course-toggle-status-handler
            #:course-confirm-delete-handler
-           #:course-delete-handler))
+           #:course-delete-handler
+           #:course-add-notebook-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -784,9 +790,31 @@ field is the number of notebooks attached to the course via course_notebook."
                 :author (get-session-user-object))
                (redirect "/courses/me"))))))))
 
+(defun course-notebook-row->plist (cn)
+  "Convert a COURSE-NOTEBOOK DAO into a plist (:id :title :position)
+where :id is the underlying user-notebook UUID string."
+  (let ((nb (course-notebook-notebook cn)))
+    (list :id (princ-to-string (course-notebook-notebook-id cn))
+          :title (when nb (user-notebook-title nb))
+          :position (course-notebook-position cn))))
+
+(defun course-eligible-notebooks (user-id attached-notebook-ids)
+  "Return plists (:id :title) of USER-ID's published notebooks that are
+not already attached. ATTACHED-NOTEBOOK-IDS is a list of UUID strings."
+  (let* ((own
+          (list-user-notebooks :status "published" :author-id user-id
+                               :limit 1000))
+         (attached-set
+          (mapcar (lambda (x) (princ-to-string x)) attached-notebook-ids)))
+    (loop for nb in own
+          for nb-id = (princ-to-string (user-notebook-id nb))
+          unless (member nb-id attached-set :test #'string=)
+            collect (list :id nb-id :title (user-notebook-title nb)))))
+
 (defun course-edit-handler (params)
   "Handle GET /courses/:id/edit - show edit form for an existing course
-(owner only)."
+(owner only). Includes the attached notebook list and Add dropdown
+populated with the user's other published notebooks."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -799,9 +827,19 @@ field is the number of notebooks attached to the course via course_notebook."
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
-             (html-response
-              (recurya/web/ui/course-form:render
-               :user user :course (course->plist c)))))))))
+             (let* ((rows (list-course-notebooks (course-id c)))
+                    (course-notebooks
+                     (mapcar #'course-notebook-row->plist rows))
+                    (attached-ids
+                     (mapcar (lambda (p) (getf p :id)) course-notebooks))
+                    (eligible
+                     (course-eligible-notebooks (getf user :id)
+                                                attached-ids)))
+               (html-response
+                (recurya/web/ui/course-form:render
+                 :user user :course (course->plist c)
+                 :course-notebooks course-notebooks
+                 :eligible-notebooks eligible)))))))))
 
 (defun course-update-handler (params)
   "Handle POST /courses/:id - update an existing course (owner only)."
@@ -929,6 +967,57 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                         (:tr :id (format nil "course-row-~A" id)
                              :hx-swap-oob "outerHTML")))
                      (redirect "/courses/me"))))))))
+
+(defun course-add-notebook-handler (params)
+  "Handle POST /courses/:id/notebooks - attach a user-notebook to a course.
+
+Owner only. Reads NOTEBOOK_ID from the form body. Returns the updated
+notebook list as an HTML fragment (#course-notebooks-list) suitable for
+HTMX outerHTML swap. Duplicate attachments are caught and reported as a
+flash message in the rendered list."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (c (and id (get-course-by-id id))))
+          (cond ((null c) (html-response "Not found" :status 404))
+                ((not
+                  (equal (princ-to-string (course-author-id c))
+                         (princ-to-string (getf user :id))))
+                 (html-response "Forbidden" :status 403))
+                (t
+                 (let* ((nb-id-raw (get-param params "notebook_id"))
+                        (nb-id (and nb-id-raw (string/= nb-id-raw "")
+                                    nb-id-raw))
+                        (nb (and nb-id (get-user-notebook-by-id nb-id)))
+                        (course-id (course-id c))
+                        (message nil))
+                   (cond
+                     ((null nb)
+                      (setf message "Selected notebook does not exist."))
+                     ((not (equal (princ-to-string
+                                   (user-notebook-author-id nb))
+                                  (princ-to-string (getf user :id))))
+                      (setf message "You can only add your own notebooks."))
+                     (t
+                      (handler-case
+                          (add-notebook-to-course! course-id nb-id)
+                        (error ()
+                          (setf message
+                                "This notebook is already attached.")))))
+                   (let* ((rows (list-course-notebooks course-id))
+                          (course-notebooks
+                           (mapcar #'course-notebook-row->plist rows))
+                          (attached-ids
+                           (mapcar (lambda (p) (getf p :id))
+                                   course-notebooks))
+                          (eligible
+                           (course-eligible-notebooks
+                            (getf user :id) attached-ids)))
+                     (html-response
+                      (recurya/web/ui/course-form:render-course-notebooks-list
+                       (course->plist c) course-notebooks eligible
+                       :message message))))))))))
 
 (defun render-user-notebook-status-pill (id status)
   "Render the user-notebook status pill HTML fragment for HTMX swap."
@@ -1437,6 +1526,8 @@ without restarting the server."
           (make-dynamic-handler 'course-confirm-delete-handler))
   (setf (ningle/app:route app "/courses/:id/delete" :method :post)
           (make-dynamic-handler 'course-delete-handler))
+  (setf (ningle/app:route app "/courses/:id/notebooks" :method :post)
+          (make-dynamic-handler 'course-add-notebook-handler))
   ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
