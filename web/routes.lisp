@@ -667,6 +667,89 @@ description) match."
                             :published-at published-at)
                            (redirect "/notebooks/me")))))))))))))))
 
+(defun render-user-notebook-status-pill (id status)
+  "Render the user-notebook status pill HTML fragment for HTMX swap."
+  (let ((status-lower (string-downcase (or status "draft"))))
+    (with-html-string
+      (:span :class "status-pill"
+             :id (format nil "status-~A" id)
+             :data-status status-lower
+             :hx-post (format nil "/notebooks/~A/toggle-status" id)
+             :hx-target (format nil "#status-~A" id)
+             :hx-swap "outerHTML"
+             (string-capitalize status-lower)))))
+
+(defun user-notebook-toggle-status-handler (params)
+  "Handle POST /notebooks/:id/toggle-status - toggle between draft and published.
+Returns the updated status pill HTML fragment for HTMX swap."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (nb (and id (get-user-notebook-by-id id))))
+          (cond
+            ((null nb) (html-response "Not found" :status 404))
+            ((not (equal (princ-to-string (user-notebook-author-id nb))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (let* ((current (user-notebook-status nb))
+                    (new-status (if (equal current "published")
+                                    "draft"
+                                    "published"))
+                    (published-at (when (equal new-status "published")
+                                    (local-time:now))))
+               (update-user-notebook! id
+                                      :status new-status
+                                      :published-at published-at)
+               (html-response
+                (render-user-notebook-status-pill id new-status)))))))))
+
+(defun user-notebook-confirm-delete-handler (params)
+  "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (html-response "Unauthorized" :status 401)
+        (let* ((id (get-path-param params :id))
+               (nb (and id (get-user-notebook-by-id id))))
+          (cond
+            ((null nb) (html-response "Not found" :status 404))
+            ((not (equal (princ-to-string (user-notebook-author-id nb))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (html-response
+              (render-confirm-modal
+               :title "Delete this notebook?"
+               :message (format nil
+                                "\"~A\" will be permanently deleted. This cannot be undone."
+                                (user-notebook-title nb))
+               :confirm-hx-post (format nil "/notebooks/~A/delete" id)
+               :confirm-label "Delete notebook"))))))))
+
+(defun user-notebook-delete-handler (params)
+  "Handle POST /notebooks/:id/delete - delete user-notebook (owner only).
+For HTMX requests returns an empty OOB row swap; otherwise redirects."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((id (get-path-param params :id))
+               (nb (and id (get-user-notebook-by-id id))))
+          (cond
+            ((null nb)
+             (html-response (recurya/web/ui/errors:not-found) :status 404))
+            ((not (equal (princ-to-string (user-notebook-author-id nb))
+                         (princ-to-string (getf user :id))))
+             (html-response "Forbidden" :status 403))
+            (t
+             (delete-user-notebook! id)
+             (if (htmx-request-p)
+                 (html-response
+                  (with-html-string
+                    (:tr :id (format nil "nb-row-~A" id)
+                         :hx-swap-oob "outerHTML")))
+                 (redirect "/notebooks/me"))))))))
+
 (defun htmx-request-p ()
   "Return T if the current request was made by HTMX (HX-Request header present).
 Checks both the Clack :headers hash-table (Hunchentoot) and the :http-hx-request
@@ -939,6 +1022,12 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-edit-handler))
   (setf (ningle/app:route app "/notebooks/:id" :method :post)
           (make-dynamic-handler 'user-notebook-update-handler))
+  (setf (ningle/app:route app "/notebooks/:id/toggle-status" :method :post)
+          (make-dynamic-handler 'user-notebook-toggle-status-handler))
+  (setf (ningle/app:route app "/notebooks/:id/confirm-delete")
+          (make-dynamic-handler 'user-notebook-confirm-delete-handler))
+  (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
+          (make-dynamic-handler 'user-notebook-delete-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))

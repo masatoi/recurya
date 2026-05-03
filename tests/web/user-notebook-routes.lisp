@@ -11,7 +11,10 @@
                 #:user-notebook-new-handler
                 #:user-notebook-create-handler
                 #:user-notebook-edit-handler
-                #:user-notebook-update-handler)
+                #:user-notebook-update-handler
+                #:user-notebook-toggle-status-handler
+                #:user-notebook-confirm-delete-handler
+                #:user-notebook-delete-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -33,6 +36,17 @@
 
 (defmacro with-mock-session (session-hash &body body)
   `(let ((ningle/context:*session* ,session-hash))
+     ,@body))
+
+(defmacro with-mock-request ((&key htmx) &body body)
+  "Bind ningle/context:*request* to a mock Lack request. When HTMX is true the
+HX-Request header is included so htmx-request-p returns T."
+  `(let* ((headers (make-hash-table :test 'equal))
+          (env (append (list :request-method :get
+                             :path-info "/test"
+                             :headers headers)
+                       (when ,htmx (list :http-hx-request "true"))))
+          (ningle/context:*request* (lack/request:make-request env)))
      ,@body))
 
 (defun make-session (&key user)
@@ -308,3 +322,143 @@ Stable.
                 (get-user-notebook-by-id id))))
           (ok (= (length cells-before) (length cells-after)))
           (ok (equalp cells-before cells-after)))))))
+
+(deftest toggle-status-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (user-notebook-toggle-status-handler '((:id . "x")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest toggle-status-404-missing
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-toggle-status-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest toggle-status-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (nb (create-user-notebook! :title "Owned"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author owner-dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (let ((res (user-notebook-toggle-status-handler (list (cons :id id)))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest toggle-status-flips-and-sets-published-at
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook! :title "T"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-toggle-status-handler (list (cons :id id)))))
+          (ok (= 200 (response-status res)))
+          (ok (search "data-status=published" (first (response-body res))))
+          (let ((after (get-user-notebook-by-id id)))
+            (ok (string= "published" (user-notebook-status after)))
+            (ok (recurya/db/user-notebooks:user-notebook-published-at after))))
+        (let ((res2 (user-notebook-toggle-status-handler (list (cons :id id)))))
+          (ok (= 200 (response-status res2)))
+          (ok (search "data-status=draft" (first (response-body res2))))
+          (let ((after (get-user-notebook-by-id id)))
+            (ok (string= "draft" (user-notebook-status after)))))))))
+
+(deftest confirm-delete-401-anonymous
+  (with-mock-session (make-session)
+    (let ((res (user-notebook-confirm-delete-handler '((:id . "x")))))
+      (ok (= 401 (response-status res))))))
+
+(deftest confirm-delete-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (nb (create-user-notebook! :title "Owned"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author owner-dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (let ((res (user-notebook-confirm-delete-handler (list (cons :id id)))))
+          (ok (= 403 (response-status res))))))))
+
+(deftest confirm-delete-renders-modal-for-owner
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook! :title "Doomed"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (let* ((res (user-notebook-confirm-delete-handler (list (cons :id id))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "modal-overlay" body))
+          (ok (search "Delete this notebook?" body))
+          (ok (search (format nil "hx-post=\"/notebooks/~A/delete\"" id) body))
+          (ok (search "Delete notebook" body)))))))
+
+(deftest delete-redirects-anonymous
+  (with-mock-session (make-session)
+    (let ((res (user-notebook-delete-handler '((:id . "x")))))
+      (ok (= 302 (response-status res)))
+      (ok (string= "/login" (response-location res))))))
+
+(deftest delete-403-non-owner
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id)))
+           (nb (create-user-notebook! :title "Owned"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author owner-dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (with-mock-request (:htmx t)
+          (let ((res (user-notebook-delete-handler (list (cons :id id)))))
+            (ok (= 403 (response-status res)))))))))
+
+(deftest delete-htmx-returns-oob-row
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook! :title "Bye"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (with-mock-request (:htmx t)
+          (let* ((res (user-notebook-delete-handler (list (cons :id id))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search (format nil "nb-row-~A" id) body))
+            (ok (search "hx-swap-oob" body))
+            (ok (null (get-user-notebook-by-id id)))))))))
+
+(deftest delete-non-htmx-redirects
+  (with-test-db
+    (let* ((user (mk-user))
+           (dao (get-user-by-id (getf user :id)))
+           (nb (create-user-notebook! :title "Bye"
+                                       :body-md "===prose===
+hi"
+                                       :cells '() :author dao))
+           (id (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user user)
+        (with-mock-request (:htmx nil)
+          (let ((res (user-notebook-delete-handler (list (cons :id id)))))
+            (ok (= 302 (response-status res)))
+            (ok (string= "/notebooks/me" (response-location res)))))))))
