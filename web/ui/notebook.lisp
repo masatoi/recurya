@@ -174,11 +174,15 @@ and string (UUID) representations. NIL becomes \"\"."
           (if p (subseq c 0 p) c))
         "")))
 
-(defun render-sidebar (current-id all)
-  "Render a left sidebar with collapsible chapter TOC.
+(defun render-legacy-sicp-sidebar (current-id all)
+  "Render a left sidebar with collapsible chapter TOC for the legacy SICP path.
    ALL is the list of notebooks (typically (all-notebooks)).
    CURRENT-ID is the notebook-id keyword of the page being rendered.
-   The chapter containing CURRENT-ID is shown expanded; others collapsed."
+   The chapter containing CURRENT-ID is shown expanded; others collapsed.
+
+   This function is kept for backward compatibility while the SICP course
+   has not yet been migrated to the database-backed course/notebook model.
+   It will be removed once SICP is migrated (Phase 9 cleanup)."
   (let* ((current-nb (find current-id all :key #'notebook-id))
          (current-ch (and current-nb (%chapter-prefix current-nb))))
     (with-html
@@ -186,45 +190,83 @@ and string (UUID) representations. NIL becomes \"\"."
               (:a :class "sidebar-home" :href "/wardlisp/learn"
                   "📘 SICP コース")
               (dolist (ch '("1" "2" "3"))
-                (let ((ch-nbs (sort (copy-list
-                                     (remove-if-not
-                                      (lambda (nb) (string= (%chapter-prefix nb) ch))
-                                      all))
-                                    #'string<
-                                    :key #'notebook-chapter)))
+                (let ((ch-nbs
+                        (sort
+                         (copy-list
+                          (remove-if-not (lambda (nb)
+                                           (string= (%chapter-prefix nb) ch))
+                                         all))
+                         #'string< :key #'notebook-chapter)))
                   (when ch-nbs
                     (:details :class "sb-chapter"
                               :open (when (equal ch current-ch) "open")
                               (:summary :class "sb-summary"
-                                        (or (cdr (assoc ch *chapter-titles* :test #'string=))
+                                        (or (cdr (assoc ch *chapter-titles*
+                                                        :test #'string=))
                                             (format nil "Chapter ~A" ch)))
                               (let (sections-seen)
                                 (dolist (nb ch-nbs)
                                   (let ((sec (%section-prefix nb)))
-                                    (unless (member sec sections-seen :test #'string=)
+                                    (unless (member sec sections-seen
+                                                    :test #'string=)
                                       (push sec sections-seen))))
                                 (dolist (sec (nreverse sections-seen))
                                   (:div :class "sb-section"
                                         (:h4 :class "sb-section-title"
-                                             (or (cdr (assoc sec *section-titles*
+                                             (or (cdr (assoc sec
+                                                             *section-titles*
                                                              :test #'string=))
                                                  sec))
                                         (:ul :class "sb-list"
                                              (dolist (nb (remove-if-not
                                                           (lambda (n)
-                                                            (string= (%section-prefix n) sec))
+                                                            (string=
+                                                             (%section-prefix n)
+                                                             sec))
                                                           ch-nbs))
                                                (:li
-                                                (:a :href (format nil "/wardlisp/learn/~A"
-                                                                  (string-downcase
-                                                                   (symbol-name
-                                                                    (notebook-id nb))))
-                                                    :class (if (eq (notebook-id nb) current-id)
-                                                               "sb-link active"
-                                                               "sb-link")
+                                                (:a :href
+                                                    (format nil
+                                                            "/wardlisp/learn/~A"
+                                                            (string-downcase
+                                                             (symbol-name
+                                                              (notebook-id
+                                                               nb))))
+                                                    :class
+                                                    (if (eq (notebook-id nb)
+                                                            current-id)
+                                                        "sb-link active"
+                                                        "sb-link")
                                                     (format nil "~A ~A"
-                                                            (notebook-chapter nb)
-                                                            (notebook-title nb)))))))))))))))))
+                                                            (notebook-chapter
+                                                             nb)
+                                                            (notebook-title
+                                                             nb)))))))))))))))))
+
+(defun render-course-sidebar (course-title course-slug notebooks current-id)
+  "Render a flat-list left sidebar for a generic course.
+COURSE-TITLE and COURSE-SLUG, if both non-nil, render a course header link
+pointing at /c/<slug>. NOTEBOOKS is a list of plists with keys :slug
+:title (and optionally :position) in the desired display order.
+CURRENT-ID is the slug (or url id) of the active notebook used to mark
+the matching entry as 'sb-link active'."
+  (with-html
+    (:aside :class "sidebar"
+            (when (and course-title course-slug)
+              (:a :class "sidebar-home"
+                  :href (format nil "/c/~A" course-slug)
+                  (format nil "📘 ~A" course-title)))
+            (:ul :class "sb-list"
+                 (dolist (nb notebooks)
+                   (let ((slug (getf nb :slug))
+                         (title (getf nb :title)))
+                     (:li
+                      (:a :href (format nil "/n/~A" slug)
+                          :class (if (and slug current-id
+                                          (string= slug current-id))
+                                     "sb-link active"
+                                     "sb-link")
+                          title))))))))
 
 (defun render-prose-tree (tree)
   "Render a Spinneret DSL list at runtime to an HTML string."
@@ -283,45 +325,60 @@ and string (UUID) representations. NIL becomes \"\"."
     (:code-eval     (render-code-cell cell index nb-id nil))
     (:code-exercise (render-code-cell cell index nb-id t))))
 
-(defun render (notebook &key user saved-codes passed-cells
-                        (sidebar-notebooks t)
-                        run-cell-base)
+(defun render (notebook
+               &key user saved-codes passed-cells
+                    (sidebar-notebooks t) run-cell-base
+                    course-title course-slug)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
 SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
 PASSED-CELLS is a list of cell-id strings this user has passed.
-SIDEBAR-NOTEBOOKS controls the left TOC: T (default) uses (all-notebooks),
-NIL omits the sidebar entirely (used for stand-alone user-authored
-notebooks at /n/:slug), or pass an explicit list to use a custom set.
+SIDEBAR-NOTEBOOKS controls the left TOC:
+  T (default) - legacy SICP path: render the chapter-grouped TOC for
+    (all-notebooks). Kept for backward compatibility while SICP has
+    not yet been migrated to the DB-backed course/notebook model.
+  NIL - omits the sidebar entirely (used for stand-alone user-authored
+    notebooks at /n/:slug without a course context).
+  LIST - a list of notebook plists (:slug :title ...) to render via
+    render-course-sidebar. COURSE-TITLE and COURSE-SLUG, when both are
+    supplied, add a course header link at the top of the sidebar.
+COURSE-TITLE / COURSE-SLUG are used only when SIDEBAR-NOTEBOOKS is a list.
 RUN-CELL-BASE is the URL prefix for run-cell HTMX endpoints. Defaults
 to the SICP route /wardlisp/learn/<id> when omitted."
   (let* ((*saved-codes* saved-codes)
          (*passed-cells* passed-cells)
          (*user* user)
          (*run-cell-base*
-           (or run-cell-base
-               (format nil "/wardlisp/learn/~A" (notebook-url-id notebook))))
-         (sidebar (cond ((null sidebar-notebooks) nil)
-                        ((eq sidebar-notebooks t) (all-notebooks))
-                        (t sidebar-notebooks))))
-    (with-html-string
-      (:doctype)
+          (or run-cell-base
+              (format nil "/wardlisp/learn/~A" (notebook-url-id notebook)))))
+    (with-html-string (:doctype)
       (:html
-       (:head (:meta :charset "utf-8")
-              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-              (:title
-                (format nil "~A — SICP ~A" (notebook-title notebook)
-                        (notebook-chapter notebook)))
-              (:style (:raw *styles*))
-              (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
-                       "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-                       :crossorigin "anonymous")
-              (:raw (editor-head-tags)))
+       (:head
+        (:meta :charset "utf-8")
+        (:meta :name "viewport"
+               :content "width=device-width, initial-scale=1")
+        (:title
+         (format nil "~A — SICP ~A"
+                 (notebook-title notebook)
+                 (notebook-chapter notebook)))
+        (:style (:raw *styles*))
+        (:script :src "https://unpkg.com/htmx.org@2.0.4"
+                 :integrity
+                 "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+                 :crossorigin "anonymous")
+        (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
               (:div :class "layout"
-                    (when sidebar
-                      (render-sidebar (notebook-id notebook) sidebar))
+                    (cond
+                      ((null sidebar-notebooks) nil)
+                      ((eq sidebar-notebooks t)
+                       (render-legacy-sicp-sidebar (notebook-id notebook)
+                                                   (all-notebooks)))
+                      ((listp sidebar-notebooks)
+                       (render-course-sidebar course-title course-slug
+                                              sidebar-notebooks
+                                              (notebook-url-id notebook))))
                     (:main
                      (cond
                        (*user*
@@ -331,11 +388,14 @@ to the SICP route /wardlisp/learn/<id> when omitted."
                                      :style "display:inline;"
                                      (:button :type "submit"
                                               :class "user-banner__logout"
-                                              :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
+                                              :style
+                                              "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
                                               "ログアウト"))))
                        (t
-                        (:div :class "user-banner anon" "進捗を端末を超えて保存するには "
-                              (:a :href "/login" "ログイン") " してください。")))
+                        (:div :class "user-banner anon"
+                              "進捗を端末を超えて保存するには "
+                              (:a :href "/login" "ログイン")
+                              " してください。")))
                      (when (and (notebook-chapter notebook)
                                 (plusp (length (notebook-chapter notebook))))
                        (:div :class "breadcrumb"
