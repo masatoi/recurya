@@ -14,7 +14,8 @@
                 #:user-notebook-update-handler
                 #:user-notebook-toggle-status-handler
                 #:user-notebook-confirm-delete-handler
-                #:user-notebook-delete-handler)
+                #:user-notebook-delete-handler
+                #:notebooks-public-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -472,3 +473,31 @@ hi"
           (let ((res (user-notebook-delete-handler (list (cons :id id)))))
             (ok (= 302 (response-status res)))
             (ok (string= "/notebooks/me" (response-location res)))))))))
+
+(deftest public-list-shows-published-only
+  (with-test-db
+    (let* ((alice (mk-user))
+           (alice-dao (get-user-by-id (getf alice :id))))
+      (create-user-notebook!
+       :title "Pub" :slug "pub" :body-md "===prose===
+hi"
+       :cells '() :author alice-dao :status "published"
+       :published-at (local-time:now))
+      (create-user-notebook!
+       :title "Drafty" :slug "drafty" :body-md "===prose===
+sh"
+       :cells '() :author alice-dao :status "draft")
+      (with-mock-session (make-session)
+        (let* ((res (notebooks-public-handler nil))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Pub" body))
+          (ng (search "Drafty" body))
+          (ok (search "/n/pub" body)))))))
+
+(deftest public-list-anonymous-200
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (notebooks-public-handler nil)))
+        (ok (= 200 (response-status res)))
+        (ok (search "Notebooks" (first (response-body res))))))))

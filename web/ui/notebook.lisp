@@ -271,56 +271,63 @@ Accepts both keyword (legacy SICP) and string (UUID) ids."
     (:code-eval     (render-code-cell cell index nb-id nil))
     (:code-exercise (render-code-cell cell index nb-id t))))
 
-(defun render (notebook &key user saved-codes passed-cells)
+(defun render (notebook &key user saved-codes passed-cells
+                        (sidebar-notebooks t))
   "Render the full notebook page as a complete HTML document.
-   USER is the logged-in user plist or nil.
-   SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
-   PASSED-CELLS is a list of cell-id strings this user has passed."
-  (let ((*saved-codes* saved-codes) (*passed-cells* passed-cells) (*user* user))
+USER is the logged-in user plist or nil.
+SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
+PASSED-CELLS is a list of cell-id strings this user has passed.
+SIDEBAR-NOTEBOOKS controls the left TOC: T (default) uses (all-notebooks),
+NIL omits the sidebar entirely (used for stand-alone user-authored
+notebooks at /n/:slug), or pass an explicit list to use a custom set."
+  (let* ((*saved-codes* saved-codes)
+         (*passed-cells* passed-cells)
+         (*user* user)
+         (sidebar (cond ((null sidebar-notebooks) nil)
+                        ((eq sidebar-notebooks t) (all-notebooks))
+                        (t sidebar-notebooks))))
     (with-html-string
       (:doctype)
       (:html
        (:head (:meta :charset "utf-8")
-        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-        (:title
-         (format nil "~A — SICP ~A" (notebook-title notebook)
-                 (notebook-chapter notebook)))
-        (:style (:raw *styles*))
-        (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
-         "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-         :crossorigin "anonymous")
-        (:raw (editor-head-tags)))
+              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
+              (:title
+                (format nil "~A — SICP ~A" (notebook-title notebook)
+                        (notebook-chapter notebook)))
+              (:style (:raw *styles*))
+              (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
+                       "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+                       :crossorigin "anonymous")
+              (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
-        (:div :class "layout"
-              (render-sidebar (notebook-id notebook) (all-notebooks))
-              (:main
-               (cond
-                 (*user*
-                  (:div :class "user-banner"
-                        "ログイン中: "
-                        (:strong (or (getf *user* :name) "User"))
-                        " · " (:form :method "post" :action "/logout"
+              (:div :class "layout"
+                    (when sidebar
+                      (render-sidebar (notebook-id notebook) sidebar))
+                    (:main
+                     (cond
+                       (*user*
+                        (:div :class "user-banner" "ログイン中: "
+                              (:strong (or (getf *user* :name) "User")) " · "
+                              (:form :method "post" :action "/logout"
                                      :style "display:inline;"
                                      (:button :type "submit"
                                               :class "user-banner__logout"
                                               :style "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
                                               "ログアウト"))))
-                 (t
-                  (:div :class "user-banner anon"
-                        "進捗を端末を超えて保存するには "
-                        (:a :href "/login" "ログイン")
-                        " してください。")))
-               (:div :class "breadcrumb"
-                     (:a :href "/wardlisp/" "WardLisp") " > "
-                     (:a :href "/wardlisp/learn" "SICPコース") " > "
-                     (notebook-chapter notebook))
-               (:h1 (notebook-title notebook))
-               (:p :class "summary" (notebook-summary notebook))
-               (loop for cell in (notebook-cells notebook)
-                     for i from 0
-                     do (render-cell cell i (notebook-url-id notebook)))))
-        (:script :src "/static/js/learn.js"))))))
+                       (t
+                        (:div :class "user-banner anon" "進捗を端末を超えて保存するには "
+                              (:a :href "/login" "ログイン") " してください。")))
+                     (:div :class "breadcrumb"
+                           (:a :href "/wardlisp/" "WardLisp") " > "
+                           (:a :href "/wardlisp/learn" "SICPコース") " > "
+                           (notebook-chapter notebook))
+                     (:h1 (notebook-title notebook))
+                     (:p :class "summary" (notebook-summary notebook))
+                     (loop for cell in (notebook-cells notebook)
+                           for i from 0
+                           do (render-cell cell i (notebook-url-id notebook)))))
+              (:script :src "/static/js/learn.js"))))))
 
 (defun render-test-results (results)
   (spinneret:with-html

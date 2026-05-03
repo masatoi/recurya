@@ -23,6 +23,7 @@
   (:import-from #:recurya/web/ui/blog-post)
   (:import-from #:recurya/web/ui/user-notebooks)
   (:import-from #:recurya/web/ui/user-notebook-form)
+  (:import-from #:recurya/web/ui/notebook-list)
   (:import-from #:recurya/db/posts
                 #:create-post!
                 #:get-post-by-id
@@ -87,7 +88,8 @@
            #:user-notebook-update-handler
            #:user-notebook-toggle-status-handler
            #:user-notebook-confirm-delete-handler
-           #:user-notebook-delete-handler))
+           #:user-notebook-delete-handler
+           #:notebooks-public-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -750,6 +752,33 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                          :hx-swap-oob "outerHTML")))
                  (redirect "/notebooks/me"))))))))
 
+(defun user-notebook-public-plist (nb)
+  "Convert a user-notebook DAO to a plist for the public listing UI."
+  (let* ((author (user-notebook-author nb))
+         (author-name
+           (when author (recurya/models/users:users-display-name author))))
+    (list :slug         (user-notebook-slug nb)
+          :title        (user-notebook-title nb)
+          :summary      (user-notebook-summary nb)
+          :published-at (user-notebook-published-at nb)
+          :author-name  (or author-name "Anonymous"))))
+
+(defun notebooks-public-handler (params)
+  "Handle GET /notebooks - public listing of published user-notebooks.
+No authentication required."
+  (let* ((page (parse-page-param params))
+         (total-count (count-user-notebooks :status "published"))
+         (offset (* (1- page) *page-size*))
+         (raw (list-user-notebooks :status "published"
+                                   :limit *page-size*
+                                   :offset offset))
+         (notebooks (mapcar #'user-notebook-public-plist raw))
+         (pagination (make-pagination page total-count *page-size*
+                                      "/notebooks")))
+    (html-response
+     (recurya/web/ui/notebook-list:render
+      :notebooks notebooks :pagination pagination))))
+
 (defun htmx-request-p ()
   "Return T if the current request was made by HTMX (HX-Request header present).
 Checks both the Clack :headers hash-table (Hunchentoot) and the :http-hx-request
@@ -1028,6 +1057,9 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
           (make-dynamic-handler 'user-notebook-delete-handler))
+  ;; Public user-notebook routes (no auth)
+  (setf (ningle/app:route app "/notebooks")
+          (make-dynamic-handler 'notebooks-public-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))
