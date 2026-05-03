@@ -318,10 +318,12 @@ notebooks at /n/:slug), or pass an explicit list to use a custom set."
                        (t
                         (:div :class "user-banner anon" "進捗を端末を超えて保存するには "
                               (:a :href "/login" "ログイン") " してください。")))
-                     (:div :class "breadcrumb"
-                           (:a :href "/wardlisp/" "WardLisp") " > "
-                           (:a :href "/wardlisp/learn" "SICPコース") " > "
-                           (notebook-chapter notebook))
+                     (when (and (notebook-chapter notebook)
+                                (plusp (length (notebook-chapter notebook))))
+                       (:div :class "breadcrumb"
+                             (:a :href "/wardlisp/" "WardLisp") " > "
+                             (:a :href "/wardlisp/learn" "SICPコース") " > "
+                             (notebook-chapter notebook)))
                      (:h1 (notebook-title notebook))
                      (:p :class "summary" (notebook-summary notebook))
                      (loop for cell in (notebook-cells notebook)

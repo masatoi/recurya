@@ -71,7 +71,19 @@
                 #:cell-kind
                 #:cell-body
                 #:cell-description
-                #:cell-test-cases)
+                #:cell-test-cases
+                #:make-notebook
+                #:notebook-cells
+                #:run-cell
+                #:notebook-cell-result-status
+                #:notebook-cell-result-cell-id)
+  (:import-from #:recurya/web/ui/notebook)
+  (:import-from #:recurya/db/learn
+                #:upsert-cell-code
+                #:user-cell-codes
+                #:user-passed-cells
+                #:mark-cell-passed
+                #:record-submission)
   (:import-from #:recurya/game/puzzle
                 #:test-case-input
                 #:test-case-expected
@@ -89,7 +101,9 @@
            #:user-notebook-toggle-status-handler
            #:user-notebook-confirm-delete-handler
            #:user-notebook-delete-handler
-           #:notebooks-public-handler))
+           #:notebooks-public-handler
+           #:public-user-notebook-handler
+           #:public-user-notebook-cell-run-handler))
 
 (in-package #:recurya/web/routes)
 
@@ -779,6 +793,106 @@ No authentication required."
      (recurya/web/ui/notebook-list:render
       :notebooks notebooks :pagination pagination))))
 
+(defun user-notebook-row->notebook-struct (nb-row)
+  "Convert a user-notebook DAO into a recurya/game/notebook:notebook struct
+that the existing notebook UI and run-cell logic can consume.
+Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
+  (let* ((cells-data (recurya/db/user-notebooks:user-notebook-cells-parsed nb-row))
+         (cells-list (mapcar #'jsonb-hash->cell
+                             (coerce (or cells-data #()) 'list))))
+    (make-notebook
+     :id (princ-to-string (user-notebook-id nb-row))
+     :chapter ""
+     :title (or (user-notebook-title nb-row) "")
+     :summary (or (user-notebook-summary nb-row) "")
+     :cells cells-list)))
+
+(defun public-user-notebook-handler (params)
+  "Handle GET /n/:slug - public single user-notebook page.
+Anonymous and other users see published notebooks; the owner can also
+preview their own draft. Anything else is 404."
+  (let* ((slug (get-path-param params :slug))
+         (nb-row (and slug (get-user-notebook-by-slug slug)))
+         (user (get-current-user))
+         (uid  (and user (getf user :id)))
+         (owner-p (and nb-row uid
+                       (equal (princ-to-string (user-notebook-author-id nb-row))
+                              (princ-to-string uid)))))
+    (cond
+      ((null nb-row)
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      ((and (string= "draft" (user-notebook-status nb-row)) (not owner-p))
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      (t
+       (let* ((notebook (user-notebook-row->notebook-struct nb-row))
+              (nb-id-str (princ-to-string (user-notebook-id nb-row)))
+              (saved (when uid (user-cell-codes uid nb-id-str)))
+              (passed (when uid (user-passed-cells uid nb-id-str))))
+         (html-response
+          (recurya/web/ui/notebook:render
+           notebook
+           :user user
+           :saved-codes saved
+           :passed-cells passed
+           :sidebar-notebooks nil)))))))
+
+(defun %maybe-persist-user-notebook-cell-run (uid nb-uuid cell result code)
+  "Persist saved code, submission, and progress for a user-notebook cell run.
+Anonymous users (UID NIL) are skipped silently; DB errors are logged but
+do not poison the response."
+  (when uid
+    (handler-case
+        (let* ((cell-id-str (string (or (cell-id cell) "")))
+               (status      (notebook-cell-result-status result))
+               (kind        (cell-kind cell))
+               (status-str  (string-downcase (symbol-name status))))
+          (upsert-cell-code uid nb-uuid cell-id-str (or code ""))
+          (when (eq kind :code-exercise)
+            (record-submission uid nb-uuid cell-id-str (or code "") status-str)
+            (when (eq status :pass)
+              (mark-cell-passed uid nb-uuid cell-id-str))))
+      (error (e) (log:warn "Failed to persist user-notebook cell run: ~A" e)))))
+
+(defun public-user-notebook-cell-run-handler (params)
+  "Handle POST /n/:slug/cells/:index/run - HTMX fragment for cell execution.
+Anonymous users may run cells but their progress is not persisted.
+Drafts are visible (and runnable) only to the owner."
+  (let* ((slug (get-path-param params :slug))
+         (nb-row (and slug (get-user-notebook-by-slug slug)))
+         (user (get-current-user))
+         (uid (and user (getf user :id)))
+         (owner-p (and nb-row uid
+                       (equal (princ-to-string (user-notebook-author-id nb-row))
+                              (princ-to-string uid)))))
+    (cond
+      ((null nb-row) (html-response "Notebook not found" :status 404))
+      ((and (string= "draft" (user-notebook-status nb-row)) (not owner-p))
+       (html-response "Notebook not found" :status 404))
+      (t
+       (let* ((notebook (user-notebook-row->notebook-struct nb-row))
+              (cells (notebook-cells notebook))
+              (index-raw (get-path-param params :index))
+              (index (typecase index-raw
+                       (string (parse-integer index-raw :junk-allowed t))
+                       (integer index-raw)
+                       (t nil)))
+              (codes-list (loop for (k . v) in params
+                                when (and (stringp k) (string= k "codes[]"))
+                                collect v)))
+         (cond
+           ((null index) (html-response "Invalid index" :status 400))
+           ((or (< index 0) (>= index (length cells)))
+            (html-response "Index out of range" :status 400))
+           ((eq (cell-kind (nth index cells)) :prose)
+            (html-response "Cannot run a prose cell" :status 400))
+           (t
+            (let* ((nb-uuid (princ-to-string (user-notebook-id nb-row)))
+                   (result (run-cell notebook index codes-list))
+                   (body (recurya/web/ui/notebook:render-cell-result result)))
+              (%maybe-persist-user-notebook-cell-run
+               uid nb-uuid (nth index cells) result (nth index codes-list))
+              (html-response body)))))))))
+
 (defun htmx-request-p ()
   "Return T if the current request was made by HTMX (HX-Request header present).
 Checks both the Clack :headers hash-table (Hunchentoot) and the :http-hx-request
@@ -1060,6 +1174,10 @@ without restarting the server."
   ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
+  (setf (ningle/app:route app "/n/:slug")
+          (make-dynamic-handler 'public-user-notebook-handler))
+  (setf (ningle/app:route app "/n/:slug/cells/:index/run" :method :post)
+          (make-dynamic-handler 'public-user-notebook-cell-run-handler))
   ;; Public blog routes (no auth)
   (setf (ningle/app:route app "/blog")
           (make-dynamic-handler 'blog-handler))

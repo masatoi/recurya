@@ -52,14 +52,13 @@
 
 (defstruct notebook-cell-result
   "Result of running one cell."
-  (cell-id nil :type keyword)
+  (cell-id nil :type (or null keyword string))
   (kind nil :type keyword)
   (status nil :type keyword)
-  value              ; untyped: nil | string (print-value output)
+  value
   (print-output "" :type string)
   (error-message nil :type (or null string))
-  (error-cell-id nil :type (or null keyword))  ; cell where the error originates
-                                                ; (parse errors only; nil for runtime)
+  (error-cell-id nil :type (or null keyword string))
   (metrics nil :type list)
   (test-results nil :type list))
 

@@ -15,7 +15,9 @@
                 #:user-notebook-toggle-status-handler
                 #:user-notebook-confirm-delete-handler
                 #:user-notebook-delete-handler
-                #:notebooks-public-handler)
+                #:notebooks-public-handler
+                #:public-user-notebook-handler
+                #:public-user-notebook-cell-run-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -501,3 +503,126 @@ sh"
       (let ((res (notebooks-public-handler nil)))
         (ok (= 200 (response-status res)))
         (ok (search "Notebooks" (first (response-body res))))))))
+
+(deftest public-page-404-for-missing-slug
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (public-user-notebook-handler '((:slug . "no-such")))))
+        (ok (= 404 (response-status res)))))))
+
+(deftest public-page-404-for-others-draft
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Hidden" :slug "hidden" :body-md "===prose===
+shh"
+       :cells '() :author owner-dao :status "draft")
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-handler '((:slug . "hidden")))))
+          (ok (= 404 (response-status res)))))
+      (with-mock-session (make-session)
+        (let ((res (public-user-notebook-handler '((:slug . "hidden")))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest public-page-owner-can-preview-draft
+  (with-test-db
+    (let* ((owner (mk-user))
+           (owner-dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Owner Draft" :slug "od" :body-md "===prose===
+mine"
+       :cells '() :author owner-dao :status "draft")
+      (with-mock-session (make-session :user owner)
+        (let* ((res (public-user-notebook-handler '((:slug . "od"))))
+               (body (first (response-body res))))
+          (ok (= 200 (response-status res)))
+          (ok (search "Owner Draft" body)))))))
+
+(deftest public-page-published-anonymous
+  (with-test-db
+    (let* ((owner (mk-user))
+           (dao (get-user-by-id (getf owner :id))))
+      (create-user-notebook!
+       :title "Open" :slug "open" :body-md "===prose===
+hello"
+       :cells '() :author dao :status "published"
+       :published-at (local-time:now))
+      (with-mock-session (make-session)
+        (let ((res (public-user-notebook-handler '((:slug . "open")))))
+          (ok (= 200 (response-status res))))))))
+
+(deftest run-cell-404-missing-slug
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (public-user-notebook-cell-run-handler
+                  '((:slug . "no-such") (:index . "0")))))
+        (ok (= 404 (response-status res)))))))
+
+(deftest run-cell-rejects-prose-cell
+  (with-test-db
+    (let* ((owner (mk-user))
+           (dao (get-user-by-id (getf owner :id)))
+           (body "===prose===
+hi")
+           (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                          (recurya/game/notebook-parser:parse-notebook-body body))))
+      (create-user-notebook!
+       :title "P" :slug "p1" :body-md body
+       :cells cells :author dao :status "published"
+       :published-at (local-time:now))
+      (with-mock-session (make-session)
+        (let ((res (public-user-notebook-cell-run-handler
+                    '((:slug . "p1") (:index . "0")))))
+          (ok (= 400 (response-status res))))))))
+
+(deftest run-cell-eval-anonymous-no-persist
+  (with-test-db
+    (let* ((owner (mk-user))
+           (dao (get-user-by-id (getf owner :id)))
+           (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+           (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                          (recurya/game/notebook-parser:parse-notebook-body body))))
+      (create-user-notebook!
+       :title "Eval" :slug "ev" :body-md body
+       :cells cells :author dao :status "published"
+       :published-at (local-time:now))
+      (with-mock-session (make-session)
+        (let* ((res (public-user-notebook-cell-run-handler
+                     '((:slug . "ev") (:index . "1")
+                       ("codes[]" . "")
+                       ("codes[]" . "(+ 1 2)")))))
+          (ok (= 200 (response-status res))))))))
+
+(deftest run-cell-eval-logged-in-persists-saved-code
+  (with-test-db
+    (let* ((owner (mk-user))
+           (other (mk-user))
+           (dao (get-user-by-id (getf owner :id)))
+           (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+           (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                          (recurya/game/notebook-parser:parse-notebook-body body)))
+           (nb (create-user-notebook!
+                :title "Pers" :slug "pers" :body-md body
+                :cells cells :author dao :status "published"
+                :published-at (local-time:now)))
+           (nb-uuid (princ-to-string (user-notebook-id nb))))
+      (with-mock-session (make-session :user other)
+        (let ((res (public-user-notebook-cell-run-handler
+                    `((:slug . "pers") (:index . "1")
+                      ("codes[]" . "")
+                      ("codes[]" . "(+ 1 2)")))))
+          (ok (= 200 (response-status res))))
+        (let ((codes (recurya/db/learn:user-cell-codes
+                      (getf other :id) nb-uuid)))
+          (ok (= 1 (length codes)))
+          (ok (search "(+ 1 2)" (cdar codes))))))))
