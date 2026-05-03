@@ -1735,6 +1735,7 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
                      :hx-post confirm-hx-post
                      :hx-target (or confirm-hx-target "#modal-container")
                      :hx-swap (or confirm-hx-swap "innerHTML")
+                     :hx-include "#csrf-form"
                      confirm-label)))))))
 
 (defun post-toggle-status-handler (params)
