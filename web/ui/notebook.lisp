@@ -214,10 +214,19 @@ the matching entry as 'sb-link active'."
             (:div :class "result-panel" :id result-id)))))
 
 (defun render-cell (cell index nb-id)
+  (declare (ignorable cell index nb-id))
   (ecase (cell-kind cell)
-    (:prose         (render-prose-cell cell))
-    (:code-eval     (render-code-cell cell index nb-id nil))
-    (:code-exercise (render-code-cell cell index nb-id t))))
+    (:prose (render-prose-cell cell))
+    (:code-eval (render-code-cell cell index nb-id nil))
+    (:code-exercise (render-code-cell cell index nb-id t))
+    (:code-solution
+     ;; Solution cells hold the canonical answer for grading regression
+     ;; tests; they are intentionally hidden from the public viewer.
+     ;; Keep an empty hidden codes[] entry so the cell index stays
+     ;; aligned with the run-cell handler's codes vector.
+     (with-html
+       (:input :type "hidden" :class "notebook-code"
+               :name "codes[]" :value "")))))
 
 (defun render (notebook
                &key user saved-codes passed-cells

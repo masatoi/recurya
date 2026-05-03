@@ -604,6 +604,33 @@ hi
             (ok (search "<strong>bold</strong>" html))
             (ng (search "**bold**" html))))))))
 
+(deftest public-page-renders-200-when-body-has-solution-cells
+  (testing "viewer survives notebooks that contain ===solution=== cells (hidden)"
+    (with-test-db
+      (let* ((owner (mk-user))
+             (dao (get-user-by-id (getf owner :id)))
+             (body "===exercise: square===
+(define (square x) ???)
+
+===expect: square===
+4
+
+===solution: square===
+(define (square x) (* x x))")
+             (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                            (recurya/game/notebook-parser:parse-notebook-body body))))
+        (create-user-notebook!
+         :title "Solo" :slug "with-solution" :body-md body
+         :cells cells :author dao :status "published"
+         :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let* ((res (public-user-notebook-handler
+                       '((:slug . "with-solution"))))
+                 (html (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ng (search "(* x x)" html)
+                "solution body must not leak to public viewers")))))))
+
 (deftest run-cell-404-missing-slug
   (with-test-db
     (with-mock-session (make-session)

@@ -1511,8 +1511,9 @@ Drafts are visible (and runnable) only to the owner."
            ((null index) (html-response "Invalid index" :status 400))
            ((or (< index 0) (>= index (length cells)))
             (html-response "Index out of range" :status 400))
-           ((eq (cell-kind (nth index cells)) :prose)
-            (html-response "Cannot run a prose cell" :status 400))
+           ((member (cell-kind (nth index cells))
+                    '(:prose :code-solution))
+            (html-response "Cannot run this cell" :status 400))
            (t
             (let* ((nb-uuid (princ-to-string (user-notebook-id nb-row)))
                    (result (run-cell notebook index codes-list))
