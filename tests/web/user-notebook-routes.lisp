@@ -370,12 +370,22 @@ hi"
           (ok (= 200 (response-status res2)))
           (ok (search "data-status=draft" (first (response-body res2))))
           (let ((after (get-user-notebook-by-id id)))
-            (ok (string= "draft" (user-notebook-status after)))))))))
+            (ok (string= "draft" (user-notebook-status after)))
+            (ok (recurya/db/user-notebooks:user-notebook-published-at after)
+                "published_at is preserved on un-publish")))))))
 
 (deftest confirm-delete-401-anonymous
   (with-mock-session (make-session)
     (let ((res (user-notebook-confirm-delete-handler '((:id . "x")))))
       (ok (= 401 (response-status res))))))
+
+(deftest confirm-delete-404-missing
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (user-notebook-confirm-delete-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")))))
+          (ok (= 404 (response-status res))))))))
 
 (deftest confirm-delete-403-non-owner
   (with-test-db
