@@ -32,6 +32,8 @@
   (:import-from #:recurya/web/ui/editor
                 #:editor-head-tags
                 #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-form-block)
   (:export #:render
            #:render-result))
 
@@ -97,6 +99,7 @@ h1 { font-size: 1.5rem; letter-spacing: -0.02em; color: #f8fafc; }
         (:style (:raw *styles*))
         (:raw (editor-head-tags)))
        (:body
+        (:raw (or (csrf-form-block) ""))
         (:main
          (:div :class "breadcrumb"
           (:a :href "/wardlisp/" "Puzzles") " / " (puzzle-title puzzle))
@@ -118,7 +121,7 @@ h1 { font-size: 1.5rem; letter-spacing: -0.02em; color: #f8fafc; }
                                  :placeholder "Write your solution here..."))
           (:button :class "btn-run" :type "button"
                    :hx-post (format nil "/wardlisp/puzzle/~A/run" id)
-                   :hx-include "closest form"
+                   :hx-include "closest form, #csrf-form"
                    :hx-target "#result-panel"
                    :hx-swap "innerHTML"
                    "Run"))

@@ -2,15 +2,18 @@
 
 (defpackage #:recurya/web/ui/notebook
   (:use #:cl)
-  (:import-from #:spinneret
-                #:with-html-string
-                #:with-html)
-  (:import-from #:alexandria
-                #:when-let*)
+  (:import-from #:spinneret #:with-html-string #:with-html)
+  (:import-from #:alexandria #:when-let*)
   (:import-from #:recurya/game/notebook
-                #:notebook-id #:notebook-chapter #:notebook-title
-                #:notebook-summary #:notebook-cells
-                #:cell-id #:cell-kind #:cell-body #:cell-description
+                #:notebook-id
+                #:notebook-chapter
+                #:notebook-title
+                #:notebook-summary
+                #:notebook-cells
+                #:cell-id
+                #:cell-kind
+                #:cell-body
+                #:cell-description
                 #:notebook-cell-result-cell-id
                 #:notebook-cell-result-kind
                 #:notebook-cell-result-status
@@ -20,9 +23,8 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
-  (:import-from #:recurya/web/ui/editor
-                #:editor-head-tags
-                #:editor-textarea)
+  (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
+  (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -205,7 +207,7 @@ the matching entry as 'sb-link active'."
             (:button :type "button" :class "btn-run"
                      :hx-post run-url
                      :hx-target (format nil "#~A" result-id)
-                     :hx-include ".notebook-code"
+                     :hx-include ".notebook-code, #csrf-form"
                      :hx-swap "innerHTML"
                      "Run")
             (:button :type "button" :class "btn-reset"
@@ -278,6 +280,7 @@ notebooks within the same course."
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
+              (:raw (or (csrf-form-block) ""))
               (:div :class "layout"
                     (cond
                       ((null sidebar-notebooks) nil)
@@ -292,6 +295,7 @@ notebooks within the same course."
                               (:strong (or (getf *user* :name) "User")) " · "
                               (:form :method "post" :action "/logout"
                                      :style "display:inline;"
+                                     (:raw (or (csrf-input) ""))
                                      (:button :type "submit"
                                               :class "user-banner__logout"
                                               :style

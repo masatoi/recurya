@@ -93,14 +93,17 @@ referencing the pill by that id continues to work."
           (:button :type "button" :hx-post state-url
             :hx-vals "{\"state\":\"draft\"}"
             :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
             "Draft")
           (:button :type "button" :hx-post state-url
             :hx-vals "{\"state\":\"published-private\"}"
             :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
             "Private")
           (:button :type "button" :hx-post state-url
             :hx-vals "{\"state\":\"published-public\"}"
             :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
             "Public"))))))
 
 (defun render (&key user courses pagination message errors)

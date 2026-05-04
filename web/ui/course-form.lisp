@@ -8,6 +8,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input)
   (:export #:render
            #:render-course-notebooks-list))
 
@@ -104,18 +106,21 @@ in sync with the attached set after every mutation."
                                              :hx-post up-url
                                              :hx-target "#course-notebooks-list"
                                              :hx-swap "outerHTML"
+                                             :hx-include "#csrf-form"
                                              "Up")
                                     (:button :type "button"
                                              :class "btn-secondary"
                                              :hx-post down-url
                                              :hx-target "#course-notebooks-list"
                                              :hx-swap "outerHTML"
+                                             :hx-include "#csrf-form"
                                              "Down")
                                     (:button :type "button"
                                              :class "btn-secondary"
                                              :hx-post remove-url
                                              :hx-target "#course-notebooks-list"
                                              :hx-swap "outerHTML"
+                                             :hx-include "#csrf-form"
                                              "Remove"))))))))
             (cond
               ((null eligible-notebooks)
@@ -126,6 +131,7 @@ in sync with the attached set after every mutation."
                       :hx-post (format nil "/courses/~A/notebooks" course-id)
                       :hx-target "#course-notebooks-list"
                       :hx-swap "outerHTML"
+                      :hx-include "#csrf-form"
                       (:div :class "form-group"
                             (:label :for "notebook_id" "Add notebook")
                             (:select :id "notebook_id" :name "notebook_id"
@@ -187,6 +193,7 @@ When editing an existing COURSE, the caller may also supply:
                                      " "
                                      (getf err :message))))))
                      (:form :class "course-form" :method "post" :action action-url
+                            (:raw (csrf-input))
                             (:div :class "form-group"
                                   (:label :for "title" "Title")
                                   (:input :type "text" :id "title" :name "title"

@@ -8,6 +8,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input)
   (:export #:render))
 
 (in-package #:recurya/web/ui/post-form)
@@ -110,6 +112,7 @@ When POST is NIL, renders a new post form."
             (:div :class "flash-message error"
              (dolist (err errors) (:p err))))
           (:form :class "post-form" :method "post" :action action-url
+           (:raw (csrf-input))
            (:div :class "form-group"
             (:label :for "title" "Title")
             (:input :type "text" :id "title" :name "title"

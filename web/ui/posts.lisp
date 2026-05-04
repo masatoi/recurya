@@ -148,6 +148,7 @@ tr.htmx-swapping {
                         :hx-post (format nil "/posts/~A/toggle-status" id)
                         :hx-target (format nil "#status-~A" id)
                         :hx-swap "outerHTML"
+                        :hx-include "#csrf-form"
                         (string-capitalize (or status "draft"))))
                       (:td (if published-at
                                (or (format-timestamp published-at user-timezone) "—")

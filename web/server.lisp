@@ -9,10 +9,14 @@
   (:import-from #:clack
                 #:clackup
                 #:stop)
+  (:import-from #:lack/middleware/csrf
+                #:*lack-middleware-csrf*)
   (:import-from #:recurya/web/app
                 #:make-recurya-app)
   (:import-from #:recurya/web/routes
                 #:setup-routes)
+  (:import-from #:recurya/web/ui/errors
+                #:csrf-failure)
   (:export #:start!
            #:stop!
            #:*handler*))
@@ -32,20 +36,55 @@
         (parse-integer port-str :junk-allowed t)
         *default-port*)))
 
+(defparameter *csrf-skip-paths* '("/learn/sync"
+    ;; Legacy 308 redirect target. The redirect handler itself runs
+    ;; after the middleware, so the upstream POST must bypass csrf
+    ;; here just like its modern equivalent.
+    "/wardlisp/learn/sync")
+  "Paths bypassed by the CSRF middleware (JSON endpoints with their
+own protection).")
+
+(defun csrf-failure-handler (env)
+  "Lack response returned when the CSRF middleware rejects a request."
+  (declare (ignore env))
+  (list 400
+        (list :content-type "text/html; charset=utf-8")
+        (list (csrf-failure))))
+
+(defun csrf-with-skip (app)
+  "Wrap APP in lack/middleware/csrf, but skip *csrf-skip-paths*.
+
+Returns a Clack app that dispatches to either the bare APP or the
+CSRF-protected wrapper based on the request path. The skip list is
+intended for JSON endpoints that authenticate via session and consume
+their own request body (so the CSRF middleware's body-parameter
+inspection would interfere)."
+  (let ((csrf-app
+         (funcall *lack-middleware-csrf*
+                  app :block-app #'csrf-failure-handler)))
+    (lambda (env)
+      (if (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
+          (funcall app env)
+          (funcall csrf-app env)))))
+
 (defun build-app ()
   "Build the complete Lack application with middleware."
   (let ((app (make-recurya-app)))
     (setup-routes app)
     ;; Lack middleware stack (outermost listed first):
-    ;; 1. :static    — serves /static/* from resources/static/ on disk
-    ;; 2. :session   — cookie-based session (provides ningle/context:*session*)
-    ;; 3. :backtrace — renders a debug backtrace page on unhandled errors
-    ;; 4. app        — the Ningle router with all route handlers
+    ;; 1. :static         — serves /static/* from resources/static/ on disk
+    ;; 2. :session        — cookie-based session (provides ningle/context:*session*)
+    ;; 3. #'csrf-with-skip — CSRF token check on POST/PUT/DELETE/PATCH;
+    ;;                       bypassed for paths in *csrf-skip-paths*. Must run
+    ;;                       after :session because it reads :lack.session.
+    ;; 4. :backtrace      — renders a debug backtrace page on unhandled errors
+    ;; 5. app             — the Ningle router with all route handlers
     (lack/builder:builder
      (:static :path "/static/"
               :root (asdf:system-relative-pathname
                      :recurya "resources/static/"))
      :session
+     #'csrf-with-skip
      :backtrace
      app)))
 

@@ -11,6 +11,8 @@
                 #:header
                 #:header-styles
                 #:common-styles)
+  (:import-from #:recurya/web/ui/csrf
+                #:csrf-input)
   (:export #:render))
 
 (in-package #:recurya/web/ui/account)
@@ -112,6 +114,7 @@ form.settings .button-primary {
               (when error
                 (:div :class "message error" error))
               (:form :class "settings" :method "post" :action "/account"
+                (:raw (csrf-input))
                 (:div
                   (:label :for "account-email" "Email")
                   (:input :id "account-email" :type "text" :value email :readonly t))
