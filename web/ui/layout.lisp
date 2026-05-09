@@ -44,7 +44,8 @@
 .app-header__action:hover { background:#e2e8f0; }
 .app-header__avatar { display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; border-radius:999px; background:#38bdf8; color:#0f172a; font-weight:700; }
 .app-header__label { display:none; font-size:0.95rem; }
-@media (min-width:640px) { .app-header__label { display:inline; } }")
+@media (min-width:640px) { .app-header__label { display:inline; } }
+.app-header__auth-badge { color:rgba(248,250,252,0.65); font-size:0.85rem; font-weight:500; margin-right:0.25rem; }")
 
 (defun header-styles ()
   "Return the CSS styles for the application header."
@@ -138,7 +139,8 @@ its token via hx-include without a separate fetch."
              (:form :method "post" :action "/logout" (:raw (csrf-input))
               (:button :type "submit" :class "app-header__action" "Log out"))))))
         (t
-         (:a :class "app-header__link" :href "/login" "Login")))))))
+         (:span :class "app-header__auth-badge" "未ログイン")
+         (:a :class "app-header__link" :href "/login" "ログイン")))))))
 
 (defun page-shell (&key title styles user body-content head-extras body-scripts)
   "Generate a complete HTML page shell.
