@@ -51,8 +51,8 @@ let the user start over if needed.")
   '("/" "/notebooks" "/courses")
   "Exact public landing/listing paths that anyone may view, even with
 a placeholder handle. They are listed here (not as prefixes) because
-their prefix would also catch /notebooks/me, which we DO want to gate
-behind onboarding.")
+their prefix would also catch /dashboard/notebooks and /dashboard/courses,
+which we DO want to gate behind onboarding.")
 
 (defparameter *handle-onboarding-skip-prefixes*
   '("/auth/" "/static/" "/n/" "/c/" "/wardlisp" "/onboarding/")

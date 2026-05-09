@@ -149,7 +149,7 @@ Hello.")
                          ("status" . "draft")))
                (res (notebook-create-handler params)))
           (ok (= 302 (response-status res)))
-          (ok (string= "/notebooks/me" (response-location res)))
+          (ok (string= "/dashboard/notebooks" (response-location res)))
           (let ((nb (get-notebook-by-slug "my-nb")))
             (ok nb)
             (ok (string= "My NB" (notebook-title nb)))
@@ -351,7 +351,7 @@ old"
 new")
                            (cons "status" "published")))))
           (ok (= 302 (response-status res)))
-          (ok (string= "/notebooks/me" (response-location res)))
+          (ok (string= "/dashboard/notebooks" (response-location res)))
           (let ((updated (get-notebook-by-id id)))
             (ok (string= "After" (notebook-title updated)))
             (ok (search "new" (notebook-body-md updated)))
@@ -563,7 +563,7 @@ hi"
           (ok (= 403 (response-status res))))))))
 
 (deftest set-state-decodes-published-public
-  (testing "POST /notebooks/:id/state with state=published-public sets
+  (testing "POST /dashboard/notebooks/:id/state with state=published-public sets
 status=published, visibility=public, sets published_at, and returns the
 full <details> dropdown markup (summary pill + 3 hx-post state buttons),
 not a bare pill span."
@@ -644,7 +644,7 @@ hi"
 
 (deftest list-pill-renders-state-dropdown
   (testing "Each row renders a Draft/Private/Public dropdown that posts to
-/notebooks/:id/state."
+/dashboard/notebooks/:id/state."
     (with-test-db
       (let* ((user (mk-user))
              (dao (get-user-by-id (getf user :id)))
@@ -657,7 +657,7 @@ hi"
           (let* ((res (notebooks-handler nil))
                  (body (first (response-body res))))
             (ok (= 200 (response-status res)))
-            (ok (search (format nil "/notebooks/~A/state" id) body)
+            (ok (search (format nil "/dashboard/notebooks/~A/state" id) body)
                 "row links the new /state endpoint")
             (ok (search "published-public" body)
                 "Public option is present in the dropdown")
@@ -706,7 +706,7 @@ hi"
           (ok (= 200 (response-status res)))
           (ok (search "modal-overlay" body))
           (ok (search "Delete this notebook?" body))
-          (ok (search (format nil "hx-post=\"/notebooks/~A/delete\"" id) body))
+          (ok (search (format nil "hx-post=\"/dashboard/notebooks/~A/delete\"" id) body))
           (ok (search "Delete notebook" body)))))))
 
 (deftest delete-redirects-anonymous
@@ -761,7 +761,7 @@ hi"
         (with-mock-request (:htmx nil)
           (let ((res (notebook-delete-handler (list (cons :id id)))))
             (ok (= 302 (response-status res)))
-            (ok (string= "/notebooks/me" (response-location res)))))))))
+            (ok (string= "/dashboard/notebooks" (response-location res)))))))))
 
 (deftest public-list-shows-published-only
   (with-test-db

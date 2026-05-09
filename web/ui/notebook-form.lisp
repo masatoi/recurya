@@ -85,8 +85,8 @@ a list of plists like (:line N :message \"...\")."
          (nb-status  (or (getf notebook :status) "draft"))
          (nb-visibility (or (getf notebook :visibility) "private"))
          (action-url (if editing-p
-                         (format nil "/notebooks/~A" nb-id)
-                         "/notebooks"))
+                         (format nil "/dashboard/notebooks/~A" nb-id)
+                         "/dashboard/notebooks"))
          (page-title (if editing-p "Edit Notebook" "New Notebook"))
          (all-styles
            (concatenate 'string
@@ -168,7 +168,7 @@ a list of plists like (:line N :message \"...\")."
                             (:div :class "form-actions"
                                   (:button :type "submit" :class "btn-primary"
                                            (if editing-p "Update Notebook" "Create Notebook"))
-                                  (:a :class "btn-secondary" :href "/notebooks/me"
+                                  (:a :class "btn-secondary" :href "/dashboard/notebooks"
                                       :style "text-decoration:none;text-align:center"
                                       "Cancel")))
                      (:div :class "cheatsheet"

@@ -7,6 +7,7 @@
                 #:with-test-db)
   (:import-from #:recurya/web/routes
                 #:root-handler
+                #:dashboard-home-handler
                 #:login-page-handler
                 #:logout-handler
                 #:account-page-handler
@@ -66,11 +67,17 @@
         (ok (= 302 (response-status response)))
         (ok (string= "/notebooks" (response-location response))))))
 
-  (testing "root redirects authenticated users to /notebooks/me"
+  (testing "root redirects authenticated users to /dashboard/notebooks"
     (with-mock-session (make-session :user '(:id "123" :email "test@example.com"))
       (let ((response (root-handler nil)))
         (ok (= 302 (response-status response)))
-        (ok (string= "/notebooks/me" (response-location response)))))))
+        (ok (string= "/dashboard/notebooks" (response-location response)))))))
+
+(deftest dashboard-home-redirects-to-notebooks
+  (testing "GET /dashboard redirects to /dashboard/notebooks"
+    (let ((response (dashboard-home-handler nil)))
+      (ok (= 302 (response-status response)))
+      (ok (string= "/dashboard/notebooks" (response-location response))))))
 
 (deftest logout-handler-clears-session
   (testing "logout clears session and redirects to login"
@@ -127,11 +134,11 @@
           (ignore-errors (delete-user! (getf user :email))))))))
 
 (deftest login-page-redirects-if-already-authenticated
-  (testing "login page redirects authenticated users to /notebooks/me"
+  (testing "login page redirects authenticated users to /dashboard/notebooks"
     (with-mock-session (make-session :user '(:id "123" :email "test@example.com"))
       (let ((response (login-page-handler nil)))
         (ok (= 302 (response-status response)))
-        (ok (string= "/notebooks/me" (response-location response)))))))
+        (ok (string= "/dashboard/notebooks" (response-location response)))))))
 
 (deftest get-param-extracts-values
   (testing "get-param extracts values from params alist"

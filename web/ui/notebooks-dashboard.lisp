@@ -81,7 +81,7 @@ referencing the pill by that id continues to work."
                 (t "Private")))
          (dropdown-id (format nil "state-dropdown-~A" id))
          (dropdown-target (format nil "#state-dropdown-~A" id))
-         (state-url (format nil "/notebooks/~A/state" id)))
+         (state-url (format nil "/dashboard/notebooks/~A/state" id)))
     (with-html-string
       (:details :class "status-pill-menu" :id dropdown-id
         (:summary :class (format nil "status-pill ~A" state-class)
@@ -129,7 +129,7 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
          (:div :class "card" (:h1 "My Notebooks")
           (:p :class "muted" "Manage your user-authored notebooks.")
           (:div :class "actions-bar"
-           (:a :class "new-nb-btn" :href "/notebooks/new" "+ New Notebook"))
+           (:a :class "new-nb-btn" :href "/dashboard/notebooks/new" "+ New Notebook"))
           (:div :id "flash-area"
            (when message (:div :class "flash-message success" message))
            (when errors
@@ -169,9 +169,9 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                       (:td
                        (:div :class "actions-cell"
                         (:a :class "link" :href
-                         (format nil "/notebooks/~A/edit" id) "Edit")
+                         (format nil "/dashboard/notebooks/~A/edit" id) "Edit")
                         (:button :class "button-danger btn-sm" :hx-get
-                         (format nil "/notebooks/~A/confirm-delete" id)
+                         (format nil "/dashboard/notebooks/~A/confirm-delete" id)
                          :hx-target "#modal-container" :hx-swap "innerHTML"
                          "Delete"))))))))
                (when pagination

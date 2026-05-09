@@ -232,7 +232,7 @@
 
 (defun mk-env (&key path-info session)
   "Build a minimal Lack ENV plist for middleware tests."
-  (list :path-info (or path-info "/notebooks/me")
+  (list :path-info (or path-info "/dashboard/notebooks")
         :request-method :get
         :lack.session session))
 
@@ -246,7 +246,7 @@ the middleware passes the request through."
 (deftest middleware-passes-anonymous-requests
   (testing "no session user => middleware does not redirect"
     (let* ((wrapped (require-real-handle (pass-through-app)))
-           (env (mk-env :path-info "/notebooks/me" :session (make-hash-table))))
+           (env (mk-env :path-info "/dashboard/notebooks" :session (make-hash-table))))
       (let ((res (funcall wrapped env)))
         (ok (= 200 (response-status res))
             "anonymous user should be passed through, not redirected")))))
@@ -257,18 +257,18 @@ the middleware passes the request through."
       (setf (gethash :user session)
             '(:id "u1" :handle "alice"))
       (let* ((wrapped (require-real-handle (pass-through-app)))
-             (env (mk-env :path-info "/notebooks/me" :session session))
+             (env (mk-env :path-info "/dashboard/notebooks" :session session))
              (res (funcall wrapped env)))
         (ok (= 200 (response-status res))
-            "real-handle user should reach /notebooks/me without redirect")))))
+            "real-handle user should reach /dashboard/notebooks without redirect")))))
 
 (deftest middleware-redirects-placeholder-on-protected-path
-  (testing "placeholder user hitting /notebooks/me is redirected"
+  (testing "placeholder user hitting /dashboard/notebooks is redirected"
     (let ((session (make-hash-table)))
       (setf (gethash :user session)
             '(:id "u1" :handle "u-deadbeef"))
       (let* ((wrapped (require-real-handle (pass-through-app)))
-             (env (mk-env :path-info "/notebooks/me" :session session))
+             (env (mk-env :path-info "/dashboard/notebooks" :session session))
              (res (funcall wrapped env)))
         (ok (= 302 (response-status res)))
         (ok (string= "/onboarding/handle" (response-location res))

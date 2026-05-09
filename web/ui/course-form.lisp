@@ -69,7 +69,7 @@ Arguments:
   MESSAGE             - Optional flash message rendered above the list.
 
 Each row's Up/Down/Remove buttons fire HTMX POSTs against
-/courses/<id>/notebooks/<cn-id>/{up,down,remove} and replace this entire
+/dashboard/courses/<id>/notebooks/<cn-id>/{up,down,remove} and replace this entire
 fragment via outerHTML swap. Re-rendering the whole list (rather than
 scoping Remove to a single <li>) keeps the eligible-notebooks dropdown
 in sync with the attached set after every mutation."
@@ -89,13 +89,13 @@ in sync with the attached set after every mutation."
                     (dolist (nb course-notebooks)
                       (let* ((cn-id (getf nb :cn-id))
                              (up-url
-                              (format nil "/courses/~A/notebooks/~A/up"
+                              (format nil "/dashboard/courses/~A/notebooks/~A/up"
                                       course-id cn-id))
                              (down-url
-                              (format nil "/courses/~A/notebooks/~A/down"
+                              (format nil "/dashboard/courses/~A/notebooks/~A/down"
                                       course-id cn-id))
                              (remove-url
-                              (format nil "/courses/~A/notebooks/~A/remove"
+                              (format nil "/dashboard/courses/~A/notebooks/~A/remove"
                                       course-id cn-id)))
                         (:li :data-notebook-id (getf nb :id)
                              :data-cn-id cn-id
@@ -128,7 +128,7 @@ in sync with the attached set after every mutation."
                    "No more notebooks available to add."))
               (t
                (:form :class "add-notebook-form"
-                      :hx-post (format nil "/courses/~A/notebooks" course-id)
+                      :hx-post (format nil "/dashboard/courses/~A/notebooks" course-id)
                       :hx-target "#course-notebooks-list"
                       :hx-swap "outerHTML"
                       :hx-include "#csrf-form"
@@ -163,8 +163,8 @@ When editing an existing COURSE, the caller may also supply:
          (c-status  (or (getf course :status) "draft"))
          (c-visibility (or (getf course :visibility) "private"))
          (action-url (if editing-p
-                         (format nil "/courses/~A" c-id)
-                         "/courses"))
+                         (format nil "/dashboard/courses/~A" c-id)
+                         "/dashboard/courses"))
          (page-title (if editing-p "Edit Course" "New Course"))
          (all-styles
            (concatenate 'string
@@ -238,7 +238,7 @@ When editing an existing COURSE, the caller may also supply:
                             (:div :class "form-actions"
                                   (:button :type "submit" :class "btn-primary"
                                            (if editing-p "Update Course" "Create Course"))
-                                  (:a :class "btn-secondary" :href "/courses/me"
+                                  (:a :class "btn-secondary" :href "/dashboard/courses"
                                       :style "text-decoration:none;text-align:center"
                                       "Cancel")))
                      (when editing-p

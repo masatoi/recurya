@@ -112,6 +112,7 @@
                 #:test-case-expected
                 #:test-case-description)
   (:export #:setup-routes
+           #:dashboard-home-handler
            #:account-confirm-delete-handler
            #:account-delete-handler
            #:onboarding-handle-page-handler
@@ -246,14 +247,14 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
   "Handle / - redirect to dashboard or public notebooks list."
   (declare (ignore params))
   (if (get-current-user)
-      (redirect "/notebooks/me")    ; will be re-targeted to /dashboard later in Phase 7
+      (redirect "/dashboard/notebooks")
       (redirect "/notebooks")))
 
 (defun login-page-handler (params)
   "Handle GET /login - show login form."
   (declare (ignore params))
   (if (get-current-user)
-      (redirect "/notebooks/me")
+      (redirect "/dashboard/notebooks")
       (html-response (recurya/web/ui/login:render))))
 
 (defun logout-handler (params)
@@ -425,7 +426,7 @@ so cell ids stay stable across edits."
         :author-id (notebook-author-id nb)))
 
 (defun notebooks-handler (params)
-  "Handle GET /notebooks/me - admin notebook list (own notebooks)."
+  "Handle GET /dashboard/notebooks - admin notebook list (own notebooks)."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -438,13 +439,13 @@ so cell ids stay stable across edits."
                                          :offset offset))
                (notebooks (mapcar #'notebook->plist raw))
                (pagination (make-pagination page total-count *page-size*
-                                            "/notebooks/me")))
+                                            "/dashboard/notebooks")))
           (html-response
            (recurya/web/ui/notebooks-dashboard:render
             :user user :notebooks notebooks :pagination pagination))))))
 
 (defun notebook-new-handler (params)
-  "Handle GET /notebooks/new - show new notebook form."
+  "Handle GET /dashboard/notebooks/new - show new notebook form."
   (declare (ignore params))
   (let ((user (get-current-user)))
     (if (null user)
@@ -453,7 +454,7 @@ so cell ids stay stable across edits."
          (recurya/web/ui/notebook-form:render :user user)))))
 
 (defun notebook-create-handler (params)
-  "Handle POST /notebooks - create a new notebook."
+  "Handle POST /dashboard/notebooks - create a new notebook."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -509,10 +510,10 @@ so cell ids stay stable across edits."
                      :visibility visibility
                      :published-at published-at
                      :author (get-session-user-object))
-                    (redirect "/notebooks/me")))))))))))
+                    (redirect "/dashboard/notebooks")))))))))))
 
 (defun notebook-edit-handler (params)
-  "Handle GET /notebooks/:id/edit - show edit form for existing notebook
+  "Handle GET /dashboard/notebooks/:id/edit - show edit form for existing notebook
 (owner only)."
   (let ((user (get-current-user)))
     (if (null user)
@@ -531,7 +532,7 @@ so cell ids stay stable across edits."
                :user user :notebook (notebook->plist nb)))))))))
 
 (defun notebook-update-handler (params)
-  "Handle POST /notebooks/:id - update an existing notebook (owner only).
+  "Handle POST /dashboard/notebooks/:id - update an existing notebook (owner only).
 The previous body markdown is reparsed to recover stable cell ids, then the
 new body is parsed with those ids carried forward where (kind, body,
 description) match."
@@ -616,7 +617,7 @@ description) match."
                             :status (or status "draft")
                             :visibility visibility
                             :published-at published-at)
-                           (redirect "/notebooks/me")))))))))))))))
+                           (redirect "/dashboard/notebooks")))))))))))))))
 
 (defun course->plist (c)
   "Convert a course DAO into a plist for UI rendering. The :notebook-count
@@ -634,7 +635,7 @@ field is the number of notebooks attached to the course via course_notebook."
         :notebook-count (count-course-notebooks (course-id c))))
 
 (defun courses-me-handler (params)
-  "Handle GET /courses/me - admin course list (own courses)."
+  "Handle GET /dashboard/courses - admin course list (own courses)."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -647,13 +648,13 @@ field is the number of notebooks attached to the course via course_notebook."
                                   :offset offset))
                (courses (mapcar #'course->plist raw))
                (pagination (make-pagination page total-count *page-size*
-                                            "/courses/me")))
+                                            "/dashboard/courses")))
           (html-response
            (recurya/web/ui/courses:render
             :user user :courses courses :pagination pagination))))))
 
 (defun course-new-handler (params)
-  "Handle GET /courses/new - show new course form."
+  "Handle GET /dashboard/courses/new - show new course form."
   (declare (ignore params))
   (let ((user (get-current-user)))
     (if (null user)
@@ -662,7 +663,7 @@ field is the number of notebooks attached to the course via course_notebook."
          (recurya/web/ui/course-form:render :user user)))))
 
 (defun course-create-handler (params)
-  "Handle POST /courses - create a new course."
+  "Handle POST /dashboard/courses - create a new course."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -694,7 +695,7 @@ field is the number of notebooks attached to the course via course_notebook."
                 :visibility visibility
                 :published-at published-at
                 :author (get-session-user-object))
-               (redirect "/courses/me"))))))))
+               (redirect "/dashboard/courses"))))))))
 
 (defun course-notebook-row->plist (cn)
   "Convert a COURSE-NOTEBOOK DAO into a plist
@@ -725,7 +726,7 @@ not already attached. ATTACHED-NOTEBOOK-IDS is a list of UUID strings."
             collect (list :id nb-id :title (notebook-title nb)))))
 
 (defun course-edit-handler (params)
-  "Handle GET /courses/:id/edit - show edit form for an existing course
+  "Handle GET /dashboard/courses/:id/edit - show edit form for an existing course
 (owner only). Includes the attached notebook list and Add dropdown
 populated with the user's other published notebooks."
   (let ((user (get-current-user)))
@@ -755,7 +756,7 @@ populated with the user's other published notebooks."
                  :eligible-notebooks eligible)))))))))
 
 (defun course-update-handler (params)
-  "Handle POST /courses/:id - update an existing course (owner only)."
+  "Handle POST /dashboard/courses/:id - update an existing course (owner only)."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -804,7 +805,7 @@ populated with the user's other published notebooks."
                      :status (or status "draft")
                      :visibility visibility
                      :published-at published-at)
-                    (redirect "/courses/me")))))))))))
+                    (redirect "/dashboard/courses")))))))))))
 
 (defun render-course-status-pill (id status &optional (visibility "private"))
   "Render the course status pill HTML fragment for HTMX swap.
@@ -814,7 +815,7 @@ Renders a 3-state pill computed from (STATUS, VISIBILITY):
   (published, private)     -> Private (purple, class=status-private)
   (published, public)      -> Public (green, class=status-public)
 
-Click POSTs to /courses/:id/toggle-status (legacy 2-state toggle)."
+Click POSTs to /dashboard/courses/:id/toggle-status (legacy 2-state toggle)."
   (let* ((status-lower (string-downcase (or status "draft")))
          (visibility-lower (string-downcase (or visibility "private")))
          (state-class (cond ((equal status-lower "draft") "status-draft")
@@ -827,13 +828,13 @@ Click POSTs to /courses/:id/toggle-status (legacy 2-state toggle)."
      (:span :class (format nil "status-pill ~A" state-class)
       :id (format nil "status-~A" id)
       :data-status status-lower :data-visibility visibility-lower
-      :hx-post (format nil "/courses/~A/toggle-status" id)
+      :hx-post (format nil "/dashboard/courses/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
       :hx-include "#csrf-form"
       label))))
 
 (defun course-toggle-status-handler (params)
-  "Handle POST /courses/:id/toggle-status - legacy 2-state toggle.
+  "Handle POST /dashboard/courses/:id/toggle-status - legacy 2-state toggle.
 Toggles between draft and published while preserving the visibility column.
 Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
@@ -878,7 +879,7 @@ Tokens are:
         (t nil)))
 
 (defun course-set-state-handler (params)
-  "Handle POST /courses/:id/state with form param state= one of
+  "Handle POST /dashboard/courses/:id/state with form param state= one of
 draft|published-private|published-public.
 
 Decodes into (status, visibility), updates the course, and returns the
@@ -920,7 +921,7 @@ after subsequent clicks. Owner-only."
                                                   effective-vis)))))))))))))
 
 (defun course-confirm-delete-handler (params)
-  "Handle GET /courses/:id/confirm-delete - return modal fragment for deletion."
+  "Handle GET /dashboard/courses/:id/confirm-delete - return modal fragment for deletion."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
@@ -937,11 +938,11 @@ after subsequent clicks. Owner-only."
                    :message (format nil
                                     "\"~A\" will be permanently deleted. This cannot be undone."
                                     (course-title c))
-                   :confirm-hx-post (format nil "/courses/~A/delete" id)
+                   :confirm-hx-post (format nil "/dashboard/courses/~A/delete" id)
                    :confirm-label "Delete course"))))))))
 
 (defun course-delete-handler (params)
-  "Handle POST /courses/:id/delete - delete course (owner only).
+  "Handle POST /dashboard/courses/:id/delete - delete course (owner only).
 For HTMX requests returns an empty OOB row swap; otherwise redirects."
   (let ((user (get-current-user)))
     (if (null user)
@@ -959,10 +960,10 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                       (with-html-string
                         (:tr :id (format nil "course-row-~A" id)
                              :hx-swap-oob "outerHTML")))
-                     (redirect "/courses/me"))))))))
+                     (redirect "/dashboard/courses"))))))))
 
 (defun course-add-notebook-handler (params)
-  "Handle POST /courses/:id/notebooks - attach a notebook to a course.
+  "Handle POST /dashboard/courses/:id/notebooks - attach a notebook to a course.
 
 Owner only. Reads NOTEBOOK_ID from the form body. Returns the updated
 notebook list as an HTML fragment (#course-notebooks-list) suitable for
@@ -1040,7 +1041,7 @@ missing row."
           row)))))
 
 (defun course-notebook-move-up-handler (params)
-  "Handle POST /courses/:id/notebooks/:cn-id/up - move a course-notebook
+  "Handle POST /dashboard/courses/:id/notebooks/:cn-id/up - move a course-notebook
 one position up.
 
 Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
@@ -1066,7 +1067,7 @@ fragment. No-op when already at position 0."
                    c (getf user :id)))))))))))
 
 (defun course-notebook-move-down-handler (params)
-  "Handle POST /courses/:id/notebooks/:cn-id/down - move a course-notebook
+  "Handle POST /dashboard/courses/:id/notebooks/:cn-id/down - move a course-notebook
 one position down.
 
 Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
@@ -1092,7 +1093,7 @@ fragment. No-op when already at the last position."
                    c (getf user :id)))))))))))
 
 (defun course-notebook-remove-handler (params)
-  "Handle POST /courses/:id/notebooks/:cn-id/remove - detach a notebook
+  "Handle POST /dashboard/courses/:id/notebooks/:cn-id/remove - detach a notebook
 from a course.
 
 Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
@@ -1129,7 +1130,7 @@ Renders a 3-state pill computed from (STATUS, VISIBILITY):
   (published, private)     -> Private (purple, class=status-private)
   (published, public)      -> Public (green, class=status-public)
 
-Click POSTs to /notebooks/:id/toggle-status (legacy 2-state toggle).
+Click POSTs to /dashboard/notebooks/:id/toggle-status (legacy 2-state toggle).
 The Task 14 dropdown is layered on top of this in the listing template."
   (let* ((status-lower (string-downcase (or status "draft")))
          (visibility-lower (string-downcase (or visibility "private")))
@@ -1143,13 +1144,13 @@ The Task 14 dropdown is layered on top of this in the listing template."
      (:span :class (format nil "status-pill ~A" state-class)
       :id (format nil "status-~A" id)
       :data-status status-lower :data-visibility visibility-lower
-      :hx-post (format nil "/notebooks/~A/toggle-status" id)
+      :hx-post (format nil "/dashboard/notebooks/~A/toggle-status" id)
       :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
       :hx-include "#csrf-form"
       label))))
 
 (defun notebook-toggle-status-handler (params)
-  "Handle POST /notebooks/:id/toggle-status - legacy 2-state toggle.
+  "Handle POST /dashboard/notebooks/:id/toggle-status - legacy 2-state toggle.
 Toggles between draft and published while preserving the visibility column.
 Returns the updated 3-state status pill HTML fragment for HTMX swap."
   (let ((user (get-current-user)))
@@ -1179,7 +1180,7 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
                                                       current-vis)))))))))
 
 (defun notebook-set-state-handler (params)
-  "Handle POST /notebooks/:id/state with form param state= one of
+  "Handle POST /dashboard/notebooks/:id/state with form param state= one of
 draft|published-private|published-public.
 
 Decodes into (status, visibility), updates the notebook, and returns
@@ -1221,7 +1222,7 @@ functional after subsequent clicks. Owner-only."
                                                          effective-vis)))))))))))))
 
 (defun notebook-confirm-delete-handler (params)
-  "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
+  "Handle GET /dashboard/notebooks/:id/confirm-delete - return modal fragment for deletion."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
@@ -1239,11 +1240,11 @@ functional after subsequent clicks. Owner-only."
                :message (format nil
                                 "\"~A\" will be permanently deleted. This cannot be undone."
                                 (notebook-title nb))
-               :confirm-hx-post (format nil "/notebooks/~A/delete" id)
+               :confirm-hx-post (format nil "/dashboard/notebooks/~A/delete" id)
                :confirm-label "Delete notebook"))))))))
 
 (defun notebook-delete-handler (params)
-  "Handle POST /notebooks/:id/delete - delete notebook (owner only).
+  "Handle POST /dashboard/notebooks/:id/delete - delete notebook (owner only).
 For HTMX requests returns an empty OOB row swap; otherwise redirects."
   (let ((user (get-current-user)))
     (if (null user)
@@ -1263,7 +1264,7 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                   (with-html-string
                     (:tr :id (format nil "nb-row-~A" id)
                          :hx-swap-oob "outerHTML")))
-                 (redirect "/notebooks/me"))))))))
+                 (redirect "/dashboard/notebooks"))))))))
 
 (defun notebook-public-plist (nb)
   "Convert a notebook DAO to a plist for the public listing UI."
@@ -1790,6 +1791,11 @@ without restarting the server."
   (declare (ignore params))
   (html-response (recurya/web/ui/errors:not-found) :status 404))
 
+(defun dashboard-home-handler (params)
+  "GET /dashboard - redirect to /dashboard/notebooks (own notebooks list)."
+  (declare (ignore params))
+  (redirect "/dashboard/notebooks"))
+
 ;;; Route setup
 
 (defun setup-routes (app)
@@ -1805,50 +1811,52 @@ without restarting the server."
           (make-dynamic-handler 'oauth-start-handler))
   (setf (ningle/app:route app "/auth/:provider/callback")
           (make-dynamic-handler 'oauth-callback-handler))
-  (setf (ningle/app:route app "/notebooks/me")
+  (setf (ningle/app:route app "/dashboard")
+          (make-dynamic-handler 'dashboard-home-handler))
+  (setf (ningle/app:route app "/dashboard/notebooks")
           (make-dynamic-handler 'notebooks-handler))
-  (setf (ningle/app:route app "/notebooks/new")
+  (setf (ningle/app:route app "/dashboard/notebooks/new")
           (make-dynamic-handler 'notebook-new-handler))
-  (setf (ningle/app:route app "/notebooks" :method :post)
+  (setf (ningle/app:route app "/dashboard/notebooks" :method :post)
           (make-dynamic-handler 'notebook-create-handler))
-  (setf (ningle/app:route app "/notebooks/:id/edit")
+  (setf (ningle/app:route app "/dashboard/notebooks/:id/edit")
           (make-dynamic-handler 'notebook-edit-handler))
-  (setf (ningle/app:route app "/notebooks/:id" :method :post)
+  (setf (ningle/app:route app "/dashboard/notebooks/:id" :method :post)
           (make-dynamic-handler 'notebook-update-handler))
-  (setf (ningle/app:route app "/notebooks/:id/toggle-status" :method :post)
+  (setf (ningle/app:route app "/dashboard/notebooks/:id/toggle-status" :method :post)
           (make-dynamic-handler 'notebook-toggle-status-handler))
-  (setf (ningle/app:route app "/notebooks/:id/state" :method :post)
+  (setf (ningle/app:route app "/dashboard/notebooks/:id/state" :method :post)
           (make-dynamic-handler 'notebook-set-state-handler))
-  (setf (ningle/app:route app "/notebooks/:id/confirm-delete")
+  (setf (ningle/app:route app "/dashboard/notebooks/:id/confirm-delete")
           (make-dynamic-handler 'notebook-confirm-delete-handler))
-  (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
+  (setf (ningle/app:route app "/dashboard/notebooks/:id/delete" :method :post)
           (make-dynamic-handler 'notebook-delete-handler))
-  (setf (ningle/app:route app "/courses/me")
+  (setf (ningle/app:route app "/dashboard/courses")
           (make-dynamic-handler 'courses-me-handler))
-  (setf (ningle/app:route app "/courses/new")
+  (setf (ningle/app:route app "/dashboard/courses/new")
           (make-dynamic-handler 'course-new-handler))
-  (setf (ningle/app:route app "/courses" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses" :method :post)
           (make-dynamic-handler 'course-create-handler))
-  (setf (ningle/app:route app "/courses/:id/edit")
+  (setf (ningle/app:route app "/dashboard/courses/:id/edit")
           (make-dynamic-handler 'course-edit-handler))
-  (setf (ningle/app:route app "/courses/:id" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id" :method :post)
           (make-dynamic-handler 'course-update-handler))
-  (setf (ningle/app:route app "/courses/:id/toggle-status" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id/toggle-status" :method :post)
           (make-dynamic-handler 'course-toggle-status-handler))
-  (setf (ningle/app:route app "/courses/:id/state" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id/state" :method :post)
           (make-dynamic-handler 'course-set-state-handler))
-  (setf (ningle/app:route app "/courses/:id/confirm-delete")
+  (setf (ningle/app:route app "/dashboard/courses/:id/confirm-delete")
           (make-dynamic-handler 'course-confirm-delete-handler))
-  (setf (ningle/app:route app "/courses/:id/delete" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id/delete" :method :post)
           (make-dynamic-handler 'course-delete-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id/notebooks" :method :post)
           (make-dynamic-handler 'course-add-notebook-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/up" :method :post)
+  (setf (ningle/app:route app "/dashboard/courses/:id/notebooks/:cn-id/up" :method :post)
           (make-dynamic-handler 'course-notebook-move-up-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/down" :method
+  (setf (ningle/app:route app "/dashboard/courses/:id/notebooks/:cn-id/down" :method
                           :post)
           (make-dynamic-handler 'course-notebook-move-down-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/remove" :method
+  (setf (ningle/app:route app "/dashboard/courses/:id/notebooks/:cn-id/remove" :method
                           :post)
           (make-dynamic-handler 'course-notebook-remove-handler))
   (setf (ningle/app:route app "/notebooks")

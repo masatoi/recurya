@@ -159,7 +159,7 @@ HX-Request header is included so htmx-request-p returns T."
                          ("status" . "draft")))
                (res (course-create-handler params)))
           (ok (= 302 (response-status res)))
-          (ok (string= "/courses/me" (response-location res)))
+          (ok (string= "/dashboard/courses" (response-location res)))
           (let ((c (get-course-by-slug "my-course")))
             (ok c)
             (ok (string= "My Course" (course-title c)))
@@ -324,7 +324,7 @@ HX-Request header is included so htmx-request-p returns T."
                           (cons "summary" "now")
                           (cons "status" "published")))))
           (ok (= 302 (response-status res)))
-          (ok (string= "/courses/me" (response-location res)))
+          (ok (string= "/dashboard/courses" (response-location res)))
           (let ((updated (get-course-by-id id)))
             (ok (string= "After" (course-title updated)))
             (ok (string= "published" (course-status updated)))
@@ -452,7 +452,7 @@ course flips to published+private and the pill shows status-private."
           (ok (= 403 (response-status res))))))))
 
 (deftest course-set-state-decodes-published-public
-  (testing "POST /courses/:id/state with state=published-public sets
+  (testing "POST /dashboard/courses/:id/state with state=published-public sets
 status=published, visibility=public, sets published_at, and returns the
 full <details> dropdown markup (summary pill + 3 hx-post state buttons),
 not a bare pill span."
@@ -508,7 +508,7 @@ not a bare pill span."
         (let* ((res (courses-me-handler nil))
                (body (first (response-body res))))
           (ok (= 200 (response-status res)))
-          (ok (search (format nil "/courses/~A/state" id) body))
+          (ok (search (format nil "/dashboard/courses/~A/state" id) body))
           (ok (search "published-public" body))
           (ok (search "published-private" body)))))))
 
@@ -548,7 +548,7 @@ not a bare pill span."
           (ok (= 200 (response-status res)))
           (ok (search "modal-overlay" body))
           (ok (search "Delete this course?" body))
-          (ok (search (format nil "hx-post=\"/courses/~A/delete\"" id) body))
+          (ok (search (format nil "hx-post=\"/dashboard/courses/~A/delete\"" id) body))
           (ok (search "Delete course" body)))))))
 
 (deftest course-delete-redirects-anonymous
@@ -594,7 +594,7 @@ not a bare pill span."
         (with-mock-request (:htmx nil)
           (let ((res (course-delete-handler (list (cons :id id)))))
             (ok (= 302 (response-status res)))
-            (ok (string= "/courses/me" (response-location res)))))))))
+            (ok (string= "/dashboard/courses" (response-location res)))))))))
 
 (deftest course-add-notebook-401-anonymous
   (with-mock-session (make-session)

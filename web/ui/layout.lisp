@@ -113,10 +113,10 @@
          (:nav :class "app-header__nav"
           (:a :class "app-header__link" :href "/courses" "Courses")
           (when user
-            (:a :class "app-header__link" :href "/courses/me" "My Courses"))
+            (:a :class "app-header__link" :href "/dashboard/courses" "My Courses"))
           (:a :class "app-header__link" :href "/notebooks" "Notebooks")
           (when user
-            (:a :class "app-header__link" :href "/notebooks/me"
+            (:a :class "app-header__link" :href "/dashboard/notebooks"
              "My Notebooks"))))
         (:details :class "app-header__menu" :data-testid "app-header-menu"
          (:summary :class "app-header__summary"

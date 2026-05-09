@@ -81,7 +81,7 @@ referencing the pill by that id continues to work."
                 (t "Private")))
          (dropdown-id (format nil "state-dropdown-~A" id))
          (dropdown-target (format nil "#state-dropdown-~A" id))
-         (state-url (format nil "/courses/~A/state" id)))
+         (state-url (format nil "/dashboard/courses/~A/state" id)))
     (with-html-string
       (:details :class "status-pill-menu" :id dropdown-id
         (:summary :class (format nil "status-pill ~A" state-class)
@@ -129,7 +129,7 @@ COURSES is a list of plists with :id :slug :title :status
          (:div :class "card" (:h1 "My Courses")
           (:p :class "muted" "Manage your authored courses.")
           (:div :class "actions-bar"
-           (:a :class "new-nb-btn" :href "/courses/new" "+ New Course"))
+           (:a :class "new-nb-btn" :href "/dashboard/courses/new" "+ New Course"))
           (:div :id "flash-area"
            (when message (:div :class "flash-message success" message))
            (when errors
@@ -165,9 +165,9 @@ COURSES is a list of plists with :id :slug :title :status
                       (:td
                        (:div :class "actions-cell"
                         (:a :class "link" :href
-                         (format nil "/courses/~A/edit" id) "Edit")
+                         (format nil "/dashboard/courses/~A/edit" id) "Edit")
                         (:button :class "button-danger btn-sm" :hx-get
-                         (format nil "/courses/~A/confirm-delete" id)
+                         (format nil "/dashboard/courses/~A/confirm-delete" id)
                          :hx-target "#modal-container" :hx-swap "innerHTML"
                          "Delete"))))))))
                (when pagination
