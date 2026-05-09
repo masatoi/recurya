@@ -5,8 +5,6 @@
   (:import-from #:spinneret
                 #:with-html-string)
   (:import-from #:recurya/web/ui/layout
-                #:header
-                #:header-styles
                 #:common-styles
                 #:page-shell)
   (:import-from #:recurya/web/ui/csrf
