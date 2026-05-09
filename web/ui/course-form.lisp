@@ -7,7 +7,8 @@
   (:import-from #:recurya/web/ui/layout
                 #:header
                 #:header-styles
-                #:common-styles)
+                #:common-styles
+                #:page-shell)
   (:import-from #:recurya/web/ui/csrf
                 #:csrf-input)
   (:export #:render
@@ -141,8 +142,7 @@ in sync with the attached set after every mutation."
                                                 (getf nb :title)))))
                       (:button :type "submit" :class "btn-primary" "Add"))))))))
 
-(defun render (&key user course message errors course-notebooks
-                 eligible-notebooks)
+(defun render (&key user course message errors course-notebooks eligible-notebooks)
   "Render the course create/edit form as an HTML string.
 
 COURSE is a plist with :id :title :slug :summary :status when editing.
@@ -166,81 +166,69 @@ When editing an existing COURSE, the caller may also supply:
                          (format nil "/dashboard/courses/~A" c-id)
                          "/dashboard/courses"))
          (page-title (if editing-p "Edit Course" "New Course"))
-         (all-styles
-           (concatenate 'string
-                        (common-styles) (header-styles) *form-page-styles*)))
-    (spinneret:with-html-string
-      (:doctype)
-      (:html
-       (:head (:meta :charset "utf-8")
-              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-              (:title (format nil "recurya - ~A" page-title))
-              (:style (:raw all-styles)))
-       (:body (:raw (header user))
-              (:main
-               (:div :class "card"
-                     (:h1 page-title)
-                     (when message
-                       (:div :class "flash-message success" message))
-                     (when errors
-                       (:div :class "flash-message error"
-                             (:strong "Validation errors:")
-                             (:ul :class "error-list"
-                                  (dolist (err errors)
-                                    (:li
-                                     (:span :class "line"
-                                            (format nil "L~A" (or (getf err :line) "?")))
-                                     " "
-                                     (getf err :message))))))
-                     (:form :class "course-form" :method "post" :action action-url
-                            (:raw (csrf-input))
-                            (:div :class "form-group"
-                                  (:label :for "title" "Title")
-                                  (:input :type "text" :id "title" :name "title"
-                                          :value c-title :required t
-                                          :placeholder "Course title"))
-                            (:div :class "form-group"
-                                  (:label :for "slug" "Slug")
-                                  (:input :type "text" :id "slug" :name "slug"
-                                          :value c-slug
-                                          :placeholder "auto-generated-from-title")
-                                  (:span :class "form-hint"
-                                         "Leave blank to auto-generate from title."))
-                            (:div :class "form-group"
-                                  (:label :for "summary" "Summary")
-                                  (:textarea :id "summary" :name "summary"
-                                             :class "summary-field"
-                                             :maxlength "500"
-                                             :placeholder "Short summary (max 500 chars)"
-                                             c-summary))
-                            (:div :class "form-group"
-                                  (:label :for "status" "Status")
-                                  (:select :id "status" :name "status"
-                                           (:option :value "draft"
-                                                    :selected
-                                                    (when (equal c-status "draft") "selected")
-                                                    "Draft")
-                                           (:option :value "published"
-                                                    :selected
-                                                    (when (equal c-status "published") "selected")
-                                                    "Published")))
-                            (:div :class "form-group"
-                                  (:label :for "visibility" "Visibility")
-                                  (:select :id "visibility" :name "visibility"
-                                           (:option :value "private"
-                                                    :selected
-                                                    (when (equal c-visibility "private") "selected")
-                                                    "Private (only you)")
-                                           (:option :value "public"
-                                                    :selected
-                                                    (when (equal c-visibility "public") "selected")
-                                                    "Public (anyone)")))
-                            (:div :class "form-actions"
-                                  (:button :type "submit" :class "btn-primary"
-                                           (if editing-p "Update Course" "Create Course"))
-                                  (:a :class "btn-secondary" :href "/dashboard/courses"
-                                      :style "text-decoration:none;text-align:center"
-                                      "Cancel")))
-                     (when editing-p
-                       (:raw (render-course-notebooks-list
-                              course course-notebooks eligible-notebooks))))))))))
+         (page-styles (concatenate 'string (common-styles) *form-page-styles*)))
+    (page-shell
+     :title (format nil "recurya - ~A" page-title)
+     :styles page-styles
+     :user user
+     :body-content
+     (with-html-string
+       (:div :class "card"
+         (:h1 page-title)
+         (when message
+           (:div :class "flash-message success" message))
+         (when errors
+           (:div :class "flash-message error"
+             (:strong "Validation errors:")
+             (:ul :class "error-list"
+               (dolist (err errors)
+                 (:li
+                   (:span :class "line"
+                     (format nil "L~A" (or (getf err :line) "?")))
+                   " "
+                   (getf err :message))))))
+         (:form :class "course-form" :method "post" :action action-url
+           (:raw (csrf-input))
+           (:div :class "form-group"
+             (:label :for "title" "Title")
+             (:input :type "text" :id "title" :name "title"
+               :value c-title :required t :placeholder "Course title"))
+           (:div :class "form-group"
+             (:label :for "slug" "Slug")
+             (:input :type "text" :id "slug" :name "slug"
+               :value c-slug :placeholder "auto-generated-from-title")
+             (:span :class "form-hint"
+               "Leave blank to auto-generate from title."))
+           (:div :class "form-group"
+             (:label :for "summary" "Summary")
+             (:textarea :id "summary" :name "summary"
+               :class "summary-field" :maxlength "500"
+               :placeholder "Short summary (max 500 chars)"
+               c-summary))
+           (:div :class "form-group"
+             (:label :for "status" "Status")
+             (:select :id "status" :name "status"
+               (:option :value "draft"
+                 :selected (when (equal c-status "draft") "selected")
+                 "Draft")
+               (:option :value "published"
+                 :selected (when (equal c-status "published") "selected")
+                 "Published")))
+           (:div :class "form-group"
+             (:label :for "visibility" "Visibility")
+             (:select :id "visibility" :name "visibility"
+               (:option :value "private"
+                 :selected (when (equal c-visibility "private") "selected")
+                 "Private (only you)")
+               (:option :value "public"
+                 :selected (when (equal c-visibility "public") "selected")
+                 "Public (anyone)")))
+           (:div :class "form-actions"
+             (:button :type "submit" :class "btn-primary"
+               (if editing-p "Update Course" "Create Course"))
+             (:a :class "btn-secondary" :href "/dashboard/courses"
+               :style "text-decoration:none;text-align:center"
+               "Cancel")))
+         (when editing-p
+           (:raw (render-course-notebooks-list
+                  course course-notebooks eligible-notebooks))))))))
