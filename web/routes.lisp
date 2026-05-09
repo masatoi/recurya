@@ -362,7 +362,7 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
                     (update-user! (recurya/models/users:users-id user) :role role)
                     (setf user (get-user-by-id (recurya/models/users:users-id user))))
                   (set-session-user! (user-dao->plist user))
-                  (redirect "/wardlisp/learn")))))
+                  (redirect "/dashboard")))))
          (error (e)
            (declare (ignore e))
            (html-response (recurya/web/ui/login:render
