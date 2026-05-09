@@ -17,15 +17,6 @@
                 #:update-user!
                 #:delete-user!
                 #:list-users)
-  ;; Re-export from posts
-  (:import-from #:recurya/db/posts
-                #:create-post!
-                #:get-post-by-id
-                #:get-post-by-slug
-                #:update-post!
-                #:delete-post!
-                #:list-posts
-                #:count-posts)
   (:export
    ;; Core database management
    #:start!
@@ -39,16 +30,7 @@
    #:get-user-by-email
    #:update-user!
    #:delete-user!
-   #:list-users
-
-   ;; Posts
-   #:create-post!
-   #:get-post-by-id
-   #:get-post-by-slug
-   #:update-post!
-   #:delete-post!
-   #:list-posts
-   #:count-posts))
+   #:list-users))
 
 (in-package #:recurya/db)
 

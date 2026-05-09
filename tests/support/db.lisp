@@ -12,9 +12,6 @@
   (:import-from #:recurya/db/users
                 #:users-id
                 #:create-user!)
-  (:import-from #:recurya/db/posts
-                #:post-id
-                #:create-post!)
   (:import-from #:uuid
                 #:make-v4-uuid)
   (:export
@@ -23,9 +20,7 @@
    #:cleanup-all-test-data
    #:with-test-db
    ;; Entity creation
-   #:create-test-user
-   ;; Blog post entity creation
-   #:create-test-post))
+   #:create-test-user))
 
 (in-package #:recurya/tests/support/db)
 
@@ -43,7 +38,6 @@ This is idempotent and safe to call multiple times."
   "Remove all test data to ensure clean state.
 Only deletes data matching test patterns to avoid affecting production data."
   (ignore-errors
-    (execute! "DELETE FROM post")
     (execute! "DELETE FROM course_notebook")
     (execute! "DELETE FROM course")
     (execute! "DELETE FROM user_notebook")
@@ -86,21 +80,3 @@ Returns:
                 :password-hash "test-hash"
                 :password-salt "test-salt"
                 :role "user"))
-
-(defun create-test-post (&key (title-prefix "Test Post") (body "Test body content.")
-                              (status "draft") (excerpt nil))
-  "Create a unique test blog post and return the post instance.
-
-Arguments:
-  TITLE-PREFIX - Prefix for the title (default: \"Test Post\")
-  BODY         - Post body text (default: \"Test body content.\")
-  STATUS       - Status string (default: \"draft\")
-  EXCERPT      - Short summary (optional)
-
-Returns:
-  The created post instance with a unique slug."
-  (let ((unique-title (format nil "~A ~A" title-prefix (make-v4-uuid))))
-    (create-post! :title unique-title
-                  :body body
-                  :status status
-                  :excerpt excerpt)))

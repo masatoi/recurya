@@ -10,7 +10,7 @@
                 #:delete-dao)
   (:import-from #:sxql #:where #:order-by #:limit)
   (:import-from #:recurya/db/core #:generate-uuid #:ensure-uuid)
-  (:import-from #:recurya/db/posts #:slugify)
+  (:import-from #:recurya/utils/common #:slugify)
   (:import-from #:recurya/db/jsonb #:lisp->jsonb #:jsonb->lisp)
   (:import-from #:recurya/models/user-notebook
                 #:user-notebook

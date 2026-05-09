@@ -15,12 +15,8 @@
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
   (:import-from #:recurya/web/ui/account)
-  (:import-from #:recurya/web/ui/posts)
-  (:import-from #:recurya/web/ui/post-form)
-  (:import-from #:recurya/web/ui/blog)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:lack/request #:request-env)
-  (:import-from #:recurya/web/ui/blog-post)
   (:import-from #:recurya/web/ui/user-notebooks
                 #:render-user-notebook-state-dropdown)
   (:import-from #:recurya/web/ui/user-notebook-form)
@@ -30,26 +26,6 @@
   (:import-from #:recurya/web/ui/courses
                 #:render-course-state-dropdown)
   (:import-from #:recurya/web/ui/course-form)
-  (:import-from #:recurya/db/posts
-                #:create-post!
-                #:get-post-by-id
-                #:get-post-by-slug
-                #:update-post!
-                #:delete-post!
-                #:list-posts
-                #:count-posts
-                #:slugify
-                #:post-id
-                #:post-title
-                #:post-slug
-                #:post-body
-                #:post-excerpt
-                #:post-status
-                #:post-published-at
-                #:post-author
-                #:post-author-id
-                #:post-created-at
-                #:post-updated-at)
   (:import-from #:recurya/db/user-notebooks
                 #:create-user-notebook!
                 #:get-user-notebook-by-id
@@ -134,8 +110,6 @@
   (:export #:setup-routes
            #:account-confirm-delete-handler
            #:account-delete-handler
-           #:post-confirm-delete-handler
-           #:post-delete-handler
            #:user-notebooks-handler
            #:user-notebook-new-handler
            #:user-notebook-create-handler
@@ -263,17 +237,17 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
     (gethash :user ningle/context:*session*)))
 
 (defun root-handler (params)
-  "Handle / - redirect to posts or login."
+  "Handle / - redirect to dashboard or public notebooks list."
   (declare (ignore params))
   (if (get-current-user)
-      (redirect "/posts")
-      (redirect "/login")))
+      (redirect "/notebooks/me")    ; will be re-targeted to /dashboard later in Phase 7
+      (redirect "/notebooks")))
 
 (defun login-page-handler (params)
   "Handle GET /login - show login form."
   (declare (ignore params))
   (if (get-current-user)
-      (redirect "/posts")
+      (redirect "/notebooks/me")
       (html-response (recurya/web/ui/login:render))))
 
 (defun logout-handler (params)
@@ -381,23 +355,6 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
 
 ;;; Blog Post Handlers
 
-(defun post->plist (p)
-  "Convert a post instance to a plist for UI rendering.
-Includes :author-name extracted from the FK author."
-  (let* ((author (post-author p))
-         (author-name (when author
-                        (recurya/models/users:users-display-name author))))
-    (list :id (post-id p)
-          :title (post-title p)
-          :slug (post-slug p)
-          :body (post-body p)
-          :excerpt (post-excerpt p)
-          :status (post-status p)
-          :published-at (post-published-at p)
-          :created-at (post-created-at p)
-          :updated-at (post-updated-at p)
-          :author-name (or author-name "Anonymous"))))
-
 (defun get-session-user-object ()
   "Get the current user as a Mito DAO object for FK references."
   (let ((user (get-current-user)))
@@ -405,134 +362,6 @@ Includes :author-name extracted from the FK author."
       (let ((user-id (getf user :id)))
         (when user-id
           (get-user-by-id user-id))))))
-
-(defun posts-handler (params)
-  "Handle GET /posts - admin post list with pagination (user's own posts only)."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (let* ((user-id (getf user :id))
-               (page (parse-page-param params))
-               (total-count (count-posts :author-id user-id))
-               (offset (* (1- page) *page-size*))
-               (posts-raw (list-posts :author-id user-id
-                                      :limit *page-size* :offset offset))
-               (posts (mapcar #'post->plist posts-raw))
-               (pagination (make-pagination page total-count *page-size* "/posts")))
-          (html-response
-           (recurya/web/ui/posts:render :user user :posts posts
-                                           :pagination pagination))))))
-
-(defun post-new-handler (params)
-  "Handle GET /posts/new - show new post form."
-  (declare (ignore params))
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (html-response
-         (recurya/web/ui/post-form:render :user user)))))
-
-(defun post-create-handler (params)
-  "Handle POST /posts - create a new post."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (let ((title (get-param params "title"))
-              (slug (get-param params "slug"))
-              (body (get-param params "body"))
-              (excerpt (get-param params "excerpt"))
-              (status (get-param params "status")))
-          (cond
-            ((or (null title) (equal title ""))
-             (html-response
-              (recurya/web/ui/post-form:render :user user
-                                                  :errors '("Title is required."))))
-            ((or (null body) (equal body ""))
-             (html-response
-              (recurya/web/ui/post-form:render :user user
-                                                  :errors '("Body is required.")
-                                                  :post (list :title title :slug slug
-                                                              :excerpt excerpt :status status))))
-            (t
-             (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
-                    (excerpt-val (if (and excerpt (string/= excerpt "")) excerpt nil))
-                    (published-at (when (equal status "published") (local-time:now)))
-                    (post (create-post! :title title
-                                        :slug slug-val
-                                        :body body
-                                        :excerpt excerpt-val
-                                        :status (or status "draft")
-                                        :published-at published-at
-                                        :author (get-session-user-object))))
-               (declare (ignore post))
-               (redirect "/posts"))))))))
-
-(defun post-edit-handler (params)
-  "Handle GET /posts/:id/edit - show edit form for existing post (owner only)."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (let* ((id (get-path-param params :id))
-               (post (get-post-by-id id)))
-          (cond
-            ((null post)
-             (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (post-author-id post))
-                         (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (html-response
-              (recurya/web/ui/post-form:render :user user
-                                                  :post (post->plist post)))))))))
-
-(defun post-update-handler (params)
-  "Handle POST /posts/:id - update an existing post (owner only)."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (let* ((id (get-path-param params :id))
-               (existing (get-post-by-id id)))
-          (cond
-            ((null existing)
-             (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (post-author-id existing))
-                         (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (let ((title (get-param params "title"))
-                   (slug (get-param params "slug"))
-                   (body (get-param params "body"))
-                   (excerpt (get-param params "excerpt"))
-                   (status (get-param params "status")))
-               (cond
-                 ((or (null title) (equal title ""))
-                  (html-response
-                   (recurya/web/ui/post-form:render
-                    :user user
-                    :post (post->plist existing)
-                    :errors '("Title is required."))))
-                 ((or (null body) (equal body ""))
-                  (html-response
-                   (recurya/web/ui/post-form:render
-                    :user user
-                    :post (list :id id :title title :slug slug
-                                :excerpt excerpt :status status)
-                    :errors '("Body is required."))))
-                 (t
-                  (let* ((slug-val (if (and slug (string/= slug "")) slug nil))
-                         (excerpt-val (if (and excerpt (string/= excerpt "")) excerpt nil))
-                         (published-at
-                          (when (and (equal status "published")
-                                     (not (equal (post-status existing) "published")))
-                            (local-time:now))))
-                    (update-post! id
-                                  :title title
-                                  :slug slug-val
-                                  :body body
-                                  :excerpt excerpt-val
-                                  :status (or status "draft")
-                                  :published-at published-at)
-                    (redirect "/posts")))))))))))
 
 (defun cell->jsonb-form (cell)
   "Convert a cell struct into a hash-table that jzon serializes as a JSON
@@ -1695,20 +1524,6 @@ plist key (some Clack handlers normalize headers there)."
         (and headers
              (gethash "hx-request" headers)))))
 
-(defun render-status-pill (id status)
-  "Render a status pill HTML fragment for HTMX swap.
-ID is the post UUID, STATUS is the current status string."
-  (let ((status-lower (string-downcase (or status "draft"))))
-    (spinneret:with-html-string
-      (:span :class "status-pill"
-       :id (format nil "status-~A" id)
-       :data-status status-lower
-       :hx-post (format nil "/posts/~A/toggle-status" id)
-       :hx-target (format nil "#status-~A" id)
-       :hx-swap "outerHTML"
-       :hx-include "#csrf-form"
-       (string-capitalize status-lower)))))
-
 (defun render-confirm-modal (&key title message confirm-hx-post
                                    confirm-hx-target confirm-hx-swap
                                    confirm-label)
@@ -1740,102 +1555,6 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
                      :hx-swap (or confirm-hx-swap "innerHTML")
                      :hx-include "#csrf-form"
                      confirm-label)))))))
-
-(defun post-toggle-status-handler (params)
-  "Handle POST /posts/:id/toggle-status - toggle between draft and published (HTMX).
-Returns the updated status pill HTML fragment."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (html-response "Unauthorized" :status 401)
-        (let* ((id (get-path-param params :id))
-               (post (get-post-by-id id)))
-          (cond
-            ((null post)
-             (html-response "Not found" :status 404))
-            ;; Ownership check: compare UUIDs as strings via princ-to-string
-            ;; because session stores the ID as a string while Mito may
-            ;; return a different representation.
-            ((not (equal (princ-to-string (post-author-id post))
-                         (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (let* ((current-status (post-status post))
-                    (new-status (if (equal current-status "published") "draft" "published"))
-                    (published-at (when (equal new-status "published") (local-time:now))))
-               (update-post! id :status new-status
-                                :published-at published-at)
-               (html-response (render-status-pill id new-status)))))))))
-
-(defun post-confirm-delete-handler (params)
-  "Handle GET /posts/:id/confirm-delete - return modal fragment for post deletion.
-Auth + ownership check, then renders a confirmation modal with HTMX attributes."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (html-response "Unauthorized" :status 401)
-        (let* ((id (get-path-param params :id))
-               (post (get-post-by-id id)))
-          (cond
-            ((null post)
-             (html-response "Not found" :status 404))
-            ((not (equal (princ-to-string (post-author-id post))
-                         (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (html-response
-              (render-confirm-modal
-               :title "Delete this post?"
-               :message (format nil "\"~A\" will be permanently deleted. This cannot be undone."
-                                (post-title post))
-               :confirm-hx-post (format nil "/posts/~A/delete" id)
-               :confirm-label "Delete post"))))))))
-
-(defun post-delete-handler (params)
-  "Handle POST /posts/:id/delete - delete a post (owner only).
-Returns empty HTML for HTMX requests (row removal), or redirects for normal requests."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (redirect "/login")
-        (let* ((id (get-path-param params :id))
-               (post (get-post-by-id id)))
-          (cond
-            ((null post)
-             (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (post-author-id post))
-                         (princ-to-string (getf user :id))))
-             (html-response "Forbidden" :status 403))
-            (t
-             (delete-post! id)
-             (if (htmx-request-p)
-                 ;; HTMX OOB (Out-of-Band) swap: the primary swap target is
-                 ;; #modal-container which receives "" (clearing the modal).
-                 ;; The <tr> carries hx-swap-oob="outerHTML" so HTMX also
-                 ;; replaces the matching post row with this empty element,
-                 ;; effectively removing the row from the table.
-                 (html-response
-                  (spinneret:with-html-string
-                    (:tr :id (format nil "post-row-~A" id)
-                         :hx-swap-oob "outerHTML")))
-                 (redirect "/posts"))))))))
-
-(defun blog-handler (params)
-  "Handle GET /blog - public blog listing (published posts only)."
-  (let* ((page (parse-page-param params))
-         (total-count (count-posts :status "published"))
-         (offset (* (1- page) *page-size*))
-         (posts-raw (list-posts :status "published" :limit *page-size* :offset offset))
-         (posts (mapcar #'post->plist posts-raw))
-         (pagination (make-pagination page total-count *page-size* "/blog")))
-    (html-response
-     (recurya/web/ui/blog:render :posts posts :pagination pagination))))
-
-(defun blog-post-handler (params)
-  "Handle GET /blog/:slug - public single post view."
-  (let* ((slug (get-path-param params :slug))
-         (post (get-post-by-slug slug)))
-    (if (or (null post) (not (equal (post-status post) "published")))
-        (html-response (recurya/web/ui/blog-post:render :post nil) :status 404)
-        (html-response
-         (recurya/web/ui/blog-post:render :post (post->plist post))))))
 
 ;;; Account Handlers
 
@@ -2007,29 +1726,10 @@ without restarting the server."
           (make-dynamic-handler 'login-page-handler))
   (setf (ningle/app:route app "/logout" :method :post)
           (make-dynamic-handler 'logout-handler))
-  ;; OAuth flow
   (setf (ningle/app:route app "/auth/:provider/start")
           (make-dynamic-handler 'oauth-start-handler))
   (setf (ningle/app:route app "/auth/:provider/callback")
           (make-dynamic-handler 'oauth-callback-handler))
-  ;; Blog admin routes (auth required)
-  (setf (ningle/app:route app "/posts")
-          (make-dynamic-handler 'posts-handler))
-  (setf (ningle/app:route app "/posts/new")
-          (make-dynamic-handler 'post-new-handler))
-  (setf (ningle/app:route app "/posts" :method :post)
-          (make-dynamic-handler 'post-create-handler))
-  (setf (ningle/app:route app "/posts/:id/edit")
-          (make-dynamic-handler 'post-edit-handler))
-  (setf (ningle/app:route app "/posts/:id" :method :post)
-          (make-dynamic-handler 'post-update-handler))
-  (setf (ningle/app:route app "/posts/:id/toggle-status" :method :post)
-          (make-dynamic-handler 'post-toggle-status-handler))
-  (setf (ningle/app:route app "/posts/:id/confirm-delete")
-          (make-dynamic-handler 'post-confirm-delete-handler))
-  (setf (ningle/app:route app "/posts/:id/delete" :method :post)
-          (make-dynamic-handler 'post-delete-handler))
-  ;; User-notebook admin routes (auth required)
   (setf (ningle/app:route app "/notebooks/me")
           (make-dynamic-handler 'user-notebooks-handler))
   (setf (ningle/app:route app "/notebooks/new")
@@ -2048,7 +1748,6 @@ without restarting the server."
           (make-dynamic-handler 'user-notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
           (make-dynamic-handler 'user-notebook-delete-handler))
-  ;; Course admin routes (auth required)
   (setf (ningle/app:route app "/courses/me")
           (make-dynamic-handler 'courses-me-handler))
   (setf (ningle/app:route app "/courses/new")
@@ -2071,28 +1770,22 @@ without restarting the server."
           (make-dynamic-handler 'course-add-notebook-handler))
   (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/up" :method :post)
           (make-dynamic-handler 'course-notebook-move-up-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/down" :method :post)
+  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/down" :method
+                          :post)
           (make-dynamic-handler 'course-notebook-move-down-handler))
-  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/remove" :method :post)
+  (setf (ningle/app:route app "/courses/:id/notebooks/:cn-id/remove" :method
+                          :post)
           (make-dynamic-handler 'course-notebook-remove-handler))
-  ;; Public user-notebook routes (no auth)
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
   (setf (ningle/app:route app "/n/:slug")
           (make-dynamic-handler 'public-user-notebook-handler))
   (setf (ningle/app:route app "/n/:slug/cells/:index/run" :method :post)
           (make-dynamic-handler 'public-user-notebook-cell-run-handler))
-  ;; Public course routes (no auth)
   (setf (ningle/app:route app "/c/:slug")
           (make-dynamic-handler 'public-course-handler))
   (setf (ningle/app:route app "/courses")
           (make-dynamic-handler 'courses-public-handler))
-  ;; Public blog routes (no auth)
-  (setf (ningle/app:route app "/blog")
-          (make-dynamic-handler 'blog-handler))
-  (setf (ningle/app:route app "/blog/:slug")
-          (make-dynamic-handler 'blog-post-handler))
-  ;; Account management
   (setf (ningle/app:route app "/account")
           (make-dynamic-handler 'account-page-handler))
   (setf (ningle/app:route app "/account" :method :post)

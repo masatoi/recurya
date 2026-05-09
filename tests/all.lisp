@@ -13,7 +13,6 @@
     :recurya/tests/db/core
     :recurya/tests/db/jsonb
     :recurya/tests/db/users
-    :recurya/tests/db/posts
     :recurya/tests/db/user-notebooks
     :recurya/tests/db/courses
     :recurya/tests/db/course-notebooks
