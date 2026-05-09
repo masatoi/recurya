@@ -19,7 +19,22 @@
   (testing "invalid: special chars"
     (ng (recurya/utils/handle:valid-handle-p "alice.bob"))
     (ng (recurya/utils/handle:valid-handle-p "alice_bob"))
-    (ng (recurya/utils/handle:valid-handle-p "alice@bob"))))
+    (ng (recurya/utils/handle:valid-handle-p "alice@bob")))
+  (testing "invalid: trailing or embedded whitespace"
+    (ng (recurya/utils/handle:valid-handle-p (format nil "alice~%")))
+    (ng (recurya/utils/handle:valid-handle-p (format nil "~%alice")))
+    (ng (recurya/utils/handle:valid-handle-p "ali ce"))
+    (ng (recurya/utils/handle:valid-handle-p " alice"))
+    (ng (recurya/utils/handle:valid-handle-p "alice ")))
+  (testing "boundary lengths"
+    (ok (recurya/utils/handle:valid-handle-p
+          (concatenate 'string "a" (make-string 62 :initial-element #\b) "c"))) ; 64 chars
+    (ng (recurya/utils/handle:valid-handle-p
+          (concatenate 'string "a" (make-string 63 :initial-element #\b) "c")))) ; 65 chars
+  (testing "nil and non-string input"
+    (ng (recurya/utils/handle:valid-handle-p nil))
+    (ng (recurya/utils/handle:valid-handle-p 42))
+    (ng (recurya/utils/handle:valid-handle-p :alice))))
 
 (deftest reserved-handles
   (testing "reserved words are rejected"
@@ -27,4 +42,8 @@
     (ok (recurya/utils/handle:reserved-handle-p "dashboard"))
     (ok (recurya/utils/handle:reserved-handle-p "admin"))
     (ok (recurya/utils/handle:reserved-handle-p "API")) ; case insensitive
-    (ng (recurya/utils/handle:reserved-handle-p "alice"))))
+    (ng (recurya/utils/handle:reserved-handle-p "alice")))
+  (testing "nil and non-string input"
+    (ng (recurya/utils/handle:reserved-handle-p nil))
+    (ng (recurya/utils/handle:reserved-handle-p 42))
+    (ng (recurya/utils/handle:reserved-handle-p :alice))))

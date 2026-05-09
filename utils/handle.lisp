@@ -11,7 +11,7 @@
 (defparameter +handle-max-length+ 64)
 
 (defparameter *handle-regex*
-  (cl-ppcre:create-scanner "^[a-z0-9][a-z0-9-]{1,62}[a-z0-9]$"))
+  (cl-ppcre:create-scanner "\\A[a-z0-9][a-z0-9-]{1,62}[a-z0-9]\\z"))
 
 (defparameter *reserved-handles*
   '("notebooks" "courses" "c" "n" "dashboard" "account" "login" "logout"
