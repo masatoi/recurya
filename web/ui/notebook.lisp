@@ -23,6 +23,7 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
+  (:import-from #:recurya/game/notebook-parser #:render-cell-prose-html)
   (:import-from #:recurya/web/ui/layout #:header #:header-styles)
   (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
   (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
@@ -85,7 +86,12 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                padding: 1rem 1.25rem; border-radius: 0 8px 8px 0; }
 .cell--code { background: #1e293b; border-radius: 10px; padding: 1rem; }
 .cell--exercise { border: 1px solid #f59e0b; }
-.cell__desc { color: #fbbf24; font-size: 0.95rem; margin-bottom: 0.75rem; }
+.cell__desc { color: #fbbf24; font-size: 0.95rem; line-height: 1.65;
+              margin-bottom: 0.75rem; white-space: pre-wrap;
+              padding: 0.5rem 0.75rem; background: rgba(251,191,36,0.07);
+              border-radius: 6px; border-left: 3px solid #f59e0b; }
+.cell__desc p { margin: 0 0 0.4rem 0; }
+.cell__desc p:last-child { margin-bottom: 0; }
 .notebook-code { width:100%; background:#0f172a; color:#e2e8f0;
                  border:1px solid #334155; border-radius:6px;
                  font-family:'SF Mono',monospace; padding:0.5rem;
@@ -204,7 +210,9 @@ the matching entry as 'sb-link active'."
                 "cell cell--code")
             :data-cell-id cid-str :data-original-code original-code
             :data-textarea-id (format nil "editor-source~A" id-suffix)
-            (when exercise-p (:div :class "cell__desc" (cell-description cell)))
+            (when exercise-p
+          (:div :class "cell__desc"
+           (:raw (render-cell-prose-html (or (cell-description cell) "")))))
             (when passed-p (:span :class "badge-pass" "✓ done"))
             (:raw
              (editor-textarea "codes[]" initial-code :id-suffix id-suffix
