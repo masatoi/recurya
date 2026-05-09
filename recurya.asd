@@ -50,6 +50,7 @@
                ;; Shared utilities
                "recurya/utils/common"
                "recurya/utils/html-sanitize"
+               "recurya/utils/handle"
                ;; Database layer
                "recurya/db/core"
                "recurya/db/jsonb"
@@ -116,6 +117,7 @@
                ;; Utils tests
                "recurya/tests/utils/common"
                "recurya/tests/utils/html-sanitize"
+               "recurya/tests/utils/handle"
                "recurya/tests/utils/access-control"
                ;; DB tests
                "recurya/tests/db/core"
