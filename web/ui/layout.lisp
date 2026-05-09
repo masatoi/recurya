@@ -102,47 +102,59 @@
             (princ-to-string timestamp)))))))
 
 (defun header (user)
-  "Generate the application header HTML."
-  (let ((display (get-user-display user)) (initial (get-user-initial user)))
-    (with-html-string
-      (:raw (csrf-form-block))
-      (:header :class "app-header"
-       (:div :class "app-header__inner"
-        (:div :class "app-header__left"
-         (:a :class "app-header__brand" :href "/" "Recurya")
-         (:nav :class "app-header__nav"
-          (:a :class "app-header__link" :href "/courses" "Courses")
-          (when user
-            (:a :class "app-header__link" :href "/dashboard/courses" "My Courses"))
-          (:a :class "app-header__link" :href "/notebooks" "Notebooks")
-          (when user
-            (:a :class "app-header__link" :href "/dashboard/notebooks"
-             "My Notebooks"))))
-        (:details :class "app-header__menu" :data-testid "app-header-menu"
-         (:summary :class "app-header__summary"
-          (:span :class "app-header__avatar" initial)
-          (:span :class "app-header__label" display)
-          (:span :class "app-header__chevron" "v"))
-         (:div :class "app-header__panel"
-          (:a :class "app-header__action" :href "/account" "Account settings")
-          (:form :method "post" :action "/logout" (:raw (csrf-input))
-           (:button :type "submit" :class "app-header__action"
-            "Log out")))))))))
+  "Generate the application header HTML.
+
+Renders the same top bar for everyone, with discovery links visible to
+all visitors and account-related affordances gated on USER:
+
+  Always:        Home (/), Notebooks (/notebooks), Courses (/courses)
+  Logged-in:     Dashboard (/dashboard) + avatar dropdown with
+                 Account settings (/account) and Log out (POST /logout)
+  Anonymous:     Login (/login)
+
+The CSRF form block is emitted up-front so the logout form can pull
+its token via hx-include without a separate fetch."
+  (with-html-string (:raw (csrf-form-block))
+    (:header :class "app-header"
+     (:div :class "app-header__inner"
+      (:div :class "app-header__left"
+       (:a :class "app-header__brand" :href "/" "Recurya")
+       (:nav :class "app-header__nav"
+        (:a :class "app-header__link" :href "/notebooks" "Notebooks")
+        (:a :class "app-header__link" :href "/courses" "Courses")
+        (when user
+          (:a :class "app-header__link" :href "/dashboard" "Dashboard"))))
+      (cond
+        (user
+         (let ((display (get-user-display user))
+               (initial (get-user-initial user)))
+           (:details :class "app-header__menu" :data-testid "app-header-menu"
+            (:summary :class "app-header__summary"
+             (:span :class "app-header__avatar" initial)
+             (:span :class "app-header__label" display)
+             (:span :class "app-header__chevron" "v"))
+            (:div :class "app-header__panel"
+             (:a :class "app-header__action" :href "/account" "Account settings")
+             (:form :method "post" :action "/logout" (:raw (csrf-input))
+              (:button :type "submit" :class "app-header__action" "Log out"))))))
+        (t
+         (:a :class "app-header__link" :href "/login" "Login")))))))
 
 (defun page-shell (&key title styles user body-content)
-  "Generate a complete HTML page shell with optional header for authenticated users.
+  "Generate a complete HTML page shell.
 
-The body-content is wrapped in a <main> element for proper layout and margins."
+The site header is rendered for all visitors (anonymous users see Login,
+authenticated users see Dashboard and the account dropdown). The
+body-content is wrapped in a <main> element for proper layout and margins."
   (spinneret:with-html-string
     (:doctype)
     (:html
      (:head (:meta :charset "utf-8")
       (:meta :name "viewport" :content "width=device-width, initial-scale=1")
       (:title title)
-      (:script :src "https://unpkg.com/htmx.org@2.0.4"
-       :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
+      (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
+       "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
        :crossorigin "anonymous")
-      (when user (:style (:raw (header-styles))))
+      (:style (:raw (header-styles)))
       (when styles (:style (:raw styles))))
-     (:body (when user (:raw (header user)))
-      (:main (:raw body-content))))))
+     (:body (:raw (header user)) (:main (:raw body-content))))))

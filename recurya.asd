@@ -139,6 +139,7 @@
                "recurya/tests/game/notebook-parser"
                ;; Integration tests
                "recurya/tests/integration/sicp-canonical-solutions"
+               "recurya/tests/integration/sicp-seed"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner
