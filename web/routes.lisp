@@ -1540,7 +1540,8 @@ the @handle attribution badge."
 (defun courses-public-handler (params)
   "Handle GET /courses - public listing of published courses.
 No authentication required."
-  (let* ((page (parse-page-param params))
+  (let* ((user (get-current-user))
+         (page (parse-page-param params))
          (total-count (count-courses :status "published"
                                       :visibility "public"))
          (offset (* (1- page) *page-size*))
@@ -1553,7 +1554,8 @@ No authentication required."
           (make-pagination page total-count *page-size* "/courses")))
     (html-response
      (recurya/web/ui/course-list:render :courses courses
-                                        :pagination pagination))))
+                                        :pagination pagination
+                                        :user user))))
 
 (defun %maybe-persist-notebook-cell-run (uid nb-uuid cell result code)
   "Persist saved code, submission, and progress for a notebook cell run.

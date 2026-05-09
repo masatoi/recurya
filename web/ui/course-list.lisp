@@ -4,6 +4,7 @@
   (:use #:cl)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:recurya/web/ui/layout
+                #:page-shell
                 #:format-timestamp)
   (:export #:render))
 
@@ -47,82 +48,80 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
                            pointer-events: none; }
 .empty { text-align: center; color: #64748b; padding: 3rem 0; }")
 
-(defun render (&key courses pagination)
+(defun render (&key courses pagination user)
   "Render the public course listing page (published only).
 COURSES is a list of plists with :slug :title :summary :author-name
 :author-handle :notebook-count :published-at.
+USER is the current session user plist (nil for anonymous visitors).
 
 Each card links to /c/@<handle>/<slug>. Courses without an
 :author-handle render the title as plain text (no link) — the
 slug-only legacy URL was removed in Phase 7C."
-  (with-html-string
-    (:doctype)
-    (:html
-     (:head (:meta :charset "utf-8")
-            (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-            (:title "Courses")
-            (:style (:raw *styles*)))
-     (:body
-      (:main
-       (:div :class "list-header"
-             (:h1 "Courses")
-             (:p "Community-authored Lisp courses."))
-       (if courses
-           (progn
-             (dolist (c courses)
-               (let* ((slug (getf c :slug))
-                      (title (getf c :title))
-                      (summary (getf c :summary))
-                      (published-at (getf c :published-at))
-                      (author-name (getf c :author-name))
-                      (author-handle (getf c :author-handle))
-                      (notebook-count (getf c :notebook-count))
-                      (detail-url (when author-handle
-                                    (format nil "/c/@~A/~A"
-                                            author-handle slug))))
-                 (:div :class "c-card"
-                       (:h2 :class "c-card__title"
-                            (if detail-url
-                                (:a :href detail-url title)
-                                (:span title)))
-                       (:div :class "c-card__meta"
-                             (when author-handle
-                               (:a :href (format nil "/@~A" author-handle)
-                                   :class "c-card__handle"
-                                   (format nil "@~A" author-handle))
-                               (:span " · "))
-                             (format nil
-                                     "~@[~A~]~@[ · ~A notebook~:P~]~@[ · ~A~]"
-                                     author-name
-                                     notebook-count
-                                     (format-timestamp published-at)))
-                       (when (and summary (string/= summary ""))
-                         (:p :class "c-card__summary" summary))
-                       (when detail-url
-                         (:a :class "c-card__open"
-                             :href detail-url
-                             "Open →")))))
-             (when pagination
-               (let ((current-page (getf pagination :current-page))
-                     (total-pages (getf pagination :total-pages))
-                     (has-prev (getf pagination :has-prev))
-                     (has-next (getf pagination :has-next))
-                     (prev-url (getf pagination :prev-url))
-                     (next-url (getf pagination :next-url)))
-                 (:div :class "pagination"
-                       (:span :class "pagination-info"
-                              (format nil "Page ~A of ~A"
-                                      current-page total-pages))
-                       (:nav :class "pagination-nav"
-                             (if has-prev
-                                 (:a :class "pagination-btn"
-                                     :href prev-url "← Previous")
-                                 (:span :class "pagination-btn disabled"
-                                        "← Previous"))
-                             (if has-next
-                                 (:a :class "pagination-btn"
-                                     :href next-url "Next →")
-                                 (:span :class "pagination-btn disabled"
-                                        "Next →")))))))
-           (:p :class "empty"
-               "No courses yet. Check back soon!")))))))
+  (page-shell
+   :title "Courses"
+   :styles *styles*
+   :user user
+   :body-content
+   (with-html-string
+     (:div :class "list-header"
+           (:h1 "Courses")
+           (:p "Community-authored Lisp courses."))
+     (if courses
+         (progn
+           (dolist (c courses)
+             (let* ((slug (getf c :slug))
+                    (title (getf c :title))
+                    (summary (getf c :summary))
+                    (published-at (getf c :published-at))
+                    (author-name (getf c :author-name))
+                    (author-handle (getf c :author-handle))
+                    (notebook-count (getf c :notebook-count))
+                    (detail-url (when author-handle
+                                  (format nil "/c/@~A/~A"
+                                          author-handle slug))))
+               (:div :class "c-card"
+                     (:h2 :class "c-card__title"
+                          (if detail-url
+                              (:a :href detail-url title)
+                              (:span title)))
+                     (:div :class "c-card__meta"
+                           (when author-handle
+                             (:a :href (format nil "/@~A" author-handle)
+                                 :class "c-card__handle"
+                                 (format nil "@~A" author-handle))
+                             (:span " · "))
+                           (format nil
+                                   "~@[~A~]~@[ · ~A notebook~:P~]~@[ · ~A~]"
+                                   author-name
+                                   notebook-count
+                                   (format-timestamp published-at)))
+                     (when (and summary (string/= summary ""))
+                       (:p :class "c-card__summary" summary))
+                     (when detail-url
+                       (:a :class "c-card__open"
+                           :href detail-url
+                           "Open →")))))
+           (when pagination
+             (let ((current-page (getf pagination :current-page))
+                   (total-pages (getf pagination :total-pages))
+                   (has-prev (getf pagination :has-prev))
+                   (has-next (getf pagination :has-next))
+                   (prev-url (getf pagination :prev-url))
+                   (next-url (getf pagination :next-url)))
+               (:div :class "pagination"
+                     (:span :class "pagination-info"
+                            (format nil "Page ~A of ~A"
+                                    current-page total-pages))
+                     (:nav :class "pagination-nav"
+                           (if has-prev
+                               (:a :class "pagination-btn"
+                                   :href prev-url "← Previous")
+                               (:span :class "pagination-btn disabled"
+                                      "← Previous"))
+                           (if has-next
+                               (:a :class "pagination-btn"
+                                   :href next-url "Next →")
+                               (:span :class "pagination-btn disabled"
+                                      "Next →")))))))
+         (:p :class "empty"
+             "No courses yet. Check back soon!")))))
