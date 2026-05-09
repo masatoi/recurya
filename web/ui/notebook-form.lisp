@@ -7,7 +7,8 @@
   (:import-from #:recurya/web/ui/layout
                 #:header
                 #:header-styles
-                #:common-styles)
+                #:common-styles
+                #:page-shell)
   (:import-from #:recurya/web/ui/csrf
                 #:csrf-input)
   (:export #:render))
@@ -88,89 +89,76 @@ a list of plists like (:line N :message \"...\")."
                          (format nil "/dashboard/notebooks/~A" nb-id)
                          "/dashboard/notebooks"))
          (page-title (if editing-p "Edit Notebook" "New Notebook"))
-         (all-styles
-           (concatenate 'string
-                        (common-styles) (header-styles) *form-page-styles*)))
-    (spinneret:with-html-string
-      (:doctype)
-      (:html
-       (:head (:meta :charset "utf-8")
-              (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-              (:title (format nil "recurya - ~A" page-title))
-              (:style (:raw all-styles)))
-       (:body (:raw (header user))
-              (:main
-               (:div :class "card"
-                     (:h1 page-title)
-                     (when message
-                       (:div :class "flash-message success" message))
-                     (when errors
-                       (:div :class "flash-message error"
-                             (:strong "Validation errors:")
-                             (:ul :class "error-list"
-                                  (dolist (err errors)
-                                    (:li
-                                     (:span :class "line"
-                                            (format nil "L~A" (or (getf err :line) "?")))
-                                     " "
-                                     (getf err :message))))))
-                     (:form :class "nb-form" :method "post" :action action-url
-                            (:raw (csrf-input))
-                            (:div :class "form-group"
-                                  (:label :for "title" "Title")
-                                  (:input :type "text" :id "title" :name "title"
-                                          :value nb-title :required t
-                                          :placeholder "Notebook title"))
-                            (:div :class "form-group"
-                                  (:label :for "slug" "Slug")
-                                  (:input :type "text" :id "slug" :name "slug"
-                                          :value nb-slug
-                                          :placeholder "auto-generated-from-title")
-                                  (:span :class "form-hint"
-                                         "Leave blank to auto-generate from title."))
-                            (:div :class "form-group"
-                                  (:label :for "summary" "Summary")
-                                  (:textarea :id "summary" :name "summary"
-                                             :class "summary-field"
-                                             :maxlength "500"
-                                             :placeholder "Short summary (max 500 chars)"
-                                             nb-summary))
-                            (:div :class "form-group"
-                                  (:label :for "body" "Body (Markdown + cell fences)")
-                                  (:textarea :id "body" :name "body"
-                                             :class "body-field"
-                                             :required t
-                                             :wrap "soft"
-                                             :placeholder "===prose===\nWrite here..."
-                                             nb-body))
-                            (:div :class "form-group"
-                                  (:label :for "status" "Status")
-                                  (:select :id "status" :name "status"
-                                           (:option :value "draft"
-                                                    :selected
-                                                    (when (equal nb-status "draft") "selected")
-                                                    "Draft")
-                                           (:option :value "published"
-                                                    :selected
-                                                    (when (equal nb-status "published") "selected")
-                                                    "Published")))
-                            (:div :class "form-group"
-                                  (:label :for "visibility" "Visibility")
-                                  (:select :id "visibility" :name "visibility"
-                                           (:option :value "private"
-                                                    :selected
-                                                    (when (equal nb-visibility "private") "selected")
-                                                    "Private (only you)")
-                                           (:option :value "public"
-                                                    :selected
-                                                    (when (equal nb-visibility "public") "selected")
-                                                    "Public (anyone)")))
-                            (:div :class "form-actions"
-                                  (:button :type "submit" :class "btn-primary"
-                                           (if editing-p "Update Notebook" "Create Notebook"))
-                                  (:a :class "btn-secondary" :href "/dashboard/notebooks"
-                                      :style "text-decoration:none;text-align:center"
-                                      "Cancel")))
-                     (:div :class "cheatsheet"
-                           (:h3 "セル区切りチートシート")
-                           (:pre *cheatsheet-text*)))))))))
+         (page-styles (concatenate 'string (common-styles) *form-page-styles*)))
+    (page-shell :title (format nil "recurya - ~A" page-title)
+                :styles page-styles
+                :user user
+                :body-content
+                (with-html-string
+                  (:div :class "card"
+                    (:h1 page-title)
+                    (when message
+                      (:div :class "flash-message success" message))
+                    (when errors
+                      (:div :class "flash-message error"
+                        (:strong "Validation errors:")
+                        (:ul :class "error-list"
+                          (dolist (err errors)
+                            (:li
+                              (:span :class "line"
+                                (format nil "L~A" (or (getf err :line) "?")))
+                              " "
+                              (getf err :message))))))
+                    (:form :class "nb-form" :method "post" :action action-url
+                      (:raw (csrf-input))
+                      (:div :class "form-group"
+                        (:label :for "title" "Title")
+                        (:input :type "text" :id "title" :name "title"
+                          :value nb-title :required t
+                          :placeholder "Notebook title"))
+                      (:div :class "form-group"
+                        (:label :for "slug" "Slug")
+                        (:input :type "text" :id "slug" :name "slug"
+                          :value nb-slug
+                          :placeholder "auto-generated-from-title")
+                        (:span :class "form-hint"
+                          "Leave blank to auto-generate from title."))
+                      (:div :class "form-group"
+                        (:label :for "summary" "Summary")
+                        (:textarea :id "summary" :name "summary"
+                          :class "summary-field" :maxlength "500"
+                          :placeholder "Short summary (max 500 chars)"
+                          nb-summary))
+                      (:div :class "form-group"
+                        (:label :for "body" "Body (Markdown + cell fences)")
+                        (:textarea :id "body" :name "body"
+                          :class "body-field" :required t :wrap "soft"
+                          :placeholder "===prose===\nWrite here..."
+                          nb-body))
+                      (:div :class "form-group"
+                        (:label :for "status" "Status")
+                        (:select :id "status" :name "status"
+                          (:option :value "draft"
+                            :selected (when (equal nb-status "draft") "selected")
+                            "Draft")
+                          (:option :value "published"
+                            :selected (when (equal nb-status "published") "selected")
+                            "Published")))
+                      (:div :class "form-group"
+                        (:label :for "visibility" "Visibility")
+                        (:select :id "visibility" :name "visibility"
+                          (:option :value "private"
+                            :selected (when (equal nb-visibility "private") "selected")
+                            "Private (only you)")
+                          (:option :value "public"
+                            :selected (when (equal nb-visibility "public") "selected")
+                            "Public (anyone)")))
+                      (:div :class "form-actions"
+                        (:button :type "submit" :class "btn-primary"
+                          (if editing-p "Update Notebook" "Create Notebook"))
+                        (:a :class "btn-secondary" :href "/dashboard/notebooks"
+                          :style "text-decoration:none;text-align:center"
+                          "Cancel")))
+                    (:div :class "cheatsheet"
+                      (:h3 "セル区切りチートシート")
+                      (:pre *cheatsheet-text*)))))))
