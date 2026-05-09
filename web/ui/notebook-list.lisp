@@ -4,6 +4,7 @@
   (:use #:cl)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:recurya/web/ui/layout
+                #:page-shell
                 #:format-timestamp)
   (:export #:render))
 
@@ -47,77 +48,75 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
                            pointer-events: none; }
 .empty { text-align: center; color: #64748b; padding: 3rem 0; }")
 
-(defun render (&key notebooks pagination)
+(defun render (&key notebooks pagination user)
   "Render the public notebook listing page (published only).
 NOTEBOOKS is a list of plists with :slug :title :summary
 :published-at :author-name :author-handle.
+USER is the current session user plist (nil for anonymous visitors).
 
 Each card links to /@<handle>/<slug>. Notebooks without an
 :author-handle render the title as plain text (no link) — the
 slug-only legacy URL was removed in Phase 7C."
-  (with-html-string
-    (:doctype)
-    (:html
-     (:head (:meta :charset "utf-8")
-            (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-            (:title "Notebooks")
-            (:style (:raw *styles*)))
-     (:body
-      (:main
-       (:div :class "list-header"
-             (:h1 "Notebooks")
-             (:p "Community-authored Lisp notebooks."))
-       (if notebooks
-           (progn
-             (dolist (nb notebooks)
-               (let* ((slug (getf nb :slug))
-                      (title (getf nb :title))
-                      (summary (getf nb :summary))
-                      (published-at (getf nb :published-at))
-                      (author-name (getf nb :author-name))
-                      (author-handle (getf nb :author-handle))
-                      (detail-url (when author-handle
-                                    (format nil "/@~A/~A" author-handle slug))))
-                 (:div :class "nb-card"
-                       (:h2 :class "nb-card__title"
-                            (if detail-url
-                                (:a :href detail-url title)
-                                (:span title)))
-                       (:div :class "nb-card__meta"
-                             (when author-handle
-                               (:a :href (format nil "/@~A" author-handle)
-                                   :class "nb-card__handle"
-                                   (format nil "@~A" author-handle))
-                               (:span " · "))
-                             (format nil "~@[~A~]~@[ · ~A~]" author-name
-                                     (format-timestamp published-at)))
-                       (when (and summary (string/= summary ""))
-                         (:p :class "nb-card__summary" summary))
-                       (when detail-url
-                         (:a :class "nb-card__open"
-                             :href detail-url
-                             "Open →")))))
-             (when pagination
-               (let ((current-page (getf pagination :current-page))
-                     (total-pages (getf pagination :total-pages))
-                     (has-prev (getf pagination :has-prev))
-                     (has-next (getf pagination :has-next))
-                     (prev-url (getf pagination :prev-url))
-                     (next-url (getf pagination :next-url)))
-                 (:div :class "pagination"
-                       (:span :class "pagination-info"
-                              (format nil "Page ~A of ~A"
-                                      current-page total-pages))
-                       (:nav :class "pagination-nav"
-                             (if has-prev
-                                 (:a :class "pagination-btn"
-                                     :href prev-url "← Previous")
-                                 (:span :class "pagination-btn disabled"
-                                        "← Previous"))
-                             (if has-next
-                                 (:a :class "pagination-btn"
-                                     :href next-url "Next →")
-                                 (:span :class "pagination-btn disabled"
-                                        "Next →")))))))
-           (:p :class "empty"
-               "No notebooks yet. Check back soon!")))))))
+  (page-shell
+   :title "Notebooks"
+   :styles *styles*
+   :user user
+   :body-content
+   (with-html-string
+     (:div :class "list-header"
+           (:h1 "Notebooks")
+           (:p "Community-authored Lisp notebooks."))
+     (if notebooks
+         (progn
+           (dolist (nb notebooks)
+             (let* ((slug (getf nb :slug))
+                    (title (getf nb :title))
+                    (summary (getf nb :summary))
+                    (published-at (getf nb :published-at))
+                    (author-name (getf nb :author-name))
+                    (author-handle (getf nb :author-handle))
+                    (detail-url (when author-handle
+                                  (format nil "/@~A/~A" author-handle slug))))
+               (:div :class "nb-card"
+                     (:h2 :class "nb-card__title"
+                          (if detail-url
+                              (:a :href detail-url title)
+                              (:span title)))
+                     (:div :class "nb-card__meta"
+                           (when author-handle
+                             (:a :href (format nil "/@~A" author-handle)
+                                 :class "nb-card__handle"
+                                 (format nil "@~A" author-handle))
+                             (:span " · "))
+                           (format nil "~@[~A~]~@[ · ~A~]" author-name
+                                   (format-timestamp published-at)))
+                     (when (and summary (string/= summary ""))
+                       (:p :class "nb-card__summary" summary))
+                     (when detail-url
+                       (:a :class "nb-card__open"
+                           :href detail-url
+                           "Open →")))))
+           (when pagination
+             (let ((current-page (getf pagination :current-page))
+                   (total-pages (getf pagination :total-pages))
+                   (has-prev (getf pagination :has-prev))
+                   (has-next (getf pagination :has-next))
+                   (prev-url (getf pagination :prev-url))
+                   (next-url (getf pagination :next-url)))
+               (:div :class "pagination"
+                     (:span :class "pagination-info"
+                            (format nil "Page ~A of ~A"
+                                    current-page total-pages))
+                     (:nav :class "pagination-nav"
+                           (if has-prev
+                               (:a :class "pagination-btn"
+                                   :href prev-url "← Previous")
+                               (:span :class "pagination-btn disabled"
+                                      "← Previous"))
+                           (if has-next
+                               (:a :class "pagination-btn"
+                                   :href next-url "Next →")
+                               (:span :class "pagination-btn disabled"
+                                      "Next →")))))))
+         (:p :class "empty"
+             "No notebooks yet. Check back soon!")))))

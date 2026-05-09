@@ -1293,7 +1293,8 @@ the @handle attribution badge."
 (defun notebooks-public-handler (params)
   "Handle GET /notebooks - public listing of published notebooks.
 No authentication required."
-  (let* ((page (parse-page-param params))
+  (let* ((user (get-current-user))
+         (page (parse-page-param params))
          (total-count (count-notebooks :status "published"
                                              :visibility "public"))
          (offset (* (1- page) *page-size*))
@@ -1306,7 +1307,7 @@ No authentication required."
                                       "/notebooks")))
     (html-response
      (recurya/web/ui/notebook-list:render
-      :notebooks notebooks :pagination pagination))))
+      :notebooks notebooks :pagination pagination :user user))))
 
 (defun notebook-row->notebook-struct (nb-row)
   "Convert a notebook DAO into a recurya/game/notebook:notebook struct
