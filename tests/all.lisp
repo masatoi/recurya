@@ -25,6 +25,7 @@
     :recurya/tests/web/profile
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
+    :recurya/tests/web/dashboard-auth
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests

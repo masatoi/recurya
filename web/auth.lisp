@@ -9,7 +9,8 @@
   (:import-from #:recurya/db/users
                 #:placeholder-handle-p)
   (:export #:current-user
-           #:require-real-handle))
+           #:require-real-handle
+           #:require-dashboard-auth))
 
 (in-package #:recurya/web/auth)
 
@@ -93,3 +94,41 @@ session/CSRF infrastructure can do its work first."
         ((not (placeholder-handle-p handle)) (funcall app env))
         ((%require-real-handle-skip-p path) (funcall app env))
         (t (list 302 (list :location "/onboarding/handle") (list "")))))))
+
+(defparameter *dashboard-auth-paths*
+  '("/dashboard")
+  "Paths whose subtrees require an authenticated session. The check
+applies when the request path equals any element exactly, or is at
+or under that element with a trailing slash (e.g. \"/dashboard\" and
+\"/dashboard/notebooks\" both match \"/dashboard\").")
+
+(defun %dashboard-auth-required-p (path)
+  "True if PATH is at or under a dashboard-auth path."
+  (some (lambda (root)
+          (or (string= path root)
+              (alexandria:starts-with-subseq
+               (concatenate 'string root "/") path)))
+        *dashboard-auth-paths*))
+
+(defun require-dashboard-auth (app)
+  "Lack middleware: redirect anonymous requests to /dashboard/* to /login.
+
+Behavior:
+  * Path not under *dashboard-auth-paths* -> pass through to APP.
+  * Path under *dashboard-auth-paths* and no session user
+    -> 302 redirect to /login.
+  * Otherwise -> pass through to APP (the user is authenticated;
+    require-real-handle further down the chain still gets a chance
+    to redirect placeholder-handle users to /onboarding/handle).
+
+Must run AFTER the :session middleware (it reads :lack.session) and
+BEFORE require-real-handle, so anonymous visitors are sent to /login
+rather than to /onboarding/handle."
+  (lambda (env)
+    (let* ((session (getf env :lack.session))
+           (user (and session (gethash :user session)))
+           (path (or (getf env :path-info) "/")))
+      (cond
+        ((not (%dashboard-auth-required-p path)) (funcall app env))
+        ((null user) (list 302 (list :location "/login") (list "")))
+        (t (funcall app env))))))

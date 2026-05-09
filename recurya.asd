@@ -131,6 +131,7 @@
                "recurya/tests/web/profile"
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
+               "recurya/tests/web/dashboard-auth"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
