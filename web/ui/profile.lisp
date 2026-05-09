@@ -8,7 +8,7 @@
 (defpackage #:recurya/web/ui/profile
   (:use #:cl)
   (:import-from #:spinneret #:with-html-string)
-  (:import-from #:recurya/web/ui/layout #:format-timestamp)
+  (:import-from #:recurya/web/ui/layout #:page-shell #:format-timestamp)
   (:export #:render-profile-page))
 
 (in-package #:recurya/web/ui/profile)
@@ -42,7 +42,7 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 .card__summary { color: #475569; line-height: 1.5; }
 .empty { color: #64748b; font-style: italic; padding: 0.5rem 0; }")
 
-(defun render-profile-page (&key handle display-name notebooks courses)
+(defun render-profile-page (&key handle display-name notebooks courses user)
   "Render the public profile page for HANDLE.
 
 Arguments:
@@ -50,70 +50,65 @@ Arguments:
   DISPLAY-NAME - Their display name (string).
   NOTEBOOKS    - List of NOTEBOOK DAO instances (their public+published).
   COURSES      - List of COURSE DAO instances (their public+published).
+  USER         - The currently logged-in visitor (plist or NIL for anonymous).
 
 Returns the full HTML page as a string."
-  (with-html-string
-    (:doctype)
-    (:html
-     (:head
-      (:meta :charset "utf-8")
-      (:meta :name "viewport"
-             :content "width=device-width, initial-scale=1")
-      (:title (format nil "@~A" handle))
-      (:style (:raw *styles*)))
-     (:body
-      (:main
-       (:div :class "profile-header"
-             (:h1 (or display-name handle))
-             (:div :class "handle"
-                   (format nil "@~A" handle))
-             (when (and display-name
-                        (not (string= display-name handle)))
-               (:div :class "display-name" "")))
-       (:section :class "section"
-                 (:h2 "Notebooks")
-                 (cond
-                   ((null notebooks)
-                    (:p :class "empty"
-                        "No public notebooks yet."))
-                   (t
-                    (dolist (nb notebooks)
-                      (let ((slug (recurya/db/notebooks:notebook-slug nb))
-                            (title (recurya/db/notebooks:notebook-title nb))
-                            (summary (recurya/db/notebooks:notebook-summary nb))
-                            (published-at
-                             (recurya/db/notebooks:notebook-published-at nb)))
-                        (:div :class "card"
-                              (:h3 :class "card__title"
-                                   (:a :href (format nil "/@~A/~A"
-                                                     handle slug)
-                                       title))
-                              (:div :class "card__meta"
-                                    (or (format-timestamp published-at)
-                                        ""))
-                              (when (and summary (string/= summary ""))
-                                (:p :class "card__summary" summary))))))))
-       (:section :class "section"
-                 (:h2 "Courses")
-                 (cond
-                   ((null courses)
-                    (:p :class "empty"
-                        "No public courses yet."))
-                   (t
-                    (dolist (c courses)
-                      (let ((slug (recurya/db/courses:course-slug c))
-                            (title (recurya/db/courses:course-title c))
-                            (summary (recurya/db/courses:course-summary c))
-                            (published-at
-                             (recurya/db/courses:course-published-at c)))
-                        (:div :class "card"
-                              (:h3 :class "card__title"
-                                   (:a :href (format nil "/c/@~A/~A"
-                                                     handle slug)
-                                       title))
-                              (:div :class "card__meta"
-                                    (or (format-timestamp published-at)
-                                        ""))
-                              (when (and summary (string/= summary ""))
-                                (:p :class "card__summary" summary))))))))
-       )))))
+  (page-shell
+   :title (format nil "@~A" handle)
+   :styles *styles*
+   :user user
+   :body-content
+   (with-html-string
+     (:div :class "profile-header"
+           (:h1 (or display-name handle))
+           (:div :class "handle"
+                 (format nil "@~A" handle))
+           (when (and display-name
+                      (not (string= display-name handle)))
+             (:div :class "display-name" "")))
+     (:section :class "section"
+               (:h2 "Notebooks")
+               (cond
+                 ((null notebooks)
+                  (:p :class "empty"
+                      "No public notebooks yet."))
+                 (t
+                  (dolist (nb notebooks)
+                    (let ((slug (recurya/db/notebooks:notebook-slug nb))
+                          (title (recurya/db/notebooks:notebook-title nb))
+                          (summary (recurya/db/notebooks:notebook-summary nb))
+                          (published-at
+                           (recurya/db/notebooks:notebook-published-at nb)))
+                      (:div :class "card"
+                            (:h3 :class "card__title"
+                                 (:a :href (format nil "/@~A/~A"
+                                                   handle slug)
+                                     title))
+                            (:div :class "card__meta"
+                                  (or (format-timestamp published-at)
+                                      ""))
+                            (when (and summary (string/= summary ""))
+                              (:p :class "card__summary" summary))))))))
+     (:section :class "section"
+               (:h2 "Courses")
+               (cond
+                 ((null courses)
+                  (:p :class "empty"
+                      "No public courses yet."))
+                 (t
+                  (dolist (c courses)
+                    (let ((slug (recurya/db/courses:course-slug c))
+                          (title (recurya/db/courses:course-title c))
+                          (summary (recurya/db/courses:course-summary c))
+                          (published-at
+                           (recurya/db/courses:course-published-at c)))
+                      (:div :class "card"
+                            (:h3 :class "card__title"
+                                 (:a :href (format nil "/c/@~A/~A"
+                                                   handle slug)
+                                     title))
+                            (:div :class "card__meta"
+                                  (or (format-timestamp published-at)
+                                      ""))
+                            (when (and summary (string/= summary ""))
+                              (:p :class "card__summary" summary)))))))))))

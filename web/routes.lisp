@@ -1506,7 +1506,8 @@ notebooks and courses. 404 when the handle does not resolve to a user.
 Because Ningle/myway URL-encodes literal `@' in named-parameter
 patterns, this handler is registered as a regex route in
 `setup-routes'. The captured handle is the only group."
-  (let* ((captures (get-path-param params :captures))
+  (let* ((user (get-current-user))
+         (captures (get-path-param params :captures))
          (handle (and captures (first captures)))
          (user-row (and handle (get-user-by-handle handle))))
     (cond
@@ -1518,7 +1519,8 @@ patterns, this handler is registered as a regex route in
          :handle handle
          :display-name (recurya/models/users:users-display-name user-row)
          :notebooks (list-public-notebooks-of user-row)
-         :courses (list-public-courses-of user-row)))))))
+         :courses (list-public-courses-of user-row)
+         :user user))))))
 
 (defun course-public-plist (c)
   "Convert a course DAO to a plist for the public listing UI.
