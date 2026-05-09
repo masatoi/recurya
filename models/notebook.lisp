@@ -64,8 +64,10 @@
            :initarg :author
            :accessor notebook-author))
   (:auto-pk nil)
-  (:unique-keys slug)
-  (:keys (status :created_at) (author_id :created_at))
+  (:unique-keys (author_id slug))
+  (:keys (status :created_at)
+         (author_id :created_at)
+         (visibility :status))
   (:documentation "User-authored notebook with UUID PK, slug URLs, JSONB cell cache, and draft/published workflow."))
 
 (defun notebook-id (nb)

@@ -24,6 +24,7 @@
                 #:users-password-hash
                 #:users-password-salt
                 #:users-display-name
+                #:users-handle
                 #:users-role
                 #:users-language
                 #:users-timezone
@@ -39,6 +40,7 @@
    #:users-password-hash
    #:users-password-salt
    #:users-display-name
+   #:users-handle
    #:users-role
    #:users-language
    #:users-timezone
@@ -62,7 +64,7 @@
 ;;; CRUD Operations using Mito DAO
 ;;; ============================================================
 
-(defun create-user! (&key email password-hash password-salt display-name (role "user"))
+(defun create-user! (&key email password-hash password-salt display-name handle (role "user"))
   "Create a new user and return the created user instance.
 
 Used by tests and legacy admin seeding. OAuth-based registration goes
@@ -73,6 +75,9 @@ Arguments:
   PASSWORD-HASH - Pre-computed password hash (optional, NIL for OAuth-only)
   PASSWORD-SALT - Salt used for hashing (optional, NIL for OAuth-only)
   DISPLAY-NAME  - Optional display name
+  HANDLE        - Per-user URL handle (required at the DB level once
+                  Phase 5 migration runs; may be NIL here for legacy
+                  call sites until callers are updated)
   ROLE          - User role (default: \"user\")
 
 Returns:
@@ -81,6 +86,7 @@ Returns:
     (insert-dao (make-instance 'users
                                :id user-id
                                :email email
+                               :handle handle
                                :password-hash password-hash
                                :password-salt password-salt
                                :display-name (or display-name email)

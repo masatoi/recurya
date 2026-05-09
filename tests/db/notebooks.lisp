@@ -216,3 +216,38 @@ r" :cells '() :author u
              (out (notebook-cells-parsed
                    (get-notebook-by-id (notebook-id nb)))))
         (ok (= (length cells) (length out)))))))
+
+(deftest notebook-per-author-slug
+  (testing "different authors can share the same slug"
+    (with-test-db
+      (let* ((u1 (create-test-user :email-prefix "alice" :handle "alice"))
+             (u2 (create-test-user :email-prefix "bob" :handle "bob")))
+        (create-notebook! :slug "intro"
+                          :title "Alice intro"
+                          :body-md "===prose===
+a"
+                          :cells '()
+                          :author u1)
+        (ok (create-notebook! :slug "intro"
+                              :title "Bob intro"
+                              :body-md "===prose===
+b"
+                              :cells '()
+                              :author u2)))))
+  (testing "same author cannot reuse slug"
+    (with-test-db
+      (let ((u (create-test-user :email-prefix "carol" :handle "carol")))
+        (create-notebook! :slug "x"
+                          :title "X"
+                          :body-md "===prose===
+x"
+                          :cells '()
+                          :author u)
+        (ok (signals
+              (create-notebook! :slug "x"
+                                :title "Y"
+                                :body-md "===prose===
+y"
+                                :cells '()
+                                :author u)
+              'error))))))

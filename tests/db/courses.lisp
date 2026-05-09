@@ -167,3 +167,18 @@
         (ok (= 2 (count-courses :visibility "private")))
         (ok (= 1 (count-courses :status "published" :visibility "public")))
         (ok (= 1 (count-courses :status "published" :visibility "private")))))))
+
+(deftest course-per-author-slug
+  (testing "different authors can share the same slug"
+    (with-test-db
+      (let* ((u1 (create-test-user :email-prefix "alice" :handle "alice"))
+             (u2 (create-test-user :email-prefix "bob" :handle "bob")))
+        (create-course! :slug "intro" :title "Alice intro" :author u1)
+        (ok (create-course! :slug "intro" :title "Bob intro" :author u2)))))
+  (testing "same author cannot reuse slug"
+    (with-test-db
+      (let ((u (create-test-user :email-prefix "carol" :handle "carol")))
+        (create-course! :slug "x" :title "X" :author u)
+        (ok (signals
+              (create-course! :slug "x" :title "Y" :author u)
+              'error))))))

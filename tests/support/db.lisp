@@ -66,17 +66,21 @@ Usage:
 ;;; Test Entity Creation
 ;;; ============================================================
 
-(defun create-test-user (&key (email-prefix "test") (display-name "Test User"))
+(defun create-test-user (&key (email-prefix "test")
+                              (display-name "Test User")
+                              (handle (format nil "u-~A" (make-v4-uuid))))
   "Create a unique test user and return the user struct.
 
 Arguments:
   EMAIL-PREFIX  - Prefix for the email address (default: \"test\")
   DISPLAY-NAME  - Display name for the user (default: \"Test User\")
+  HANDLE        - Per-user URL handle (default: unique UUID-based)
 
 Returns:
   The created user struct with a unique UUID-based email."
   (create-user! :email (format nil "~A-~A@example.com" email-prefix (make-v4-uuid))
                 :display-name display-name
+                :handle handle
                 :password-hash "test-hash"
                 :password-salt "test-salt"
                 :role "user"))
