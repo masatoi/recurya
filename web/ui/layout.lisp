@@ -140,12 +140,17 @@ its token via hx-include without a separate fetch."
         (t
          (:a :class "app-header__link" :href "/login" "Login")))))))
 
-(defun page-shell (&key title styles user body-content)
+(defun page-shell (&key title styles user body-content head-extras body-scripts)
   "Generate a complete HTML page shell.
 
 The site header is rendered for all visitors (anonymous users see Login,
 authenticated users see Dashboard and the account dropdown). The
-body-content is wrapped in a <main> element for proper layout and margins."
+body-content is wrapped in a <main> element for proper layout and margins.
+
+HEAD-EXTRAS is an optional HTML string injected at the end of <head>
+(e.g. editor-head-tags for the CodeMirror setup).
+BODY-SCRIPTS is an optional HTML string injected just before </body>
+(e.g. a <script src=\"/static/js/learn.js\"> tag)."
   (spinneret:with-html-string
     (:doctype)
     (:html
@@ -156,5 +161,7 @@ body-content is wrapped in a <main> element for proper layout and margins."
        "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
        :crossorigin "anonymous")
       (:style (:raw (header-styles)))
-      (when styles (:style (:raw styles))))
-     (:body (:raw (header user)) (:main (:raw body-content))))))
+      (when styles (:style (:raw styles)))
+      (when head-extras (:raw head-extras)))
+     (:body (:raw (header user)) (:main (:raw body-content))
+      (when body-scripts (:raw body-scripts))))))
