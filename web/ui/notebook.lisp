@@ -119,12 +119,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 .print-output { background:#0f172a; padding:0.5rem;
                 border-radius: 4px; color: #94a3b8;
                 font-family: monospace; font-size: 0.85rem;
-                white-space: pre-wrap; margin-top: 0.5rem; }
-.user-banner { background: #1e293b; padding: 0.5rem 1rem; border-radius: 6px;
-               margin-bottom: 1rem; font-size: 0.85rem; color: #94a3b8; }
-.user-banner.anon { background: #1e2530; }
-.user-banner a { color: #38bdf8; text-decoration: none; margin-left: 0.5rem; }
-.user-banner strong { color: #f8fafc; }")
+                white-space: pre-wrap; margin-top: 0.5rem; }")
 
 (defun notebook-url-id (notebook)
   "Lowercase id of the notebook, for use in URLs.
