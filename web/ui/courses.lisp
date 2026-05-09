@@ -7,7 +7,8 @@
                 #:header
                 #:header-styles
                 #:common-styles
-                #:format-timestamp)
+                #:format-timestamp
+                #:page-shell)
   (:export #:render
            #:render-course-state-dropdown))
 
@@ -113,85 +114,80 @@ COURSES is a list of plists with :id :slug :title :status
 :published-at :created-at :notebook-count."
   (let ((user-timezone (getf user :timezone))
         (user-handle (getf user :handle))
-        (all-styles
-         (concatenate 'string (common-styles) (header-styles) *page-styles*)))
-    (spinneret:with-html-string
-      (:doctype)
-      (:html
-       (:head (:meta :charset "utf-8")
-        (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-        (:title "recurya - My Courses")
-        (:script :src "https://unpkg.com/htmx.org@2.0.4" :integrity
-         "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-         :crossorigin "anonymous")
-        (:style (:raw all-styles)))
-       (:body (:raw (header user))
-        (:main
-         (:div :class "card" (:h1 "My Courses")
-          (:p :class "muted" "Manage your authored courses.")
-          (:div :class "actions-bar"
-           (:a :class "new-nb-btn" :href "/dashboard/courses/new" "+ New Course"))
-          (:div :id "flash-area"
-           (when message (:div :class "flash-message success" message))
-           (when errors
-             (:div :class "flash-message error"
-              (dolist (err errors) (:p err)))))
-          (if courses
-              (progn
-               (:table
-                (:thead
-                 (:tr (:th "Title") (:th "Status") (:th "Notebooks")
-                  (:th "Created") (:th "Actions")))
-                (:tbody :id "courses-body"
-                 (dolist (course courses)
-                   (let* ((id (getf course :id))
-                          (slug (getf course :slug))
-                          (title (getf course :title))
-                          (status (getf course :status))
-                          (visibility (or (getf course :visibility) "private"))
-                          (notebook-count (getf course :notebook-count))
-                          (created-at (getf course :created-at)))
-                     (:tr :id (format nil "course-row-~A" id)
-                      (:td
-                       (if (and slug user-handle
-                                (string= status "published"))
-                           (:a :href (format nil "/c/@~A/~A"
-                                             user-handle slug)
-                            title)
-                           title))
-                      (:td
-                       (:raw
-                        (render-course-state-dropdown
-                         id status visibility)))
-                      (:td (or notebook-count 0))
-                      (:td
-                       (or (format-timestamp created-at user-timezone) "—"))
-                      (:td
-                       (:div :class "actions-cell"
-                        (:a :class "link" :href
-                         (format nil "/dashboard/courses/~A/edit" id) "Edit")
-                        (:button :class "button-danger btn-sm" :hx-get
-                         (format nil "/dashboard/courses/~A/confirm-delete" id)
-                         :hx-target "#modal-container" :hx-swap "innerHTML"
-                         "Delete"))))))))
-               (when pagination
-                 (let ((current-page (getf pagination :current-page))
-                       (total-pages (getf pagination :total-pages))
-                       (has-prev (getf pagination :has-prev))
-                       (has-next (getf pagination :has-next))
-                       (prev-url (getf pagination :prev-url))
-                       (next-url (getf pagination :next-url)))
-                   (:div :class "pagination"
-                    (:span :class "pagination-info"
-                     (format nil "Page ~A of ~A" current-page total-pages))
-                    (:nav :class "pagination-nav"
-                     (if has-prev
-                         (:a :class "pagination-btn" :href prev-url
-                          "← Previous")
-                         (:span :class "pagination-btn disabled" "← Previous"))
-                     (if has-next
-                         (:a :class "pagination-btn" :href next-url "Next →")
-                         (:span :class "pagination-btn disabled"
-                          "Next →")))))))
-              (:p :class "muted" "No courses yet. Create your first one!"))))
-        (:div :id "modal-container"))))))
+        (page-styles
+         (concatenate 'string (common-styles) *page-styles*)))
+    (page-shell
+     :title "recurya - My Courses"
+     :styles page-styles
+     :user user
+     :body-content
+     (with-html-string
+       (:div :class "card"
+        (:h1 "My Courses")
+        (:p :class "muted" "Manage your authored courses.")
+        (:div :class "actions-bar"
+         (:a :class "new-nb-btn" :href "/dashboard/courses/new" "+ New Course"))
+        (:div :id "flash-area"
+         (when message (:div :class "flash-message success" message))
+         (when errors
+           (:div :class "flash-message error"
+            (dolist (err errors) (:p err)))))
+        (if courses
+            (progn
+             (:table
+              (:thead
+               (:tr (:th "Title") (:th "Status") (:th "Notebooks")
+                (:th "Created") (:th "Actions")))
+              (:tbody :id "courses-body"
+               (dolist (course courses)
+                 (let* ((id (getf course :id))
+                        (slug (getf course :slug))
+                        (title (getf course :title))
+                        (status (getf course :status))
+                        (visibility (or (getf course :visibility) "private"))
+                        (notebook-count (getf course :notebook-count))
+                        (created-at (getf course :created-at)))
+                   (:tr :id (format nil "course-row-~A" id)
+                    (:td
+                     (if (and slug user-handle
+                              (string= status "published"))
+                         (:a :href (format nil "/c/@~A/~A"
+                                           user-handle slug)
+                          title)
+                         title))
+                    (:td
+                     (:raw
+                      (render-course-state-dropdown
+                       id status visibility)))
+                    (:td (or notebook-count 0))
+                    (:td
+                     (or (format-timestamp created-at user-timezone) "—"))
+                    (:td
+                     (:div :class "actions-cell"
+                      (:a :class "link" :href
+                       (format nil "/dashboard/courses/~A/edit" id) "Edit")
+                      (:button :class "button-danger btn-sm" :hx-get
+                       (format nil "/dashboard/courses/~A/confirm-delete" id)
+                       :hx-target "#modal-container" :hx-swap "innerHTML"
+                       "Delete"))))))))
+             (when pagination
+               (let ((current-page (getf pagination :current-page))
+                     (total-pages (getf pagination :total-pages))
+                     (has-prev (getf pagination :has-prev))
+                     (has-next (getf pagination :has-next))
+                     (prev-url (getf pagination :prev-url))
+                     (next-url (getf pagination :next-url)))
+                 (:div :class "pagination"
+                  (:span :class "pagination-info"
+                   (format nil "Page ~A of ~A" current-page total-pages))
+                  (:nav :class "pagination-nav"
+                   (if has-prev
+                       (:a :class "pagination-btn" :href prev-url
+                        "← Previous")
+                       (:span :class "pagination-btn disabled" "← Previous"))
+                   (if has-next
+                       (:a :class "pagination-btn" :href next-url "Next →")
+                       (:span :class "pagination-btn disabled"
+                        "Next →")))))))
+            (:p :class "muted" "No courses yet. Create your first one!")))
+       (:div :id "modal-container")))))
