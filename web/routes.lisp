@@ -11,6 +11,7 @@
   (:import-from #:recurya/db/users
                 #:update-user!
                 #:get-user-by-id
+                #:get-user-by-handle
                 #:find-or-create-oauth-user
                 #:placeholder-handle-p)
   (:import-from #:recurya/web/ui/login)
@@ -29,6 +30,7 @@
   (:import-from #:recurya/web/ui/course-list)
   (:import-from #:recurya/web/ui/courses #:render-course-state-dropdown)
   (:import-from #:recurya/web/ui/course-form)
+  (:import-from #:recurya/web/ui/profile #:render-profile-page)
   ;; Note: recurya/db/notebooks exports a `notebook-cells` accessor that
   ;; collides with recurya/game/notebook:notebook-cells (a struct accessor).
   ;; The DB accessor is not used directly here (we use
@@ -38,6 +40,8 @@
                 #:create-notebook!
                 #:get-notebook-by-id
                 #:get-notebook-by-slug
+                #:find-notebook-by-handle-and-slug
+                #:list-public-notebooks-of
                 #:update-notebook!
                 #:delete-notebook!
                 #:list-notebooks
@@ -58,6 +62,8 @@
                 #:create-course!
                 #:get-course-by-id
                 #:get-course-by-slug
+                #:find-course-by-handle-and-slug
+                #:list-public-courses-of
                 #:update-course!
                 #:delete-course!
                 #:list-courses
@@ -128,7 +134,10 @@
            #:notebook-delete-handler
            #:notebooks-public-handler
            #:public-notebook-handler
+           #:public-notebook-by-handle-handler
            #:public-notebook-cell-run-handler
+           #:public-notebook-cell-run-by-handle-handler
+           #:profile-handler
            #:courses-me-handler
            #:course-new-handler
            #:course-create-handler
@@ -143,6 +152,7 @@
            #:course-notebook-move-down-handler
            #:course-notebook-remove-handler
            #:public-course-handler
+           #:public-course-by-handle-handler
            #:courses-public-handler
            #:learn-sync-handler
            #:sicp-learn-redirect-handler
@@ -1267,15 +1277,20 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                  (redirect "/dashboard/notebooks"))))))))
 
 (defun notebook-public-plist (nb)
-  "Convert a notebook DAO to a plist for the public listing UI."
+  "Convert a notebook DAO to a plist for the public listing UI.
+Includes :author-handle so cards can link to /@<handle>/<slug> and
+the @handle attribution badge."
   (let* ((author (notebook-author nb))
          (author-name
-           (when author (recurya/models/users:users-display-name author))))
-    (list :slug         (notebook-slug nb)
-          :title        (notebook-title nb)
-          :summary      (notebook-summary nb)
+          (when author (recurya/models/users:users-display-name author)))
+         (author-handle
+          (when author (recurya/models/users:users-handle author))))
+    (list :slug (notebook-slug nb)
+          :title (notebook-title nb)
+          :summary (notebook-summary nb)
           :published-at (notebook-published-at nb)
-          :author-name  (or author-name "Anonymous"))))
+          :author-name (or author-name "Anonymous")
+          :author-handle author-handle)))
 
 (defun notebooks-public-handler (params)
   "Handle GET /notebooks - public listing of published notebooks.
@@ -1309,21 +1324,16 @@ Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
      :summary (or (notebook-summary nb-row) "")
      :cells cells-list)))
 
-(defun public-notebook-handler (params)
-  "Handle GET /n/:slug - public single notebook page.
-Anonymous and other users see published notebooks; the owner can also
-preview their own draft. Anything else is 404.
+(defun %render-public-notebook-response (nb-row params)
+  "Render the public notebook page for NB-ROW given the request PARAMS.
 
-When the optional query parameter ?course=<slug> is supplied AND the
-referenced course exists AND the notebook is attached to that course,
-the page is rendered with the course context: the sidebar lists the
-course's notebooks, the breadcrumb is
-  Notebooks > <Course Title> > <Notebook Title>,
-and prev/next links navigate to the surrounding notebooks within the
-course (preserving the ?course=<slug> query string)."
-  (let* ((slug (get-path-param params :slug))
-         (nb-row (and slug (get-notebook-by-slug slug)))
-         (user (get-current-user))
+Encapsulates the can-view check, optional ?course=<slug> sidebar,
+breadcrumb, and prev/next URL logic shared by the slug-only and
+handle-aware public notebook handlers.
+
+Returns a Clack response list. Returns 404 when NB-ROW is NIL or the
+viewer cannot view it."
+  (let* ((user (get-current-user))
          (uid (and user (getf user :id))))
     (cond
       ((null nb-row)
@@ -1335,8 +1345,14 @@ course (preserving the ?course=<slug> query string)."
               (nb-id-str (princ-to-string (notebook-id nb-row)))
               (saved (when uid (user-cell-codes uid nb-id-str)))
               (passed (when uid (user-passed-cells uid nb-id-str)))
+              (author (notebook-author nb-row))
+              (author-handle
+               (and author (recurya/models/users:users-handle author)))
               (run-cell-base
-               (format nil "/n/~A" (notebook-slug nb-row)))
+               (if author-handle
+                   (format nil "/@~A/~A" author-handle
+                           (notebook-slug nb-row))
+                   (format nil "/n/~A" (notebook-slug nb-row))))
               (course-slug-param (get-param params "course"))
               (course-row
                (and course-slug-param
@@ -1404,6 +1420,34 @@ course (preserving the ?course=<slug> query string)."
               :sidebar-notebooks nil
               :run-cell-base run-cell-base)))))))))
 
+(defun public-notebook-handler (params)
+  "Handle GET /n/:slug - public single notebook page (legacy slug-only).
+Anonymous and other users see published notebooks; the owner can also
+preview their own draft. Anything else is 404.
+
+Phase 7B retains this for backward compatibility while
+`public-notebook-by-handle-handler' serves the new
+/@:handle/:slug URLs. Phase 7C removes this slug-only path."
+  (let* ((slug (get-path-param params :slug))
+         (nb-row (and slug (get-notebook-by-slug slug))))
+    (%render-public-notebook-response nb-row params)))
+
+(defun public-notebook-by-handle-handler (params)
+  "Handle GET /@:handle/:slug - public single notebook page resolved by
+the author's HANDLE plus the notebook SLUG. Same access rules as
+`public-notebook-handler': owner sees drafts, others see only
+published+public notebooks; everything else is 404.
+
+Because Ningle/myway URL-encodes literal `@' in named-parameter
+patterns, this handler is registered as a regex route in
+`setup-routes'. Captured groups are extracted from the (:CAPTURES (...))
+alist entry."
+  (let* ((captures (get-path-param params :captures))
+         (handle (and captures (first captures)))
+         (slug (and captures (second captures)))
+         (nb-row (find-notebook-by-handle-and-slug handle slug)))
+    (%render-public-notebook-response nb-row params)))
+
 (defun course-notebook-row->public-plist (cn)
   "Convert a course-notebook DAO into a plist for the public course view.
 
@@ -1415,13 +1459,12 @@ and projected into (:slug :title :summary :position)."
           :summary (when nb (notebook-summary nb))
           :position (course-notebook-position cn))))
 
-(defun public-course-handler (params)
-  "Handle GET /c/:slug - public single course page.
-Anonymous and other users see published courses; the owner can also
-preview their own draft. Anything else is 404."
-  (let* ((slug (get-path-param params :slug))
-         (course-row (and slug (get-course-by-slug slug)))
-         (user (get-current-user)))
+(defun %render-public-course-response (course-row)
+  "Render the public course page for COURSE-ROW with access control.
+
+Returns a Clack response list. Returns 404 when COURSE-ROW is NIL or
+the viewer cannot view it."
+  (let ((user (get-current-user)))
     (cond
       ((null course-row)
        (html-response (recurya/web/ui/errors:not-found) :status 404))
@@ -1437,16 +1480,65 @@ preview their own draft. Anything else is 404."
            :user user
            :passed-by-notebook nil)))))))
 
+(defun public-course-handler (params)
+  "Handle GET /c/:slug - public single course page (legacy slug-only).
+
+Phase 7B retains this for backward compatibility while
+`public-course-by-handle-handler' serves the new /c/@:handle/:slug
+URLs. Phase 7C removes this slug-only path."
+  (let* ((slug (get-path-param params :slug))
+         (course-row (and slug (get-course-by-slug slug))))
+    (%render-public-course-response course-row)))
+
+(defun public-course-by-handle-handler (params)
+  "Handle GET /c/@:handle/:slug - public single course page resolved by
+author's HANDLE plus course SLUG.
+
+Because Ningle/myway URL-encodes literal `@' in named-parameter
+patterns, this handler is registered as a regex route in
+`setup-routes'. Captured groups are extracted from (:CAPTURES (...))."
+  (let* ((captures (get-path-param params :captures))
+         (handle (and captures (first captures)))
+         (slug (and captures (second captures)))
+         (course-row (find-course-by-handle-and-slug handle slug)))
+    (%render-public-course-response course-row)))
+
+(defun profile-handler (params)
+  "Handle GET /@:handle - user profile page listing the author's public
+notebooks and courses. 404 when the handle does not resolve to a user.
+
+Because Ningle/myway URL-encodes literal `@' in named-parameter
+patterns, this handler is registered as a regex route in
+`setup-routes'. The captured handle is the only group."
+  (let* ((captures (get-path-param params :captures))
+         (handle (and captures (first captures)))
+         (user-row (and handle (get-user-by-handle handle))))
+    (cond
+      ((null user-row)
+       (html-response (recurya/web/ui/errors:not-found) :status 404))
+      (t
+       (html-response
+        (render-profile-page
+         :handle handle
+         :display-name (recurya/models/users:users-display-name user-row)
+         :notebooks (list-public-notebooks-of user-row)
+         :courses (list-public-courses-of user-row)))))))
+
 (defun course-public-plist (c)
-  "Convert a course DAO to a plist for the public listing UI."
+  "Convert a course DAO to a plist for the public listing UI.
+Includes :author-handle so cards can link to /c/@<handle>/<slug> and
+the @handle attribution badge."
   (let* ((author (course-author c))
          (author-name
-          (when author (recurya/models/users:users-display-name author))))
+          (when author (recurya/models/users:users-display-name author)))
+         (author-handle
+          (when author (recurya/models/users:users-handle author))))
     (list :slug (course-slug c)
           :title (course-title c)
           :summary (course-summary c)
           :published-at (course-published-at c)
           :author-name (or author-name "Anonymous")
+          :author-handle author-handle
           :notebook-count (count-course-notebooks (course-id c)))))
 
 (defun courses-public-handler (params)
@@ -1484,13 +1576,16 @@ do not poison the response."
               (mark-cell-passed uid nb-uuid cell-id-str))))
       (error (e) (log:warn "Failed to persist notebook cell run: ~A" e)))))
 
-(defun public-notebook-cell-run-handler (params)
-  "Handle POST /n/:slug/cells/:index/run - HTMX fragment for cell execution.
-Anonymous users may run cells but their progress is not persisted.
-Drafts are visible (and runnable) only to the owner."
-  (let* ((slug (get-path-param params :slug))
-         (nb-row (and slug (get-notebook-by-slug slug)))
-         (user (get-current-user))
+(defun %run-public-cell (nb-row params)
+  "Execute a cell on NB-ROW and render the HTMX result fragment.
+
+Encapsulates the access check, index parsing, codes[] collection, and
+optional persistence shared by the slug-only and handle-aware
+cell-run handlers.
+
+Returns a Clack response list. Returns 404 when NB-ROW is NIL or the
+viewer cannot view it; 400 on bad index/cell-kind."
+  (let* ((user (get-current-user))
          (uid (and user (getf user :id))))
     (cond
       ((null nb-row) (html-response "Notebook not found" :status 404))
@@ -1521,6 +1616,39 @@ Drafts are visible (and runnable) only to the owner."
               (%maybe-persist-notebook-cell-run
                uid nb-uuid (nth index cells) result (nth index codes-list))
               (html-response body)))))))))
+
+(defun public-notebook-cell-run-handler (params)
+  "Handle POST /n/:slug/cells/:index/run - HTMX fragment for cell execution.
+Anonymous users may run cells but their progress is not persisted.
+Drafts are visible (and runnable) only to the owner.
+
+Phase 7B retains this for backward compatibility while
+`public-notebook-cell-run-by-handle-handler' serves the new
+/@:handle/:slug/cells/:i/run URLs. Phase 7C removes this path."
+  (let* ((slug (get-path-param params :slug))
+         (nb-row (and slug (get-notebook-by-slug slug))))
+    (%run-public-cell nb-row params)))
+
+(defun public-notebook-cell-run-by-handle-handler (params)
+  "Handle POST /@:handle/:slug/cells/:index/run - HTMX fragment for
+notebook cell execution resolved by the author's HANDLE plus the
+notebook SLUG.
+
+Because Ningle/myway URL-encodes literal `@' in named-parameter
+patterns, this handler is registered as a regex route in
+`setup-routes'. The (:CAPTURES (...)) alist entry holds the
+HANDLE, SLUG, and INDEX in order. The handler synthesizes the
+:slug and :index keys onto a copy of PARAMS so that the shared
+`%run-public-cell' helper can read them via `get-path-param'."
+  (let* ((captures (get-path-param params :captures))
+         (handle (and captures (first captures)))
+         (slug (and captures (second captures)))
+         (index-str (and captures (third captures)))
+         (nb-row (find-notebook-by-handle-and-slug handle slug))
+         (params* (append (list (cons :slug slug)
+                                (cons :index index-str))
+                          params)))
+    (%run-public-cell nb-row params*)))
 
 (defun htmx-request-p ()
   "Return T if the current request was made by HTMX (HX-Request header present).
@@ -1801,7 +1929,14 @@ without restarting the server."
 (defun setup-routes (app)
   "Set up all routes on the Ningle application.
 Uses dynamic dispatch to allow function redefinitions via SLIME to take effect
-without restarting the server."
+without restarting the server.
+
+Note on `@'-prefixed routes:
+Ningle/myway URL-encodes literal `@' in named-parameter patterns
+(e.g. `/@:handle' compiles to a regex expecting `%40' instead of `@'),
+so the @-handle routes are registered as regex routes (`:regexp t').
+The captured groups arrive in the handler's PARAMS alist under
+`:captures' as a list of strings, in pattern order."
   (setf (ningle/app:route app "/") (make-dynamic-handler 'root-handler))
   (setf (ningle/app:route app "/login")
           (make-dynamic-handler 'login-page-handler))
@@ -1861,12 +1996,27 @@ without restarting the server."
           (make-dynamic-handler 'course-notebook-remove-handler))
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
+  ;; Legacy slug-only public routes - retained through Phase 7B for
+  ;; backward compatibility; Phase 7C removes them.
   (setf (ningle/app:route app "/n/:slug")
           (make-dynamic-handler 'public-notebook-handler))
   (setf (ningle/app:route app "/n/:slug/cells/:index/run" :method :post)
           (make-dynamic-handler 'public-notebook-cell-run-handler))
   (setf (ningle/app:route app "/c/:slug")
           (make-dynamic-handler 'public-course-handler))
+  ;; New @handle public routes (regex-registered; see docstring).
+  (setf (ningle/app:route app "^/@([\\w-]+)/?$"
+                          :method :get :regexp t)
+          (make-dynamic-handler 'profile-handler))
+  (setf (ningle/app:route app "^/@([\\w-]+)/([\\w-]+)/?$"
+                          :method :get :regexp t)
+          (make-dynamic-handler 'public-notebook-by-handle-handler))
+  (setf (ningle/app:route app "^/@([\\w-]+)/([\\w-]+)/cells/(\\d+)/run$"
+                          :method :post :regexp t)
+          (make-dynamic-handler 'public-notebook-cell-run-by-handle-handler))
+  (setf (ningle/app:route app "^/c/@([\\w-]+)/([\\w-]+)/?$"
+                          :method :get :regexp t)
+          (make-dynamic-handler 'public-course-by-handle-handler))
   (setf (ningle/app:route app "/courses")
           (make-dynamic-handler 'courses-public-handler))
   (setf (ningle/app:route app "/onboarding/handle")

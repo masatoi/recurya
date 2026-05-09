@@ -18,10 +18,13 @@
                 #:notebook-delete-handler
                 #:notebooks-public-handler
                 #:public-notebook-handler
-                #:public-notebook-cell-run-handler)
+                #:public-notebook-by-handle-handler
+                #:public-notebook-cell-run-handler
+                #:public-notebook-cell-run-by-handle-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
+                #:users-handle
                 #:users-display-name)
   (:import-from #:recurya/db/notebooks
                 #:create-notebook!
@@ -766,7 +769,8 @@ hi"
 (deftest public-list-shows-published-only
   (with-test-db
     (let* ((alice (mk-user))
-           (alice-dao (get-user-by-id (getf alice :id))))
+           (alice-dao (get-user-by-id (getf alice :id)))
+           (handle (users-handle alice-dao)))
       (create-notebook!
        :title "Pub" :slug "pub" :body-md "===prose===
 hi"
@@ -782,7 +786,7 @@ sh"
           (ok (= 200 (response-status res)))
           (ok (search "Pub" body))
           (ng (search "Drafty" body))
-          (ok (search "/n/pub" body)))))))
+          (ok (search (format nil "/@~A/pub" handle) body)))))))
 
 (deftest public-list-shows-only-public
   (with-test-db
@@ -918,10 +922,11 @@ hi
           (ok (= 404 (response-status res))))))))
 
 (deftest public-page-renders-code-cell-with-correct-run-url
-  (testing "code cells use /n/<slug>/cells/<i>/run, not the SICP route"
+  (testing "code cells use /@<handle>/<slug>/cells/<i>/run (Phase 7B)"
     (with-test-db
       (let* ((owner (mk-user))
              (dao (get-user-by-id (getf owner :id)))
+             (handle (recurya/db/users:users-handle dao))
              (body "===prose===
 hi
 
@@ -938,7 +943,9 @@ hi
                  (html (first (response-body res))))
             (ok (= 200 (response-status res)))
             (ok (search "data-cell-id=" html))
-            (ok (search "hx-post=\"/n/with-code/cells/1/run\"" html))
+            (ok (search (format nil "hx-post=\"/@~A/with-code/cells/1/run\""
+                                handle)
+                        html))
             (ng (search "/wardlisp/learn/" html))))))))
 
 (deftest public-page-renders-prose-markdown-not-literal
@@ -1239,3 +1246,89 @@ hi"
             (ng (search "?course=no-such-course" body)
                 "no prev/next URLs referencing the unknown course")
             (ok (search "Standalone" body))))))))
+
+(deftest by-handle-different-authors-same-slug-isolated
+  (testing "GET /@:handle/:slug returns each author's notebook when both
+authors use the same slug"
+    (with-test-db
+      (let* ((alice-dao (create-test-user :email-prefix "alice"
+                                          :handle "alice-7b"))
+             (bob-dao (create-test-user :email-prefix "bob"
+                                        :handle "bob-7b")))
+        (create-notebook! :title "Alice intro" :slug "intro"
+                          :body-md "===prose===
+alice"
+                          :cells nil :author alice-dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (create-notebook! :title "Bob intro" :slug "intro"
+                          :body-md "===prose===
+bob"
+                          :cells nil :author bob-dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let* ((res-alice
+                  (public-notebook-by-handle-handler
+                   '((:captures . ("alice-7b" "intro")))))
+                 (res-bob
+                  (public-notebook-by-handle-handler
+                   '((:captures . ("bob-7b" "intro"))))))
+            (ok (= 200 (response-status res-alice)))
+            (ok (= 200 (response-status res-bob)))
+            (ok (search "Alice intro" (first (response-body res-alice))))
+            (ng (search "Bob intro" (first (response-body res-alice))))
+            (ok (search "Bob intro" (first (response-body res-bob))))
+            (ng (search "Alice intro" (first (response-body res-bob))))))))))
+
+(deftest by-handle-404-unknown-handle
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (public-notebook-by-handle-handler
+                  '((:captures . ("ghost-7b" "intro"))))))
+        (ok (= 404 (response-status res)))))))
+
+(deftest by-handle-404-draft-anonymous
+  (with-test-db
+    (let ((dao (create-test-user :email-prefix "draftee"
+                                 :handle "draftee-7b")))
+      (create-notebook! :title "Hidden" :slug "hidden"
+                        :body-md "===prose===
+shh"
+                        :cells nil :author dao
+                        :status "draft")
+      (with-mock-session (make-session)
+        (let ((res (public-notebook-by-handle-handler
+                    '((:captures . ("draftee-7b" "hidden"))))))
+          (ok (= 404 (response-status res))))))))
+
+(deftest by-handle-cell-run-200-eval
+  (testing "POST /@:handle/:slug/cells/:i/run executes a cell"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "runner"
+                                    :handle "runner-7b"))
+             (body "===prose===
+hi
+
+===eval===
+(+ 1 2)")
+             (cells (mapcar #'recurya/web/routes::cell->jsonb-form
+                            (recurya/game/notebook-parser:parse-notebook-body
+                             body))))
+        (create-notebook! :title "Run" :slug "run-nb" :body-md body
+                          :cells cells :author dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((res (public-notebook-cell-run-by-handle-handler
+                      `((:captures . ("runner-7b" "run-nb" "1"))
+                        ("codes[]" . "")
+                        ("codes[]" . "(+ 1 2)")))))
+            (ok (= 200 (response-status res)))))))))
+
+(deftest by-handle-cell-run-404-unknown-handle
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (public-notebook-cell-run-by-handle-handler
+                  '((:captures . ("ghost-7b" "x" "0"))))))
+        (ok (= 404 (response-status res)))))))

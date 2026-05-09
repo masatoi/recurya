@@ -21,6 +21,7 @@
                 #:course-notebook-move-down-handler
                 #:course-notebook-remove-handler
                 #:public-course-handler
+                #:public-course-by-handle-handler
                 #:courses-public-handler)
   (:import-from #:recurya/db/notebooks
                 #:create-notebook!
@@ -35,6 +36,7 @@
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
+                #:users-handle
                 #:users-display-name)
   (:import-from #:recurya/db/courses
                 #:create-course!
@@ -1047,20 +1049,22 @@ where the lists are aligned with the attached positions."
         (ok (search "Courses" (first (response-body res))))))))
 
 (deftest courses-public-handler-includes-slug-link
-  (with-test-db
-    (let* ((author (mk-user))
-           (dao (get-user-by-id (getf author :id)))
-           (course (create-course! :title "Slug Linked"
-                                   :status "published"
-                                   :visibility "public"
-                                   :published-at (local-time:now)
-                                   :author dao))
-           (slug (course-slug course)))
-      (with-mock-session (make-session)
-        (let* ((res (courses-public-handler nil))
-               (body (first (response-body res))))
-          (ok (= 200 (response-status res)))
-          (ok (search (format nil "/c/~A" slug) body)))))))
+  (testing "course card links use /c/@<handle>/<slug> when handle is set"
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (handle (users-handle dao))
+             (course (create-course! :title "Slug Linked"
+                                     :status "published"
+                                     :visibility "public"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (slug (course-slug course)))
+        (with-mock-session (make-session)
+          (let* ((res (courses-public-handler nil))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search (format nil "/c/@~A/~A" handle slug) body))))))))
 
 (deftest courses-public-handler-empty-state
   (with-test-db
@@ -1069,3 +1073,49 @@ where the lists are aligned with the attached positions."
              (body (first (response-body res))))
         (ok (= 200 (response-status res)))
         (ok (search "No courses yet" body))))))
+
+(deftest course-by-handle-different-authors-same-slug-isolated
+  (testing "GET /c/@:handle/:slug isolates courses by author"
+    (with-test-db
+      (let* ((alice-dao (create-test-user :email-prefix "alice"
+                                          :handle "alice-c7b"))
+             (bob-dao (create-test-user :email-prefix "bob"
+                                        :handle "bob-c7b")))
+        (create-course! :title "Alice course" :slug "intro"
+                        :status "published" :visibility "public"
+                        :published-at (local-time:now) :author alice-dao)
+        (create-course! :title "Bob course" :slug "intro"
+                        :status "published" :visibility "public"
+                        :published-at (local-time:now) :author bob-dao)
+        (with-mock-session (make-session)
+          (let* ((res-alice
+                  (public-course-by-handle-handler
+                   '((:captures . ("alice-c7b" "intro")))))
+                 (res-bob
+                  (public-course-by-handle-handler
+                   '((:captures . ("bob-c7b" "intro"))))))
+            (ok (= 200 (response-status res-alice)))
+            (ok (= 200 (response-status res-bob)))
+            (ok (search "Alice course" (first (response-body res-alice))))
+            (ng (search "Bob course" (first (response-body res-alice))))
+            (ok (search "Bob course" (first (response-body res-bob))))
+            (ng (search "Alice course" (first (response-body res-bob))))))))))
+
+(deftest course-by-handle-404-unknown-handle
+  (with-test-db
+    (with-mock-session (make-session)
+      (let ((res (public-course-by-handle-handler
+                  '((:captures . ("ghost-c7b" "intro"))))))
+        (ok (= 404 (response-status res)))))))
+
+(deftest course-by-handle-draft-private-404
+  (testing "draft+private course is not visible to others via @handle"
+    (with-test-db
+      (let ((dao (create-test-user :email-prefix "draft-c"
+                                   :handle "draftc-c7b")))
+        (create-course! :title "Draft" :slug "draft-only"
+                        :status "draft" :author dao)
+        (with-mock-session (make-session)
+          (let ((res (public-course-by-handle-handler
+                      '((:captures . ("draftc-c7b" "draft-only"))))))
+            (ok (= 404 (response-status res)))))))))

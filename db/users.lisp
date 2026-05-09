@@ -12,11 +12,8 @@
                 #:insert-dao
                 #:save-dao
                 #:delete-dao)
-  (:import-from #:sxql
-                #:order-by)
-  (:import-from #:recurya/db/core
-                #:generate-uuid)
-  ;; Import users class and accessors from models
+  (:import-from #:sxql #:order-by)
+  (:import-from #:recurya/db/core #:generate-uuid)
   (:import-from #:recurya/models/users
                 #:users
                 #:users-id
@@ -32,33 +29,30 @@
                 #:users-provider-uid
                 #:users-created-at
                 #:users-updated-at)
-  (:export
-   ;; Re-export the Mito class and accessors
-   #:users
-   #:users-id
-   #:users-email
-   #:users-password-hash
-   #:users-password-salt
-   #:users-display-name
-   #:users-handle
-   #:users-role
-   #:users-language
-   #:users-timezone
-   #:users-provider
-   #:users-provider-uid
-   #:users-created-at
-   #:users-updated-at
-   ;; CRUD operations
-   #:create-user!
-   #:get-user-by-id
-   #:get-user-by-email
-   #:get-user-by-provider
-   #:find-or-create-oauth-user
-   #:update-user!
-   #:delete-user!
-   #:list-users
-   ;; Predicates
-   #:placeholder-handle-p))
+  (:export #:users
+           #:users-id
+           #:users-email
+           #:users-password-hash
+           #:users-password-salt
+           #:users-display-name
+           #:users-handle
+           #:users-role
+           #:users-language
+           #:users-timezone
+           #:users-provider
+           #:users-provider-uid
+           #:users-created-at
+           #:users-updated-at
+           #:create-user!
+           #:get-user-by-id
+           #:get-user-by-email
+           #:get-user-by-handle
+           #:get-user-by-provider
+           #:find-or-create-oauth-user
+           #:update-user!
+           #:delete-user!
+           #:list-users
+           #:placeholder-handle-p))
 
 (in-package #:recurya/db/users)
 
@@ -145,6 +139,17 @@ Returns:
 
 Note: Email lookup is case-sensitive."
   (find-dao 'users :email email))
+
+(defun get-user-by-handle (handle)
+  "Fetch a user by their URL handle.
+
+Arguments:
+  HANDLE - The unique handle string.
+
+Returns:
+  USERS DAO if found, NIL otherwise."
+  (when (and handle (stringp handle) (plusp (length handle)))
+    (find-dao 'users :handle handle)))
 
 (defun get-user-by-provider (provider provider-uid)
   "Fetch a user by their OAuth (provider, provider-uid) pair.

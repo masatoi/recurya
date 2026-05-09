@@ -22,6 +22,7 @@
     :recurya/tests/web/routes
     :recurya/tests/web/notebook-routes
     :recurya/tests/web/course-routes
+    :recurya/tests/web/profile
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
     ;; WardLisp integration tests

@@ -11,6 +11,10 @@
   (:import-from #:sxql #:where #:order-by #:limit)
   (:import-from #:recurya/db/core #:generate-uuid #:ensure-uuid)
   (:import-from #:recurya/utils/common #:slugify)
+  (:import-from #:recurya/models/users
+                #:users
+                #:users-id
+                #:users-handle)
   (:import-from #:recurya/models/course
                 #:course
                 #:course-id
@@ -39,6 +43,8 @@
            #:create-course!
            #:get-course-by-id
            #:get-course-by-slug
+           #:find-course-by-handle-and-slug
+           #:list-public-courses-of
            #:update-course!
            #:delete-course!
            #:list-courses
@@ -88,6 +94,20 @@ Returns:
 Returns:
   COURSE instance if found, NIL otherwise."
   (find-dao 'course :slug slug))
+
+(defun find-course-by-handle-and-slug (handle slug)
+  "Find a course by its author's HANDLE and the course SLUG.
+
+Arguments:
+  HANDLE - The author's URL handle (string).
+  SLUG   - The course slug (string).
+
+Returns:
+  COURSE instance if both author and course exist, NIL otherwise."
+  (when (and handle slug)
+    (let ((author (find-dao 'users :handle handle)))
+      (when author
+        (find-dao 'course :author author :slug slug)))))
 
 (defun update-course! (course-id &key title slug summary status visibility
                                       published-at)
@@ -192,3 +212,18 @@ Returns:
         (if result
             (getf (first result) :count)
             0)))))
+
+(defun list-public-courses-of (user)
+  "List published+public courses authored by USER, newest first.
+
+Arguments:
+  USER - A USERS DAO instance.
+
+Returns:
+  List of COURSE instances."
+  (when user
+    (select-dao 'course
+      (where (:and (:= :author_id (users-id user))
+                   (:= :status "published")
+                   (:= :visibility "public")))
+      (order-by (:desc :created-at)))))

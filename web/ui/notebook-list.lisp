@@ -50,7 +50,10 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 (defun render (&key notebooks pagination)
   "Render the public notebook listing page (published only).
 NOTEBOOKS is a list of plists with :slug :title :summary
-:published-at :author-name."
+:published-at :author-name :author-handle.
+
+Each card links to /@<handle>/<slug> when :author-handle is present;
+falls back to the legacy /n/<slug> URL for orphaned/anonymous data."
   (with-html-string
     (:doctype)
     (:html
@@ -66,21 +69,30 @@ NOTEBOOKS is a list of plists with :slug :title :summary
        (if notebooks
            (progn
              (dolist (nb notebooks)
-               (let ((slug (getf nb :slug))
-                     (title (getf nb :title))
-                     (summary (getf nb :summary))
-                     (published-at (getf nb :published-at))
-                     (author-name (getf nb :author-name)))
+               (let* ((slug (getf nb :slug))
+                      (title (getf nb :title))
+                      (summary (getf nb :summary))
+                      (published-at (getf nb :published-at))
+                      (author-name (getf nb :author-name))
+                      (author-handle (getf nb :author-handle))
+                      (detail-url (if author-handle
+                                      (format nil "/@~A/~A" author-handle slug)
+                                      (format nil "/n/~A" slug))))
                  (:div :class "nb-card"
                        (:h2 :class "nb-card__title"
-                            (:a :href (format nil "/n/~A" slug) title))
+                            (:a :href detail-url title))
                        (:div :class "nb-card__meta"
+                             (when author-handle
+                               (:a :href (format nil "/@~A" author-handle)
+                                   :class "nb-card__handle"
+                                   (format nil "@~A" author-handle))
+                               (:span " · "))
                              (format nil "~@[~A~]~@[ · ~A~]" author-name
                                      (format-timestamp published-at)))
                        (when (and summary (string/= summary ""))
                          (:p :class "nb-card__summary" summary))
                        (:a :class "nb-card__open"
-                           :href (format nil "/n/~A" slug)
+                           :href detail-url
                            "Open →"))))
              (when pagination
                (let ((current-page (getf pagination :current-page))

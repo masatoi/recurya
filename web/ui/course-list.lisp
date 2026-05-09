@@ -50,7 +50,10 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 (defun render (&key courses pagination)
   "Render the public course listing page (published only).
 COURSES is a list of plists with :slug :title :summary :author-name
-:notebook-count :published-at."
+:author-handle :notebook-count :published-at.
+
+Each card links to /c/@<handle>/<slug> when :author-handle is present;
+falls back to the legacy /c/<slug> URL for orphaned/anonymous data."
   (with-html-string
     (:doctype)
     (:html
@@ -66,16 +69,26 @@ COURSES is a list of plists with :slug :title :summary :author-name
        (if courses
            (progn
              (dolist (c courses)
-               (let ((slug (getf c :slug))
-                     (title (getf c :title))
-                     (summary (getf c :summary))
-                     (published-at (getf c :published-at))
-                     (author-name (getf c :author-name))
-                     (notebook-count (getf c :notebook-count)))
+               (let* ((slug (getf c :slug))
+                      (title (getf c :title))
+                      (summary (getf c :summary))
+                      (published-at (getf c :published-at))
+                      (author-name (getf c :author-name))
+                      (author-handle (getf c :author-handle))
+                      (notebook-count (getf c :notebook-count))
+                      (detail-url (if author-handle
+                                      (format nil "/c/@~A/~A"
+                                              author-handle slug)
+                                      (format nil "/c/~A" slug))))
                  (:div :class "c-card"
                        (:h2 :class "c-card__title"
-                            (:a :href (format nil "/c/~A" slug) title))
+                            (:a :href detail-url title))
                        (:div :class "c-card__meta"
+                             (when author-handle
+                               (:a :href (format nil "/@~A" author-handle)
+                                   :class "c-card__handle"
+                                   (format nil "@~A" author-handle))
+                               (:span " · "))
                              (format nil
                                      "~@[~A~]~@[ · ~A notebook~:P~]~@[ · ~A~]"
                                      author-name
@@ -84,7 +97,7 @@ COURSES is a list of plists with :slug :title :summary :author-name
                        (when (and summary (string/= summary ""))
                          (:p :class "c-card__summary" summary))
                        (:a :class "c-card__open"
-                           :href (format nil "/c/~A" slug)
+                           :href detail-url
                            "Open →"))))
              (when pagination
                (let ((current-page (getf pagination :current-page))

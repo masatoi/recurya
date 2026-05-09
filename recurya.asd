@@ -86,6 +86,7 @@
                "recurya/web/ui/notebook-list"
                "recurya/web/ui/course"
                "recurya/web/ui/course-list"
+               "recurya/web/ui/profile"
                "recurya/web/routes"
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
@@ -127,6 +128,7 @@
                "recurya/tests/web/routes"
                "recurya/tests/web/notebook-routes"
                "recurya/tests/web/course-routes"
+               "recurya/tests/web/profile"
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
                ;; Game tests

@@ -12,6 +12,10 @@
   (:import-from #:recurya/db/core #:generate-uuid #:ensure-uuid)
   (:import-from #:recurya/utils/common #:slugify)
   (:import-from #:recurya/db/jsonb #:lisp->jsonb #:jsonb->lisp)
+  (:import-from #:recurya/models/users
+                #:users
+                #:users-id
+                #:users-handle)
   (:import-from #:recurya/models/notebook
                 #:notebook
                 #:notebook-id
@@ -44,6 +48,8 @@
            #:create-notebook!
            #:get-notebook-by-id
            #:get-notebook-by-slug
+           #:find-notebook-by-handle-and-slug
+           #:list-public-notebooks-of
            #:update-notebook!
            #:delete-notebook!
            #:list-notebooks
@@ -103,6 +109,20 @@ Returns:
 Returns:
   NOTEBOOK instance if found, NIL otherwise."
   (find-dao 'notebook :slug slug))
+
+(defun find-notebook-by-handle-and-slug (handle slug)
+  "Find a notebook by its author's HANDLE and the notebook SLUG.
+
+Arguments:
+  HANDLE - The author's URL handle (string).
+  SLUG   - The notebook slug (string).
+
+Returns:
+  NOTEBOOK instance if both author and notebook exist, NIL otherwise."
+  (when (and handle slug)
+    (let ((author (find-dao 'users :handle handle)))
+      (when author
+        (find-dao 'notebook :author author :slug slug)))))
 
 (defun update-notebook! (notebook-id &key title slug summary body-md cells
                                           status visibility published-at)
@@ -214,6 +234,21 @@ Returns:
         (if result
             (getf (first result) :count)
             0)))))
+
+(defun list-public-notebooks-of (user)
+  "List published+public notebooks authored by USER, newest first.
+
+Arguments:
+  USER - A USERS DAO instance.
+
+Returns:
+  List of NOTEBOOK instances."
+  (when user
+    (select-dao 'notebook
+      (where (:and (:= :author_id (users-id user))
+                   (:= :status "published")
+                   (:= :visibility "public")))
+      (order-by (:desc :created-at)))))
 
 (defun notebook-cells-parsed (nb)
   "Return the cells JSONB column of NB parsed back to Lisp data.
