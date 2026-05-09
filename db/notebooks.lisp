@@ -207,7 +207,7 @@ Returns:
                  (format nil " WHERE ~{~A~^ AND ~}" (nreverse conditions))
                  ""))
            (sql
-             (concatenate 'string "SELECT COUNT(*) as count FROM user_notebook"
+             (concatenate 'string "SELECT COUNT(*) as count FROM notebook"
                           where-clause))
            (binds (nreverse binds)))
       (let ((result (mito.db:retrieve-by-sql sql :binds binds)))

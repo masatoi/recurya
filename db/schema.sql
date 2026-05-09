@@ -37,6 +37,7 @@ CREATE INDEX "key_learn_progress_user_id_notebook_id" ON "learn_progress" ("user
 CREATE TABLE "users" (
     "id" UUID NOT NULL PRIMARY KEY,
     "email" VARCHAR(255) NOT NULL,
+    "handle" VARCHAR(64) NOT NULL,
     "password_hash" VARCHAR(255),
     "password_salt" VARCHAR(255),
     "display_name" VARCHAR(255) NOT NULL,
@@ -49,6 +50,7 @@ CREATE TABLE "users" (
     "updated_at" TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX "unique_users_email" ON "users" ("email");
+CREATE UNIQUE INDEX "unique_users_handle" ON "users" ("handle");
 
 CREATE TABLE "course" (
     "id" UUID NOT NULL PRIMARY KEY,
@@ -62,11 +64,12 @@ CREATE TABLE "course" (
     "created_at" TIMESTAMPTZ,
     "updated_at" TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX "unique_course_slug" ON "course" ("slug");
+CREATE UNIQUE INDEX "unique_course_author_id_slug" ON "course" ("author_id", "slug");
 CREATE INDEX "key_course_status_created_at" ON "course" ("status", "created_at");
 CREATE INDEX "key_course_author_id_created_at" ON "course" ("author_id", "created_at");
+CREATE INDEX "key_course_visibility_status" ON "course" ("visibility", "status");
 
-CREATE TABLE "user_notebook" (
+CREATE TABLE "notebook" (
     "id" UUID NOT NULL PRIMARY KEY,
     "slug" VARCHAR(255) NOT NULL,
     "title" VARCHAR(255) NOT NULL,
@@ -80,9 +83,10 @@ CREATE TABLE "user_notebook" (
     "created_at" TIMESTAMPTZ,
     "updated_at" TIMESTAMPTZ
 );
-CREATE UNIQUE INDEX "unique_user_notebook_slug" ON "user_notebook" ("slug");
-CREATE INDEX "key_user_notebook_status_created_at" ON "user_notebook" ("status", "created_at");
-CREATE INDEX "key_user_notebook_author_id_created_at" ON "user_notebook" ("author_id", "created_at");
+CREATE UNIQUE INDEX "unique_notebook_author_id_slug" ON "notebook" ("author_id", "slug");
+CREATE INDEX "key_notebook_status_created_at" ON "notebook" ("status", "created_at");
+CREATE INDEX "key_notebook_author_id_created_at" ON "notebook" ("author_id", "created_at");
+CREATE INDEX "key_notebook_visibility_status" ON "notebook" ("visibility", "status");
 
 CREATE TABLE "course_notebook" (
     "id" BIGSERIAL NOT NULL PRIMARY KEY,
@@ -94,21 +98,6 @@ CREATE TABLE "course_notebook" (
 );
 CREATE UNIQUE INDEX "unique_course_notebook_course_id_notebook_id" ON "course_notebook" ("course_id", "notebook_id");
 CREATE INDEX "key_course_notebook_course_id_position" ON "course_notebook" ("course_id", "position");
-
-CREATE TABLE "post" (
-    "id" UUID NOT NULL PRIMARY KEY,
-    "title" VARCHAR(255) NOT NULL,
-    "slug" VARCHAR(255) NOT NULL,
-    "body" TEXT NOT NULL,
-    "excerpt" VARCHAR(500),
-    "status" VARCHAR(32) NOT NULL,
-    "published_at" TIMESTAMPTZ,
-    "author_id" UUID,
-    "created_at" TIMESTAMPTZ,
-    "updated_at" TIMESTAMPTZ
-);
-CREATE UNIQUE INDEX "unique_post_slug" ON "post" ("slug");
-CREATE INDEX "key_post_status_created_at" ON "post" ("status", "created_at");
 
 CREATE TABLE IF NOT EXISTS "schema_migrations" (
     "version" BIGINT PRIMARY KEY,

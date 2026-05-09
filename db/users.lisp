@@ -64,6 +64,19 @@
 ;;; CRUD Operations using Mito DAO
 ;;; ============================================================
 
+(defun %generate-placeholder-handle ()
+  "Generate a placeholder handle for new OAuth users.
+
+The Phase 6 onboarding flow detects the 'u-' prefix and routes the
+user to /onboarding/handle to pick a real handle. The 8-character
+suffix is the prefix of a fresh UUID v4 in lowercase hex, so it is
+URL-safe and unlikely to collide.
+
+Returns:
+  A string of the form 'u-XXXXXXXX' where X is a lowercase hex digit."
+  (let ((uuid (generate-uuid)))
+    (format nil "u-~A" (subseq uuid 0 8))))
+
 (defun create-user! (&key email password-hash password-salt display-name handle (role "user"))
   "Create a new user and return the created user instance.
 
@@ -150,6 +163,7 @@ Returns the USER instance."
            (insert-dao (make-instance 'users
                                       :id (generate-uuid)
                                       :email (or email "")
+                                      :handle (%generate-placeholder-handle)
                                       :display-name (or display-name email "User")
                                       :role role
                                       :provider provider

@@ -37,7 +37,7 @@
   (:keys (status :created_at)
          (author_id :created_at)
          (visibility :status))
-  (:documentation "A learning course bundling user_notebook items in order."))
+  (:documentation "A learning course bundling notebook items in order."))
 
 (defun course-id (c) (%course-id c))
 
