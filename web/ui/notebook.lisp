@@ -23,6 +23,7 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
+  (:import-from #:recurya/web/ui/layout #:header #:header-styles)
   (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
   (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
   (:export #:render #:render-cell-result))
@@ -281,6 +282,7 @@ notebooks within the same course."
         (:meta :name "viewport"
                :content "width=device-width, initial-scale=1")
         (:title (notebook-title notebook))
+        (:style (:raw (header-styles)))
         (:style (:raw *styles*))
         (:script :src "https://unpkg.com/htmx.org@2.0.4"
                  :integrity
@@ -289,7 +291,7 @@ notebooks within the same course."
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
-              (:raw (or (csrf-form-block) ""))
+              (:raw (header user))
               (:div :class "layout"
                     (cond
                       ((null sidebar-notebooks) nil)
@@ -299,23 +301,6 @@ notebooks within the same course."
                                               sidebar-notebooks
                                               (notebook-url-id notebook))))
                     (:main
-                     (cond
-                       (*user*
-                        (:div :class "user-banner" "ログイン中: "
-                              (:strong (or (getf *user* :name) "User")) " · "
-                              (:form :method "post" :action "/logout"
-                                     :style "display:inline;"
-                                     (:raw (or (csrf-input) ""))
-                                     (:button :type "submit"
-                                              :class "user-banner__logout"
-                                              :style
-                                              "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
-                                              "ログアウト"))))
-                       (t
-                        (:div :class "user-banner anon"
-                              "進捗を端末を超えて保存するには "
-                              (:a :href "/login" "ログイン")
-                              " してください。")))
                      (cond
                        (breadcrumb
                         (:div :class "breadcrumb"
