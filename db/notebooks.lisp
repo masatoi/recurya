@@ -1,6 +1,6 @@
-;;;; db/user-notebooks.lisp --- CRUD operations for user-authored notebooks.
+;;;; db/notebooks.lisp --- CRUD operations for user-authored notebooks.
 
-(defpackage #:recurya/db/user-notebooks
+(defpackage #:recurya/db/notebooks
   (:use #:cl)
   (:import-from #:mito
                 #:find-dao
@@ -12,49 +12,49 @@
   (:import-from #:recurya/db/core #:generate-uuid #:ensure-uuid)
   (:import-from #:recurya/utils/common #:slugify)
   (:import-from #:recurya/db/jsonb #:lisp->jsonb #:jsonb->lisp)
-  (:import-from #:recurya/models/user-notebook
-                #:user-notebook
-                #:user-notebook-id
-                #:user-notebook-slug
-                #:user-notebook-title
-                #:user-notebook-summary
-                #:user-notebook-body-md
-                #:user-notebook-cells
-                #:user-notebook-status
-                #:user-notebook-visibility
-                #:user-notebook-published-at
-                #:user-notebook-author
-                #:user-notebook-author-id
-                #:user-notebook-created-at
-                #:user-notebook-updated-at)
-  (:export #:user-notebook
-           #:user-notebook-id
-           #:user-notebook-slug
-           #:user-notebook-title
-           #:user-notebook-summary
-           #:user-notebook-body-md
-           #:user-notebook-cells
-           #:user-notebook-status
-           #:user-notebook-visibility
-           #:user-notebook-published-at
-           #:user-notebook-author
-           #:user-notebook-author-id
-           #:user-notebook-created-at
-           #:user-notebook-updated-at
-           #:create-user-notebook!
-           #:get-user-notebook-by-id
-           #:get-user-notebook-by-slug
-           #:update-user-notebook!
-           #:delete-user-notebook!
-           #:list-user-notebooks
-           #:count-user-notebooks
-           #:user-notebook-cells-parsed))
+  (:import-from #:recurya/models/notebook
+                #:notebook
+                #:notebook-id
+                #:notebook-slug
+                #:notebook-title
+                #:notebook-summary
+                #:notebook-body-md
+                #:notebook-cells
+                #:notebook-status
+                #:notebook-visibility
+                #:notebook-published-at
+                #:notebook-author
+                #:notebook-author-id
+                #:notebook-created-at
+                #:notebook-updated-at)
+  (:export #:notebook
+           #:notebook-id
+           #:notebook-slug
+           #:notebook-title
+           #:notebook-summary
+           #:notebook-body-md
+           #:notebook-cells
+           #:notebook-status
+           #:notebook-visibility
+           #:notebook-published-at
+           #:notebook-author
+           #:notebook-author-id
+           #:notebook-created-at
+           #:notebook-updated-at
+           #:create-notebook!
+           #:get-notebook-by-id
+           #:get-notebook-by-slug
+           #:update-notebook!
+           #:delete-notebook!
+           #:list-notebooks
+           #:count-notebooks
+           #:notebook-cells-parsed))
 
-(in-package #:recurya/db/user-notebooks)
+(in-package #:recurya/db/notebooks)
 
-(defun create-user-notebook! (&key title body-md cells slug summary
-                                   (status "draft") visibility published-at
-                                   author notebook-id)
+(defun create-notebook! (&key title body-md cells slug summary
+                              (status "draft") visibility published-at
+                              author notebook-id)
   "Create a new user-authored notebook and return the created instance.
 
 Arguments:
@@ -70,7 +70,7 @@ Arguments:
   NOTEBOOK-ID   - Pre-generated UUID (optional)
 
 Returns:
-  The newly created USER-NOTEBOOK instance."
+  The newly created NOTEBOOK instance."
   (let ((id (or notebook-id (generate-uuid)))
         (slug (or slug (slugify title)))
         (cells-json
@@ -78,7 +78,7 @@ Returns:
              "[]"
              (lisp->jsonb cells))))
     (insert-dao
-     (make-instance 'user-notebook
+     (make-instance 'notebook
                     :id id
                     :slug slug
                     :title title
@@ -90,56 +90,56 @@ Returns:
                     :published-at published-at
                     :author author))))
 
-(defun get-user-notebook-by-id (id)
-  "Fetch a user-notebook by UUID.
+(defun get-notebook-by-id (id)
+  "Fetch a notebook by UUID.
 
 Returns:
-  USER-NOTEBOOK instance if found, NIL otherwise."
-  (find-dao 'user-notebook :id (ensure-uuid id)))
+  NOTEBOOK instance if found, NIL otherwise."
+  (find-dao 'notebook :id (ensure-uuid id)))
 
-(defun get-user-notebook-by-slug (slug)
-  "Fetch a user-notebook by slug.
+(defun get-notebook-by-slug (slug)
+  "Fetch a notebook by slug.
 
 Returns:
-  USER-NOTEBOOK instance if found, NIL otherwise."
-  (find-dao 'user-notebook :slug slug))
+  NOTEBOOK instance if found, NIL otherwise."
+  (find-dao 'notebook :slug slug))
 
-(defun update-user-notebook! (notebook-id &key title slug summary body-md cells
-                                               status visibility published-at)
-  "Update user-notebook attributes. Only provided fields are updated.
+(defun update-notebook! (notebook-id &key title slug summary body-md cells
+                                          status visibility published-at)
+  "Update notebook attributes. Only provided fields are updated.
 
 CELLS, when provided, is JSON-serialized via lisp->jsonb before write
 (an empty list serializes to \"[]\").
 
 Returns:
-  The updated USER-NOTEBOOK instance, or NIL if not found."
-  (let ((nb (find-dao 'user-notebook :id (ensure-uuid notebook-id))))
+  The updated NOTEBOOK instance, or NIL if not found."
+  (let ((nb (find-dao 'notebook :id (ensure-uuid notebook-id))))
     (when nb
-      (when title (setf (user-notebook-title nb) title))
-      (when slug (setf (user-notebook-slug nb) slug))
-      (when summary (setf (user-notebook-summary nb) summary))
-      (when body-md (setf (user-notebook-body-md nb) body-md))
+      (when title (setf (notebook-title nb) title))
+      (when slug (setf (notebook-slug nb) slug))
+      (when summary (setf (notebook-summary nb) summary))
+      (when body-md (setf (notebook-body-md nb) body-md))
       (when cells
-        (setf (user-notebook-cells nb)
+        (setf (notebook-cells nb)
               (if (null cells)
                   "[]"
                   (lisp->jsonb cells))))
-      (when status (setf (user-notebook-status nb) status))
-      (when visibility (setf (user-notebook-visibility nb) visibility))
-      (when published-at (setf (user-notebook-published-at nb) published-at))
+      (when status (setf (notebook-status nb) status))
+      (when visibility (setf (notebook-visibility nb) visibility))
+      (when published-at (setf (notebook-published-at nb) published-at))
       (save-dao nb))
     nb))
 
-(defun delete-user-notebook! (notebook-id)
-  "Delete a user-notebook by UUID.
+(defun delete-notebook! (notebook-id)
+  "Delete a notebook by UUID.
 
 Returns:
   T if deleted, NIL if not found."
-  (let ((nb (find-dao 'user-notebook :id (ensure-uuid notebook-id))))
+  (let ((nb (find-dao 'notebook :id (ensure-uuid notebook-id))))
     (when nb (delete-dao nb) t)))
 
-(defun list-user-notebooks (&key status author-id visibility (limit 50) offset)
-  "List user-notebooks, optionally filtered by status, author, and/or visibility, newest first.
+(defun list-notebooks (&key status author-id visibility (limit 50) offset)
+  "List notebooks, optionally filtered by status, author, and/or visibility, newest first.
 
 Arguments:
   STATUS     - Filter by status string (optional)
@@ -149,38 +149,38 @@ Arguments:
   OFFSET     - Number to skip (optional)
 
 Returns:
-  List of USER-NOTEBOOK instances."
+  List of NOTEBOOK instances."
   (let ((all
          (cond
            ((and status author-id visibility)
-            (select-dao 'user-notebook
+            (select-dao 'notebook
               (where (:and (:= :status status)
                            (:= :author_id author-id)
                            (:= :visibility visibility)))
               (order-by (:desc :created-at))))
            ((and status author-id)
-            (select-dao 'user-notebook
+            (select-dao 'notebook
               (where (:and (:= :status status) (:= :author_id author-id)))
               (order-by (:desc :created-at))))
            ((and status visibility)
-            (select-dao 'user-notebook
+            (select-dao 'notebook
               (where (:and (:= :status status) (:= :visibility visibility)))
               (order-by (:desc :created-at))))
            ((and author-id visibility)
-            (select-dao 'user-notebook
+            (select-dao 'notebook
               (where (:and (:= :author_id author-id)
                            (:= :visibility visibility)))
               (order-by (:desc :created-at))))
            (status
-            (select-dao 'user-notebook (where (:= :status status))
+            (select-dao 'notebook (where (:= :status status))
               (order-by (:desc :created-at))))
            (author-id
-            (select-dao 'user-notebook (where (:= :author_id author-id))
+            (select-dao 'notebook (where (:= :author_id author-id))
               (order-by (:desc :created-at))))
            (visibility
-            (select-dao 'user-notebook (where (:= :visibility visibility))
+            (select-dao 'notebook (where (:= :visibility visibility))
               (order-by (:desc :created-at))))
-           (t (select-dao 'user-notebook (order-by (:desc :created-at)))))))
+           (t (select-dao 'notebook (order-by (:desc :created-at)))))))
     (cond
       ((and offset limit)
        (subseq all (min offset (length all))
@@ -189,8 +189,8 @@ Returns:
       (offset (subseq all (min offset (length all))))
       (t all))))
 
-(defun count-user-notebooks (&key status author-id visibility)
-  "Count user-notebooks, optionally filtered by status, author, and/or visibility.
+(defun count-notebooks (&key status author-id visibility)
+  "Count notebooks, optionally filtered by status, author, and/or visibility.
 
 Returns:
   Integer count."
@@ -215,7 +215,7 @@ Returns:
             (getf (first result) :count)
             0)))))
 
-(defun user-notebook-cells-parsed (nb)
+(defun notebook-cells-parsed (nb)
   "Return the cells JSONB column of NB parsed back to Lisp data.
 JSON arrays come back as vectors; JSON objects as hash-tables."
-  (jsonb->lisp (user-notebook-cells nb)))
+  (jsonb->lisp (notebook-cells nb)))

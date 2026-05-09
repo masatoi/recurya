@@ -93,7 +93,7 @@ Returns:
                                       published-at)
   "Update course attributes. Only provided fields are updated.
 
-SLUG is updated only when non-nil and non-empty (mirroring update-user-notebook!).
+SLUG is updated only when non-nil and non-empty (mirroring update-notebook!).
 
 Returns:
   The updated COURSE instance, or NIL if not found."

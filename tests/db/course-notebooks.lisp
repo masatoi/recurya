@@ -9,9 +9,9 @@
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:course-id)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:user-notebook-id)
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:notebook-id)
   (:import-from #:recurya/db/course-notebooks
                 #:add-notebook-to-course!
                 #:remove-notebook-from-course!
@@ -34,7 +34,7 @@ positions 0..N-1. Returns (values course (list notebook ...)
          (c (create-course! :title "Course" :author u))
          (notebooks
           (loop for i from 0 below n
-                collect (create-user-notebook!
+                collect (create-notebook!
                          :title (format nil "N~A" i)
                          :slug (format nil "n~A-~A" i (random 1000000))
                          :body-md "===prose===\nx"
@@ -45,7 +45,7 @@ positions 0..N-1. Returns (values course (list notebook ...)
                  for i from 0
                  collect (add-notebook-to-course!
                           (course-id c)
-                          (user-notebook-id nb)
+                          (notebook-id nb)
                           :position i))))
       (values c notebooks cns))))
 
@@ -54,12 +54,12 @@ positions 0..N-1. Returns (values course (list notebook ...)
     (with-test-db
       (let* ((u (create-test-user))
              (c (create-course! :title "C" :author u))
-             (nb1 (create-user-notebook! :title "N1" :body-md "===prose===\nx"
+             (nb1 (create-notebook! :title "N1" :body-md "===prose===\nx"
                                          :cells '() :author u))
-             (nb2 (create-user-notebook! :title "N2" :body-md "===prose===\ny"
+             (nb2 (create-notebook! :title "N2" :body-md "===prose===\ny"
                                          :cells '() :author u)))
-        (add-notebook-to-course! (course-id c) (user-notebook-id nb1) :position 0)
-        (add-notebook-to-course! (course-id c) (user-notebook-id nb2) :position 1)
+        (add-notebook-to-course! (course-id c) (notebook-id nb1) :position 0)
+        (add-notebook-to-course! (course-id c) (notebook-id nb2) :position 1)
         (let ((items (list-course-notebooks (course-id c))))
           (ok (= 2 (length items)))
           (ok (= 0 (course-notebook-position (first items))))
@@ -68,12 +68,12 @@ positions 0..N-1. Returns (values course (list notebook ...)
     (with-test-db
       (let* ((u (create-test-user))
              (c (create-course! :title "Auto" :author u))
-             (nb1 (create-user-notebook! :title "AA" :body-md "===prose===\nx"
+             (nb1 (create-notebook! :title "AA" :body-md "===prose===\nx"
                                          :cells '() :author u))
-             (nb2 (create-user-notebook! :title "BB" :body-md "===prose===\ny"
+             (nb2 (create-notebook! :title "BB" :body-md "===prose===\ny"
                                          :cells '() :author u)))
-        (let ((row1 (add-notebook-to-course! (course-id c) (user-notebook-id nb1)))
-              (row2 (add-notebook-to-course! (course-id c) (user-notebook-id nb2))))
+        (let ((row1 (add-notebook-to-course! (course-id c) (notebook-id nb1)))
+              (row2 (add-notebook-to-course! (course-id c) (notebook-id nb2))))
           (ok (= 0 (course-notebook-position row1)))
           (ok (= 1 (course-notebook-position row2))))))))
 
@@ -134,21 +134,21 @@ positions 0..N-1. Returns (values course (list notebook ...)
     (with-test-db
       (multiple-value-bind (c notebooks cns) (%make-course-with-notebooks 2)
         (declare (ignore cns))
-        (let ((nb1-id (user-notebook-id (first notebooks))))
+        (let ((nb1-id (notebook-id (first notebooks))))
           (ok (eq t (remove-notebook-from-course! (course-id c) nb1-id)))
           (let ((items (list-course-notebooks (course-id c))))
             (ok (= 1 (length items)))
-            (ok (equal (user-notebook-id (second notebooks))
+            (ok (equal (notebook-id (second notebooks))
                        (course-notebook-notebook-id (first items)))))))))
   (testing "remove returns NIL when no matching join row exists"
     (with-test-db
       (let* ((u (create-test-user))
              (c (create-course! :title "Solo" :author u))
-             (nb (create-user-notebook! :title "Stray"
+             (nb (create-notebook! :title "Stray"
                                         :body-md "===prose===\nx"
                                         :cells '() :author u)))
         (ok (null (remove-notebook-from-course! (course-id c)
-                                                (user-notebook-id nb))))))))
+                                                (notebook-id nb))))))))
 
 (deftest get-course-notebook-test
   (testing "get-course-notebook fetches by primary key"

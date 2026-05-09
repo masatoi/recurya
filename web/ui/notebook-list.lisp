@@ -10,7 +10,7 @@
 (in-package #:recurya/web/ui/notebook-list)
 
 (defparameter *styles*
-  "/* Public user-notebook listing styles */
+  "/* Public notebook listing styles */
 body { font-family: 'Inter', -apple-system, BlinkMacSystemFont,
                     'Segoe UI', Roboto, sans-serif;
        margin: 0; background: #f8fafc; color: #0f172a; line-height: 1.6; }
@@ -48,7 +48,7 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 .empty { text-align: center; color: #64748b; padding: 3rem 0; }")
 
 (defun render (&key notebooks pagination)
-  "Render the public user-notebook listing page (published only).
+  "Render the public notebook listing page (published only).
 NOTEBOOKS is a list of plists with :slug :title :summary
 :published-at :author-name."
   (with-html-string

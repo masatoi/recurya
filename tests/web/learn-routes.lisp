@@ -4,7 +4,7 @@
 ;;;; The original SICP-specific handlers (learn-home-handler,
 ;;;; notebook-page-handler, notebook-cell-run-handler, learn-sync-handler,
 ;;;; %maybe-persist-cell-run) have been removed. Their routes are now
-;;;; permanent redirects to the public user-notebook (/n/:slug) and course
+;;;; permanent redirects to the public notebook (/n/:slug) and course
 ;;;; (/c/:slug) endpoints.
 ;;;;
 ;;;; learn-sync-handler itself was migrated verbatim to recurya/web/routes

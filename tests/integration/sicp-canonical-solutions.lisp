@@ -5,33 +5,29 @@
 ;;;; This replaces the per-notebook tests/game/notebooks/sicp-*.lisp
 ;;;; suite (one file per chapter section) that existed before the
 ;;;; module-based notebook registry was retired in favour of DB-backed
-;;;; user-notebooks under the SICP course. The single deftest below
+;;;; notebooks under the SICP course. The single deftest below
 ;;;; iterates over every (exercise, solution) pair in every SICP
 ;;;; markdown fixture and runs the exercise cell with the canonical
 ;;;; solution body injected, asserting the cell result status is :PASS.
 
 (defpackage #:recurya/tests/integration/sicp-canonical-solutions
-  (:use #:cl
-        #:rove)
-  (:import-from #:recurya/tests/support/db
-                #:with-test-db
-                #:create-test-user)
+  (:use #:cl #:rove)
+  (:import-from #:recurya/tests/support/db #:with-test-db #:create-test-user)
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:get-course-by-slug
                 #:course-id)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:get-user-notebook-by-slug
-                #:user-notebook-id
-                #:user-notebook-slug
-                #:user-notebook-body-md)
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:get-notebook-by-slug
+                #:notebook-id
+                #:notebook-slug
+                #:notebook-body-md)
   (:import-from #:recurya/db/course-notebooks
                 #:add-notebook-to-course!
                 #:list-course-notebooks
                 #:course-notebook-notebook)
-  (:import-from #:recurya/game/notebook-parser
-                #:parse-notebook-body)
+  (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
   (:import-from #:recurya/game/notebook
                 #:notebook-cells
                 #:cell-kind
@@ -91,7 +87,7 @@
 
 (defun load-sicp-fixtures! ()
   "Walk docs/sicp/*.md, parse each into cells, and persist them as
-user_notebook + course_notebook rows under a freshly created \"sicp\"
+notebook + course_notebook rows under a freshly created \"sicp\"
 course. Intended for use inside (with-test-db ...). Title is derived
 from the slug as a fallback (the legacy registry that mapped slugs to
 human-readable titles has been retired)."
@@ -114,7 +110,7 @@ human-readable titles has been retired)."
                         slug parse-errors))
                (let* ((cells-jsonb
                        (mapcar #'recurya/web/routes::cell->jsonb-form cells))
-                      (nb (create-user-notebook!
+                      (nb (create-notebook!
                            :title (format nil "SICP ~A" slug)
                            :slug slug
                            :body-md body-md
@@ -123,7 +119,7 @@ human-readable titles has been retired)."
                            :status "published"
                            :published-at (local-time:now))))
                  (add-notebook-to-course! course-uuid
-                                          (user-notebook-id nb)
+                                          (notebook-id nb)
                                           :position position))))
     course))
 
@@ -166,8 +162,8 @@ The codes vector is built up to and including the exercise cell index:
              (passed 0))
         (dolist (cn cns)
           (let* ((nb-row (course-notebook-notebook cn))
-                 (slug (user-notebook-slug nb-row))
-                 (notebook (recurya/web/routes::user-notebook-row->notebook-struct
+                 (slug (notebook-slug nb-row))
+                 (notebook (recurya/web/routes::notebook-row->notebook-struct
                             nb-row))
                  (cells (notebook-cells notebook))
                  (exercises (remove-if-not (lambda (c)

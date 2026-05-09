@@ -13,13 +13,13 @@
     :recurya/tests/db/core
     :recurya/tests/db/jsonb
     :recurya/tests/db/users
-    :recurya/tests/db/user-notebooks
+    :recurya/tests/db/notebooks
     :recurya/tests/db/courses
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
     :recurya/tests/web/routes
-    :recurya/tests/web/user-notebook-routes
+    :recurya/tests/web/notebook-routes
     :recurya/tests/web/course-routes
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf

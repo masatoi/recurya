@@ -1,4 +1,4 @@
-;;;; db/course-notebooks.lisp --- CRUD for course<->user-notebook join with positions.
+;;;; db/course-notebooks.lisp --- CRUD for course<->notebook join with positions.
 
 (defpackage #:recurya/db/course-notebooks
   (:use #:cl)
@@ -19,7 +19,7 @@
                 #:course-notebook-course-id
                 #:course-notebook-notebook-id)
   (:import-from #:recurya/models/course #:course)
-  (:import-from #:recurya/models/user-notebook #:user-notebook)
+  (:import-from #:recurya/models/notebook #:notebook)
   (:export #:add-notebook-to-course!
            #:remove-notebook-from-course!
            #:move-notebook-up!
@@ -57,7 +57,7 @@ Signals:
   exists. Callers that may attach the same notebook twice should check
   first."
   (let ((course (find-dao 'course :id (ensure-uuid course-id)))
-        (notebook (find-dao 'user-notebook :id (ensure-uuid notebook-id))))
+        (notebook (find-dao 'notebook :id (ensure-uuid notebook-id))))
     (unless course
       (error "add-notebook-to-course!: course not found: ~A" course-id))
     (unless notebook

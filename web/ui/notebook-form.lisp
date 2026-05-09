@@ -1,6 +1,6 @@
-;;;; web/ui/user-notebook-form.lisp --- Create/edit form for user-authored notebooks.
+;;;; web/ui/notebook-form.lisp --- Create/edit form for user-authored notebooks.
 
-(defpackage #:recurya/web/ui/user-notebook-form
+(defpackage #:recurya/web/ui/notebook-form
   (:use #:cl)
   (:import-from #:spinneret
                 #:with-html-string)
@@ -12,7 +12,7 @@
                 #:csrf-input)
   (:export #:render))
 
-(in-package #:recurya/web/ui/user-notebook-form)
+(in-package #:recurya/web/ui/notebook-form)
 
 (defparameter *form-page-styles*
   "/* User-notebook form page styles */
@@ -71,7 +71,7 @@ input: (foo 1 2)
 output: 3")
 
 (defun render (&key user notebook message errors)
-  "Render the user-notebook create/edit form as an HTML string.
+  "Render the notebook create/edit form as an HTML string.
 
 NOTEBOOK is a plist with :id :title :slug :summary :body-md :status when
 editing. When NOTEBOOK is NIL, renders a new-notebook form. ERRORS is

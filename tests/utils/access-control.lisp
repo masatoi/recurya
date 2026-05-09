@@ -8,10 +8,10 @@
                 #:create-test-user)
   (:import-from #:recurya/db/users
                 #:users-id)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:update-user-notebook!
-                #:user-notebook-id)
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:update-notebook!
+                #:notebook-id)
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:update-course!
@@ -33,8 +33,8 @@
   (list :id (users-id dao) :role :user))
 
 (defun mk-notebook (author-dao &key (status "draft") (visibility "private"))
-  "Create a user-notebook DAO owned by AUTHOR-DAO with given STATUS/VISIBILITY."
-  (let ((nb (create-user-notebook!
+  "Create a notebook DAO owned by AUTHOR-DAO with given STATUS/VISIBILITY."
+  (let ((nb (create-notebook!
              :title (format nil "NB ~A-~A" status visibility)
              :body-md "===prose===
 hi"
@@ -42,11 +42,11 @@ hi"
              :author author-dao
              :status status
              :visibility visibility)))
-    ;; The status default branch in create-user-notebook! always sets status,
+    ;; The status default branch in create-notebook! always sets status,
     ;; but make sure visibility round-trips by re-saving via update.
-    (update-user-notebook! (user-notebook-id nb)
-                           :status status
-                           :visibility visibility)
+    (update-notebook! (notebook-id nb)
+                      :status status
+                      :visibility visibility)
     nb))
 
 (defun mk-course (author-dao &key (status "draft") (visibility "private"))

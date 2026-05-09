@@ -1,5 +1,5 @@
 ;;;; scripts/import-sicp-to-db.lisp --- Import SICP markdown fixtures into the
-;;;; user-notebook / course / course-notebook tables.
+;;;; notebook / course / course-notebook tables.
 ;;;;
 ;;;; Usage (from the REPL after loading recurya and a configured DB):
 ;;;;   (load "scripts/import-sicp-to-db.lisp")
@@ -16,7 +16,7 @@
 ;;;;          recurya/web/routes::cell->jsonb-form.
 ;;;;        - Look up the title from the in-memory notebook registry by
 ;;;;          slug -> keyword id; fallback to a slug-derived title.
-;;;;        - create-user-notebook! (idempotent: skip if slug exists).
+;;;;        - create-notebook! (idempotent: skip if slug exists).
 ;;;;        - add-notebook-to-course! at the next free position
 ;;;;          (idempotent: skip if join row already exists).
 ;;;;   4. Migrate any pre-existing learn_* rows that referenced the old
@@ -33,32 +33,24 @@
   (:import-from #:recurya/db/users
                 #:find-or-create-oauth-user
                 #:get-user-by-email)
-  (:import-from #:recurya/db/courses
-                #:create-course!
-                #:get-course-by-slug)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:get-user-notebook-by-slug)
+  (:import-from #:recurya/db/courses #:create-course! #:get-course-by-slug)
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:get-notebook-by-slug)
   (:import-from #:recurya/db/course-notebooks
                 #:add-notebook-to-course!
                 #:list-course-notebooks)
-  (:import-from #:recurya/db/core
-                #:execute!)
-  (:import-from #:recurya/models/user-notebook
-                #:user-notebook-id)
-  (:import-from #:recurya/models/course
-                #:course-id)
-  (:import-from #:recurya/models/course-notebook
-                #:course-notebook-notebook)
-  (:import-from #:recurya/game/notebook
-                #:notebook-id
-                #:notebook-title)
-  (:import-from #:recurya/game/notebook-parser
-                #:parse-notebook-body)
-  (:import-from #:recurya/game/notebooks/registry
-                #:all-notebooks)
-  (:export #:import-sicp-to-db!
-           #:migrate-learn-tables-for-sicp!))
+  (:import-from #:recurya/db/core #:execute!)
+  ;; Note: recurya/models/notebook:notebook-id collides with
+  ;; recurya/game/notebook:notebook-id (struct accessor for the in-memory
+  ;; notebook used by the parser). We import the DB accessor here and
+  ;; reference the game accessor via package qualification below.
+  (:import-from #:recurya/models/notebook #:notebook-id)
+  (:import-from #:recurya/models/course #:course-id)
+  (:import-from #:recurya/models/course-notebook #:course-notebook-notebook)
+  (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
+  (:import-from #:recurya/game/notebooks/registry #:all-notebooks)
+  (:export #:import-sicp-to-db! #:migrate-learn-tables-for-sicp!))
 
 (in-package #:scripts/import-sicp-to-db)
 
@@ -121,13 +113,14 @@
    mapping slug strings (e.g., \"sicp-1-1-1\") to their notebook titles."
   (let ((map (make-hash-table :test 'equal)))
     (dolist (nb (all-notebooks))
-      (let ((id (notebook-id nb)))
+      (let ((id (recurya/game/notebook:notebook-id nb)))
         (when id
-          (let ((slug (cond ((keywordp id) (string-downcase (symbol-name id)))
-                            ((stringp id) (string-downcase id))
-                            (t nil))))
+          (let ((slug
+                 (cond ((keywordp id) (string-downcase (symbol-name id)))
+                       ((stringp id) (string-downcase id)) (t nil))))
             (when slug
-              (setf (gethash slug map) (notebook-title nb)))))))
+              (setf (gethash slug map)
+                    (recurya/game/notebook:notebook-title nb)))))))
     map))
 
 (defun fallback-title-from-slug (slug)
@@ -172,7 +165,7 @@
     (some (lambda (cn)
             (let ((nb (course-notebook-notebook cn)))
               (and nb
-                   (string= (princ-to-string (user-notebook-id nb)) target))))
+                   (string= (princ-to-string (notebook-id nb)) target))))
           rows)))
 
 (defun next-course-position (course-id-uuid)
@@ -249,7 +242,7 @@
     (dolist (path files)
       (let* ((slug (slug-from-pathname path))
              (body-md (read-file-string path))
-             (existing (get-user-notebook-by-slug slug)))
+             (existing (get-notebook-by-slug slug)))
         (cond
           (existing
            (push slug skipped)
@@ -263,7 +256,7 @@
              (let* ((title (or (gethash slug slug->title)
                                (fallback-title-from-slug slug)))
                     (cells-jsonb (cells->jsonb-forms cells))
-                    (nb (create-user-notebook!
+                    (nb (create-notebook!
                          :title title
                          :slug slug
                          :body-md body-md
@@ -276,10 +269,10 @@
                (format t "~&[import] ~A (~A cells, ~A)~%"
                        slug (length cells) title)))))
         ;; Attach to course (idempotent).
-        (let* ((nb-row (or (get-user-notebook-by-slug slug)
+        (let* ((nb-row (or (get-notebook-by-slug slug)
                            (error "import-sicp-to-db!: notebook missing after import: ~A"
                                   slug)))
-               (nb-uuid (user-notebook-id nb-row)))
+               (nb-uuid (notebook-id nb-row)))
           (cond
             ((course-notebook-already-attached-p course-id-uuid nb-uuid)
              (push slug already-attached))

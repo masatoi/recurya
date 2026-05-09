@@ -22,10 +22,10 @@
                 #:course-notebook-remove-handler
                 #:public-course-handler
                 #:courses-public-handler)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:user-notebook-id
-                #:user-notebook-title)
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:notebook-id
+                #:notebook-title)
   (:import-from #:recurya/db/course-notebooks
                 #:add-notebook-to-course!
                 #:list-course-notebooks
@@ -279,12 +279,12 @@ HX-Request header is included so htmx-request-p returns T."
            (dao (get-user-by-id (getf user :id)))
            (c (create-course! :title "Mine" :author dao))
            (id (princ-to-string (course-id c))))
-      (create-user-notebook!
+      (create-notebook!
        :title "EligPub"
        :body-md (format nil "===prose===~%hi")
        :cells nil :status "published" :visibility "public"
        :published-at (local-time:now) :author dao)
-      (create-user-notebook!
+      (create-notebook!
        :title "EligPriv"
        :body-md (format nil "===prose===~%shh")
        :cells nil :status "published" :visibility "private"
@@ -632,7 +632,7 @@ not a bare pill span."
            (c (create-course! :title "Course" :author dao))
            (course-uuid (course-id c))
            (course-id-str (princ-to-string course-uuid))
-           (nb (create-user-notebook!
+           (nb (create-notebook!
                 :title "Attachable"
                 :body-md "===prose===
 hi"
@@ -640,7 +640,7 @@ hi"
                 :status "published"
                 :published-at (local-time:now)
                 :author dao))
-           (nb-id-str (princ-to-string (user-notebook-id nb))))
+           (nb-id-str (princ-to-string (notebook-id nb))))
       (with-mock-session (make-session :user user)
         (let* ((res (course-add-notebook-handler
                      (list (cons :id course-id-str)
@@ -659,7 +659,7 @@ hi"
            (c (create-course! :title "Course" :author dao))
            (course-uuid (course-id c))
            (course-id-str (princ-to-string course-uuid))
-           (nb (create-user-notebook!
+           (nb (create-notebook!
                 :title "Once"
                 :body-md "===prose===
 hi"
@@ -667,8 +667,8 @@ hi"
                 :status "published"
                 :published-at (local-time:now)
                 :author dao))
-           (nb-id-str (princ-to-string (user-notebook-id nb))))
-      (add-notebook-to-course! course-uuid (user-notebook-id nb))
+           (nb-id-str (princ-to-string (notebook-id nb))))
+      (add-notebook-to-course! course-uuid (notebook-id nb))
       (with-mock-session (make-session :user user)
         (let* ((res (course-add-notebook-handler
                      (list (cons :id course-id-str)
@@ -680,7 +680,7 @@ hi"
             (ok (= 1 (length rows)))))))))
 
 (defun %attach-n-notebooks (n &key user)
-  "Create COURSE owned by USER and attach N user-notebooks at positions 0..N-1.
+  "Create COURSE owned by USER and attach N notebooks at positions 0..N-1.
 
 Returns (values course-id-uuid course-id-str (list cn-id ...) (list nb-id-str ...))
 where the lists are aligned with the attached positions."
@@ -689,7 +689,7 @@ where the lists are aligned with the attached positions."
          (course-uuid (course-id c))
          (course-id-str (princ-to-string course-uuid))
          (nbs (loop for i from 0 below n
-                    collect (create-user-notebook!
+                    collect (create-notebook!
                              :title (format nil "N~D" i)
                              :body-md (format nil "===prose===~%body~D" i)
                              :cells nil
@@ -698,12 +698,12 @@ where the lists are aligned with the attached positions."
                              :author dao))))
     (loop for nb in nbs
           for i from 0
-          do (add-notebook-to-course! course-uuid (user-notebook-id nb)
+          do (add-notebook-to-course! course-uuid (notebook-id nb)
                                       :position i))
     (let* ((rows (list-course-notebooks course-uuid))
            (cn-ids (mapcar #'course-notebook-id rows))
            (nb-id-strs
-             (mapcar (lambda (nb) (princ-to-string (user-notebook-id nb))) nbs)))
+             (mapcar (lambda (nb) (princ-to-string (notebook-id nb))) nbs)))
       (values course-uuid course-id-str cn-ids nb-id-strs))))
 
 (deftest course-notebook-move-up-401-anonymous
@@ -877,14 +877,14 @@ where the lists are aligned with the attached positions."
                                    :published-at (local-time:now)
                                    :author dao))
            (slug (course-slug course))
-           (nb (create-user-notebook!
+           (nb (create-notebook!
                 :title "Attached Notebook"
                 :body-md (format nil "===prose===~%hi")
                 :cells nil
                 :status "published"
                 :published-at (local-time:now)
                 :author dao)))
-      (add-notebook-to-course! (course-id course) (user-notebook-id nb))
+      (add-notebook-to-course! (course-id course) (notebook-id nb))
       (with-mock-session (make-session)
         (let* ((res (public-course-handler (list (cons :slug slug))))
                (body (first (response-body res))))
@@ -966,30 +966,30 @@ where the lists are aligned with the attached positions."
                                    :author dao))
            (course-uuid (course-id course))
            (slug (course-slug course))
-           (nb-a (create-user-notebook!
+           (nb-a (create-notebook!
                   :title "Notebook-A"
                   :body-md (format nil "===prose===~%a")
                   :cells nil
                   :status "published"
                   :published-at (local-time:now)
                   :author dao))
-           (nb-b (create-user-notebook!
+           (nb-b (create-notebook!
                   :title "Notebook-B"
                   :body-md (format nil "===prose===~%b")
                   :cells nil
                   :status "published"
                   :published-at (local-time:now)
                   :author dao))
-           (nb-c (create-user-notebook!
+           (nb-c (create-notebook!
                   :title "Notebook-C"
                   :body-md (format nil "===prose===~%c")
                   :cells nil
                   :status "published"
                   :published-at (local-time:now)
                   :author dao)))
-      (add-notebook-to-course! course-uuid (user-notebook-id nb-a) :position 0)
-      (add-notebook-to-course! course-uuid (user-notebook-id nb-b) :position 1)
-      (add-notebook-to-course! course-uuid (user-notebook-id nb-c) :position 2)
+      (add-notebook-to-course! course-uuid (notebook-id nb-a) :position 0)
+      (add-notebook-to-course! course-uuid (notebook-id nb-b) :position 1)
+      (add-notebook-to-course! course-uuid (notebook-id nb-c) :position 2)
       (with-mock-session (make-session)
         (let* ((res (public-course-handler (list (cons :slug slug))))
                (body (first (response-body res)))

@@ -17,36 +17,39 @@
   (:import-from #:recurya/web/ui/account)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:lack/request #:request-env)
-  (:import-from #:recurya/web/ui/user-notebooks
-                #:render-user-notebook-state-dropdown)
-  (:import-from #:recurya/web/ui/user-notebook-form)
+  (:import-from #:recurya/web/ui/notebooks-dashboard
+                #:render-notebook-state-dropdown)
+  (:import-from #:recurya/web/ui/notebook-form)
   (:import-from #:recurya/web/ui/notebook-list)
   (:import-from #:recurya/web/ui/course)
   (:import-from #:recurya/web/ui/course-list)
-  (:import-from #:recurya/web/ui/courses
-                #:render-course-state-dropdown)
+  (:import-from #:recurya/web/ui/courses #:render-course-state-dropdown)
   (:import-from #:recurya/web/ui/course-form)
-  (:import-from #:recurya/db/user-notebooks
-                #:create-user-notebook!
-                #:get-user-notebook-by-id
-                #:get-user-notebook-by-slug
-                #:update-user-notebook!
-                #:delete-user-notebook!
-                #:list-user-notebooks
-                #:count-user-notebooks
-                #:user-notebook-id
-                #:user-notebook-slug
-                #:user-notebook-title
-                #:user-notebook-summary
-                #:user-notebook-body-md
-                #:user-notebook-cells
-                #:user-notebook-status
-                #:user-notebook-visibility
-                #:user-notebook-published-at
-                #:user-notebook-author
-                #:user-notebook-author-id
-                #:user-notebook-created-at
-                #:user-notebook-updated-at)
+  ;; Note: recurya/db/notebooks exports a `notebook-cells` accessor that
+  ;; collides with recurya/game/notebook:notebook-cells (a struct accessor).
+  ;; The DB accessor is not used directly here (we use
+  ;; recurya/db/notebooks:notebook-cells-parsed via package qualification),
+  ;; so it is intentionally NOT imported below.
+  (:import-from #:recurya/db/notebooks
+                #:create-notebook!
+                #:get-notebook-by-id
+                #:get-notebook-by-slug
+                #:update-notebook!
+                #:delete-notebook!
+                #:list-notebooks
+                #:count-notebooks
+                #:notebook-id
+                #:notebook-slug
+                #:notebook-title
+                #:notebook-summary
+                #:notebook-body-md
+                #:notebook-status
+                #:notebook-visibility
+                #:notebook-published-at
+                #:notebook-author
+                #:notebook-author-id
+                #:notebook-created-at
+                #:notebook-updated-at)
   (:import-from #:recurya/db/courses
                 #:create-course!
                 #:get-course-by-id
@@ -79,8 +82,7 @@
                 #:course-notebook-position
                 #:course-notebook-notebook
                 #:course-notebook-notebook-id)
-  (:import-from #:recurya/game/notebook-parser
-                #:parse-notebook-body)
+  (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
   (:import-from #:recurya/game/notebook
                 #:cell-id
                 #:cell-kind
@@ -100,9 +102,7 @@
                 #:mark-cell-passed
                 #:record-submission
                 #:merge-localstorage)
-  (:import-from #:recurya/utils/common
-                #:parse-json
-                #:json->string)
+  (:import-from #:recurya/utils/common #:parse-json #:json->string)
   (:import-from #:recurya/game/puzzle
                 #:test-case-input
                 #:test-case-expected
@@ -110,18 +110,18 @@
   (:export #:setup-routes
            #:account-confirm-delete-handler
            #:account-delete-handler
-           #:user-notebooks-handler
-           #:user-notebook-new-handler
-           #:user-notebook-create-handler
-           #:user-notebook-edit-handler
-           #:user-notebook-update-handler
-           #:user-notebook-toggle-status-handler
-           #:user-notebook-set-state-handler
-           #:user-notebook-confirm-delete-handler
-           #:user-notebook-delete-handler
+           #:notebooks-handler
+           #:notebook-new-handler
+           #:notebook-create-handler
+           #:notebook-edit-handler
+           #:notebook-update-handler
+           #:notebook-toggle-status-handler
+           #:notebook-set-state-handler
+           #:notebook-confirm-delete-handler
+           #:notebook-delete-handler
            #:notebooks-public-handler
-           #:public-user-notebook-handler
-           #:public-user-notebook-cell-run-handler
+           #:public-notebook-handler
+           #:public-notebook-cell-run-handler
            #:courses-me-handler
            #:course-new-handler
            #:course-create-handler
@@ -403,50 +403,50 @@ so cell ids stay stable across edits."
                      :description (or (gethash "description" th "") "")))
                   (coerce raw-tcs 'list)))))
 
-(defun user-notebook->plist (nb)
-  "Convert a user-notebook DAO into a plist for UI rendering."
-  (list :id (princ-to-string (user-notebook-id nb))
-        :slug (user-notebook-slug nb)
-        :title (user-notebook-title nb)
-        :summary (user-notebook-summary nb)
-        :body-md (user-notebook-body-md nb)
-        :status (user-notebook-status nb)
-        :visibility (user-notebook-visibility nb)
-        :published-at (user-notebook-published-at nb)
-        :created-at (user-notebook-created-at nb)
-        :updated-at (user-notebook-updated-at nb)
-        :author-id (user-notebook-author-id nb)))
+(defun notebook->plist (nb)
+  "Convert a notebook DAO into a plist for UI rendering."
+  (list :id (princ-to-string (notebook-id nb))
+        :slug (notebook-slug nb)
+        :title (notebook-title nb)
+        :summary (notebook-summary nb)
+        :body-md (notebook-body-md nb)
+        :status (notebook-status nb)
+        :visibility (notebook-visibility nb)
+        :published-at (notebook-published-at nb)
+        :created-at (notebook-created-at nb)
+        :updated-at (notebook-updated-at nb)
+        :author-id (notebook-author-id nb)))
 
-(defun user-notebooks-handler (params)
-  "Handle GET /notebooks/me - admin user-notebook list (own notebooks)."
+(defun notebooks-handler (params)
+  "Handle GET /notebooks/me - admin notebook list (own notebooks)."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
         (let* ((user-id (getf user :id))
                (page (parse-page-param params))
-               (total-count (count-user-notebooks :author-id user-id))
+               (total-count (count-notebooks :author-id user-id))
                (offset (* (1- page) *page-size*))
-               (raw (list-user-notebooks :author-id user-id
+               (raw (list-notebooks :author-id user-id
                                          :limit *page-size*
                                          :offset offset))
-               (notebooks (mapcar #'user-notebook->plist raw))
+               (notebooks (mapcar #'notebook->plist raw))
                (pagination (make-pagination page total-count *page-size*
                                             "/notebooks/me")))
           (html-response
-           (recurya/web/ui/user-notebooks:render
+           (recurya/web/ui/notebooks-dashboard:render
             :user user :notebooks notebooks :pagination pagination))))))
 
-(defun user-notebook-new-handler (params)
-  "Handle GET /notebooks/new - show new user-notebook form."
+(defun notebook-new-handler (params)
+  "Handle GET /notebooks/new - show new notebook form."
   (declare (ignore params))
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
         (html-response
-         (recurya/web/ui/user-notebook-form:render :user user)))))
+         (recurya/web/ui/notebook-form:render :user user)))))
 
-(defun user-notebook-create-handler (params)
-  "Handle POST /notebooks - create a new user-notebook."
+(defun notebook-create-handler (params)
+  "Handle POST /notebooks - create a new notebook."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
@@ -463,7 +463,7 @@ so cell ids stay stable across edits."
           (cond
             ((or (null title) (equal title ""))
              (html-response
-              (recurya/web/ui/user-notebook-form:render
+              (recurya/web/ui/notebook-form:render
                :user user
                :notebook (list :title title :slug slug :summary summary
                                :body-md body :status status
@@ -471,7 +471,7 @@ so cell ids stay stable across edits."
                :errors '((:line nil :message "Title is required.")))))
             ((or (null body) (equal body ""))
              (html-response
-              (recurya/web/ui/user-notebook-form:render
+              (recurya/web/ui/notebook-form:render
                :user user
                :notebook (list :title title :slug slug :summary summary
                                :body-md body :status status
@@ -483,7 +483,7 @@ so cell ids stay stable across edits."
                (cond
                  (parse-errors
                   (html-response
-                   (recurya/web/ui/user-notebook-form:render
+                   (recurya/web/ui/notebook-form:render
                     :user user
                     :notebook (list :title title :slug slug :summary summary
                                     :body-md body :status status
@@ -495,7 +495,7 @@ so cell ids stay stable across edits."
                          (published-at
                            (when (equal status "published") (local-time:now)))
                          (cells-plists (mapcar #'cell->jsonb-form cells)))
-                    (create-user-notebook!
+                    (create-notebook!
                      :title title :slug slug-val :summary summary-val
                      :body-md body :cells cells-plists
                      :status (or status "draft")
@@ -504,27 +504,27 @@ so cell ids stay stable across edits."
                      :author (get-session-user-object))
                     (redirect "/notebooks/me")))))))))))
 
-(defun user-notebook-edit-handler (params)
-  "Handle GET /notebooks/:id/edit - show edit form for existing user-notebook
+(defun notebook-edit-handler (params)
+  "Handle GET /notebooks/:id/edit - show edit form for existing notebook
 (owner only)."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
         (let* ((id (get-path-param params :id))
-               (nb (and id (get-user-notebook-by-id id))))
+               (nb (and id (get-notebook-by-id id))))
           (cond
             ((null nb)
              (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (user-notebook-author-id nb))
+            ((not (equal (princ-to-string (notebook-author-id nb))
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
              (html-response
-              (recurya/web/ui/user-notebook-form:render
-               :user user :notebook (user-notebook->plist nb)))))))))
+              (recurya/web/ui/notebook-form:render
+               :user user :notebook (notebook->plist nb)))))))))
 
-(defun user-notebook-update-handler (params)
-  "Handle POST /notebooks/:id - update an existing user-notebook (owner only).
+(defun notebook-update-handler (params)
+  "Handle POST /notebooks/:id - update an existing notebook (owner only).
 The previous body markdown is reparsed to recover stable cell ids, then the
 new body is parsed with those ids carried forward where (kind, body,
 description) match."
@@ -532,11 +532,11 @@ description) match."
     (if (null user)
         (redirect "/login")
         (let* ((id (get-path-param params :id))
-               (existing (and id (get-user-notebook-by-id id))))
+               (existing (and id (get-notebook-by-id id))))
           (cond
             ((null existing)
              (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (user-notebook-author-id existing))
+            ((not (equal (princ-to-string (notebook-author-id existing))
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
@@ -552,11 +552,11 @@ description) match."
                                  :test #'equal)
                          visibility-raw)
                         (visibility-raw "private")
-                        (t (user-notebook-visibility existing)))))
+                        (t (notebook-visibility existing)))))
                (cond
                  ((or (null title) (equal title ""))
                   (html-response
-                   (recurya/web/ui/user-notebook-form:render
+                   (recurya/web/ui/notebook-form:render
                     :user user
                     :notebook (list :id id :title title :slug slug
                                     :summary summary :body-md body
@@ -564,7 +564,7 @@ description) match."
                     :errors '((:line nil :message "Title is required.")))))
                  ((or (null body) (equal body ""))
                   (html-response
-                   (recurya/web/ui/user-notebook-form:render
+                   (recurya/web/ui/notebook-form:render
                     :user user
                     :notebook (list :id id :title title :slug slug
                                     :summary summary :body-md body
@@ -574,14 +574,14 @@ description) match."
                   (let ((existing-cells
                           (mapcar #'jsonb-hash->cell
                                   (coerce
-                                   (recurya/db/user-notebooks:user-notebook-cells-parsed existing)
+                                   (recurya/db/notebooks:notebook-cells-parsed existing)
                                    'list))))
                     (multiple-value-bind (cells parse-errors)
                         (parse-notebook-body body existing-cells)
                       (cond
                         (parse-errors
                          (html-response
-                          (recurya/web/ui/user-notebook-form:render
+                          (recurya/web/ui/notebook-form:render
                            :user user
                            :notebook (list :id id :title title :slug slug
                                            :summary summary :body-md body
@@ -598,12 +598,12 @@ description) match."
                                 (published-at
                                   (when (and (equal status "published")
                                              (not (equal
-                                                   (user-notebook-status existing)
+                                                   (notebook-status existing)
                                                    "published")))
                                     (local-time:now)))
                                 (cells-plists
                                   (mapcar #'cell->jsonb-form cells)))
-                           (update-user-notebook!
+                           (update-notebook!
                             id :title title :slug slug-val :summary summary-val
                             :body-md body :cells cells-plists
                             :status (or status "draft")
@@ -693,29 +693,29 @@ field is the number of notebooks attached to the course via course_notebook."
   "Convert a COURSE-NOTEBOOK DAO into a plist
 \(:id :cn-id :title :position) where:
 
-  :id      - the underlying user-notebook UUID string (used by the
+  :id      - the underlying notebook UUID string (used by the
              eligible-notebooks dedup logic).
   :cn-id   - the course-notebook BIGSERIAL primary key (used by the
              reorder/remove HTMX endpoints)."
   (let ((nb (course-notebook-notebook cn)))
     (list :id (princ-to-string (course-notebook-notebook-id cn))
           :cn-id (course-notebook-id cn)
-          :title (when nb (user-notebook-title nb))
+          :title (when nb (notebook-title nb))
           :position (course-notebook-position cn))))
 
 (defun course-eligible-notebooks (user-id attached-notebook-ids)
   "Return plists (:id :title) of USER-ID's published notebooks that are
 not already attached. ATTACHED-NOTEBOOK-IDS is a list of UUID strings."
   (let* ((own
-          (list-user-notebooks :status "published" :visibility "public"
+          (list-notebooks :status "published" :visibility "public"
                                :author-id user-id
                                :limit 1000))
          (attached-set
           (mapcar (lambda (x) (princ-to-string x)) attached-notebook-ids)))
     (loop for nb in own
-          for nb-id = (princ-to-string (user-notebook-id nb))
+          for nb-id = (princ-to-string (notebook-id nb))
           unless (member nb-id attached-set :test #'string=)
-            collect (list :id nb-id :title (user-notebook-title nb)))))
+            collect (list :id nb-id :title (notebook-title nb)))))
 
 (defun course-edit-handler (params)
   "Handle GET /courses/:id/edit - show edit form for an existing course
@@ -955,7 +955,7 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                      (redirect "/courses/me"))))))))
 
 (defun course-add-notebook-handler (params)
-  "Handle POST /courses/:id/notebooks - attach a user-notebook to a course.
+  "Handle POST /courses/:id/notebooks - attach a notebook to a course.
 
 Owner only. Reads NOTEBOOK_ID from the form body. Returns the updated
 notebook list as an HTML fragment (#course-notebooks-list) suitable for
@@ -975,14 +975,14 @@ flash message in the rendered list."
                  (let* ((nb-id-raw (get-param params "notebook_id"))
                         (nb-id (and nb-id-raw (string/= nb-id-raw "")
                                     nb-id-raw))
-                        (nb (and nb-id (get-user-notebook-by-id nb-id)))
+                        (nb (and nb-id (get-notebook-by-id nb-id)))
                         (course-id (course-id c))
                         (message nil))
                    (cond
                      ((null nb)
                       (setf message "Selected notebook does not exist."))
                      ((not (equal (princ-to-string
-                                   (user-notebook-author-id nb))
+                                   (notebook-author-id nb))
                                   (princ-to-string (getf user :id))))
                       (setf message "You can only add your own notebooks."))
                      (t
@@ -1114,8 +1114,8 @@ notebooks dropdown in sync."
                   (%render-course-notebook-list-fragment
                    c (getf user :id)))))))))))
 
-(defun render-user-notebook-status-pill (id status &optional (visibility "private"))
-  "Render the user-notebook status pill HTML fragment for HTMX swap.
+(defun render-notebook-status-pill (id status &optional (visibility "private"))
+  "Render the notebook status pill HTML fragment for HTMX swap.
 
 Renders a 3-state pill computed from (STATUS, VISIBILITY):
   (draft, *)               -> Draft (yellow, class=status-draft)
@@ -1141,7 +1141,7 @@ The Task 14 dropdown is layered on top of this in the listing template."
       :hx-include "#csrf-form"
       label))))
 
-(defun user-notebook-toggle-status-handler (params)
+(defun notebook-toggle-status-handler (params)
   "Handle POST /notebooks/:id/toggle-status - legacy 2-state toggle.
 Toggles between draft and published while preserving the visibility column.
 Returns the updated 3-state status pill HTML fragment for HTMX swap."
@@ -1149,15 +1149,15 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
     (if (null user)
         (html-response "Unauthorized" :status 401)
         (let* ((id (get-path-param params :id))
-               (nb (and id (get-user-notebook-by-id id))))
+               (nb (and id (get-notebook-by-id id))))
           (cond ((null nb) (html-response "Not found" :status 404))
                 ((not
-                  (equal (princ-to-string (user-notebook-author-id nb))
+                  (equal (princ-to-string (notebook-author-id nb))
                          (princ-to-string (getf user :id))))
                  (html-response "Forbidden" :status 403))
                 (t
-                 (let* ((current (user-notebook-status nb))
-                        (current-vis (user-notebook-visibility nb))
+                 (let* ((current (notebook-status nb))
+                        (current-vis (notebook-visibility nb))
                         (new-status
                           (if (equal current "published")
                               "draft"
@@ -1165,13 +1165,13 @@ Returns the updated 3-state status pill HTML fragment for HTMX swap."
                         (published-at
                           (when (equal new-status "published")
                             (local-time:now))))
-                   (update-user-notebook! id :status new-status :published-at
+                   (update-notebook! id :status new-status :published-at
                                           published-at)
                    (html-response
-                    (render-user-notebook-status-pill id new-status
+                    (render-notebook-status-pill id new-status
                                                       current-vis)))))))))
 
-(defun user-notebook-set-state-handler (params)
+(defun notebook-set-state-handler (params)
   "Handle POST /notebooks/:id/state with form param state= one of
 draft|published-private|published-public.
 
@@ -1186,10 +1186,10 @@ functional after subsequent clicks. Owner-only."
       (t
        (let* ((id (get-path-param params :id))
               (state-token (get-param params "state"))
-              (nb (and id (get-user-notebook-by-id id))))
+              (nb (and id (get-notebook-by-id id))))
          (cond
            ((null nb) (html-response "Not found" :status 404))
-           ((not (equal (princ-to-string (user-notebook-author-id nb))
+           ((not (equal (princ-to-string (notebook-author-id nb))
                         (princ-to-string (getf user :id))))
             (html-response "Forbidden" :status 403))
            (t
@@ -1199,30 +1199,30 @@ functional after subsequent clicks. Owner-only."
                 ((null new-status)
                  (html-response "Bad request" :status 400))
                 (t
-                 (let* ((current-status (user-notebook-status nb))
-                        (current-vis (user-notebook-visibility nb))
+                 (let* ((current-status (notebook-status nb))
+                        (current-vis (notebook-visibility nb))
                         (effective-vis (or new-vis current-vis))
                         (published-at
                           (when (and (equal new-status "published")
                                      (not (equal current-status "published")))
                             (local-time:now))))
-                   (update-user-notebook! id :status new-status
+                   (update-notebook! id :status new-status
                                           :visibility effective-vis
                                           :published-at published-at)
                    (html-response
-                    (render-user-notebook-state-dropdown id new-status
+                    (render-notebook-state-dropdown id new-status
                                                          effective-vis)))))))))))))
 
-(defun user-notebook-confirm-delete-handler (params)
+(defun notebook-confirm-delete-handler (params)
   "Handle GET /notebooks/:id/confirm-delete - return modal fragment for deletion."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response "Unauthorized" :status 401)
         (let* ((id (get-path-param params :id))
-               (nb (and id (get-user-notebook-by-id id))))
+               (nb (and id (get-notebook-by-id id))))
           (cond
             ((null nb) (html-response "Not found" :status 404))
-            ((not (equal (princ-to-string (user-notebook-author-id nb))
+            ((not (equal (princ-to-string (notebook-author-id nb))
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
@@ -1231,26 +1231,26 @@ functional after subsequent clicks. Owner-only."
                :title "Delete this notebook?"
                :message (format nil
                                 "\"~A\" will be permanently deleted. This cannot be undone."
-                                (user-notebook-title nb))
+                                (notebook-title nb))
                :confirm-hx-post (format nil "/notebooks/~A/delete" id)
                :confirm-label "Delete notebook"))))))))
 
-(defun user-notebook-delete-handler (params)
-  "Handle POST /notebooks/:id/delete - delete user-notebook (owner only).
+(defun notebook-delete-handler (params)
+  "Handle POST /notebooks/:id/delete - delete notebook (owner only).
 For HTMX requests returns an empty OOB row swap; otherwise redirects."
   (let ((user (get-current-user)))
     (if (null user)
         (redirect "/login")
         (let* ((id (get-path-param params :id))
-               (nb (and id (get-user-notebook-by-id id))))
+               (nb (and id (get-notebook-by-id id))))
           (cond
             ((null nb)
              (html-response (recurya/web/ui/errors:not-found) :status 404))
-            ((not (equal (princ-to-string (user-notebook-author-id nb))
+            ((not (equal (princ-to-string (notebook-author-id nb))
                          (princ-to-string (getf user :id))))
              (html-response "Forbidden" :status 403))
             (t
-             (delete-user-notebook! id)
+             (delete-notebook! id)
              (if (htmx-request-p)
                  (html-response
                   (with-html-string
@@ -1258,51 +1258,51 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
                          :hx-swap-oob "outerHTML")))
                  (redirect "/notebooks/me"))))))))
 
-(defun user-notebook-public-plist (nb)
-  "Convert a user-notebook DAO to a plist for the public listing UI."
-  (let* ((author (user-notebook-author nb))
+(defun notebook-public-plist (nb)
+  "Convert a notebook DAO to a plist for the public listing UI."
+  (let* ((author (notebook-author nb))
          (author-name
            (when author (recurya/models/users:users-display-name author))))
-    (list :slug         (user-notebook-slug nb)
-          :title        (user-notebook-title nb)
-          :summary      (user-notebook-summary nb)
-          :published-at (user-notebook-published-at nb)
+    (list :slug         (notebook-slug nb)
+          :title        (notebook-title nb)
+          :summary      (notebook-summary nb)
+          :published-at (notebook-published-at nb)
           :author-name  (or author-name "Anonymous"))))
 
 (defun notebooks-public-handler (params)
-  "Handle GET /notebooks - public listing of published user-notebooks.
+  "Handle GET /notebooks - public listing of published notebooks.
 No authentication required."
   (let* ((page (parse-page-param params))
-         (total-count (count-user-notebooks :status "published"
+         (total-count (count-notebooks :status "published"
                                              :visibility "public"))
          (offset (* (1- page) *page-size*))
-         (raw (list-user-notebooks :status "published"
+         (raw (list-notebooks :status "published"
                                    :visibility "public"
                                    :limit *page-size*
                                    :offset offset))
-         (notebooks (mapcar #'user-notebook-public-plist raw))
+         (notebooks (mapcar #'notebook-public-plist raw))
          (pagination (make-pagination page total-count *page-size*
                                       "/notebooks")))
     (html-response
      (recurya/web/ui/notebook-list:render
       :notebooks notebooks :pagination pagination))))
 
-(defun user-notebook-row->notebook-struct (nb-row)
-  "Convert a user-notebook DAO into a recurya/game/notebook:notebook struct
+(defun notebook-row->notebook-struct (nb-row)
+  "Convert a notebook DAO into a recurya/game/notebook:notebook struct
 that the existing notebook UI and run-cell logic can consume.
 Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
-  (let* ((cells-data (recurya/db/user-notebooks:user-notebook-cells-parsed nb-row))
+  (let* ((cells-data (recurya/db/notebooks:notebook-cells-parsed nb-row))
          (cells-list (mapcar #'jsonb-hash->cell
                              (coerce (or cells-data #()) 'list))))
     (make-notebook
-     :id (princ-to-string (user-notebook-id nb-row))
+     :id (princ-to-string (notebook-id nb-row))
      :chapter ""
-     :title (or (user-notebook-title nb-row) "")
-     :summary (or (user-notebook-summary nb-row) "")
+     :title (or (notebook-title nb-row) "")
+     :summary (or (notebook-summary nb-row) "")
      :cells cells-list)))
 
-(defun public-user-notebook-handler (params)
-  "Handle GET /n/:slug - public single user-notebook page.
+(defun public-notebook-handler (params)
+  "Handle GET /n/:slug - public single notebook page.
 Anonymous and other users see published notebooks; the owner can also
 preview their own draft. Anything else is 404.
 
@@ -1314,7 +1314,7 @@ course's notebooks, the breadcrumb is
 and prev/next links navigate to the surrounding notebooks within the
 course (preserving the ?course=<slug> query string)."
   (let* ((slug (get-path-param params :slug))
-         (nb-row (and slug (get-user-notebook-by-slug slug)))
+         (nb-row (and slug (get-notebook-by-slug slug)))
          (user (get-current-user))
          (uid (and user (getf user :id))))
     (cond
@@ -1323,12 +1323,12 @@ course (preserving the ?course=<slug> query string)."
       ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
-       (let* ((notebook (user-notebook-row->notebook-struct nb-row))
-              (nb-id-str (princ-to-string (user-notebook-id nb-row)))
+       (let* ((notebook (notebook-row->notebook-struct nb-row))
+              (nb-id-str (princ-to-string (notebook-id nb-row)))
               (saved (when uid (user-cell-codes uid nb-id-str)))
               (passed (when uid (user-passed-cells uid nb-id-str)))
               (run-cell-base
-               (format nil "/n/~A" (user-notebook-slug nb-row)))
+               (format nil "/n/~A" (notebook-slug nb-row)))
               (course-slug-param (get-param params "course"))
               (course-row
                (and course-slug-param
@@ -1338,7 +1338,7 @@ course (preserving the ?course=<slug> query string)."
                     (list-course-notebooks (course-id course-row))))
               (notebook-in-course-p
                (and course-rows
-                    (find (princ-to-string (user-notebook-id nb-row))
+                    (find (princ-to-string (notebook-id nb-row))
                           course-rows
                           :key (lambda (cn)
                                  (princ-to-string
@@ -1348,7 +1348,7 @@ course (preserving the ?course=<slug> query string)."
            (notebook-in-course-p
             (let* ((sidebar-notebooks
                     (mapcar #'course-notebook-row->public-plist course-rows))
-                   (current-slug (user-notebook-slug nb-row))
+                   (current-slug (notebook-slug nb-row))
                    (current-pos
                     (position current-slug sidebar-notebooks
                               :key (lambda (p) (getf p :slug))
@@ -1372,7 +1372,7 @@ course (preserving the ?course=<slug> query string)."
                     (list (list :text "Notebooks" :href "/notebooks")
                           (list :text (course-title course-row)
                                 :href (format nil "/c/~A" cs))
-                          (list :text (user-notebook-title nb-row)))))
+                          (list :text (notebook-title nb-row)))))
               (html-response
                (recurya/web/ui/notebook:render
                 notebook
@@ -1399,12 +1399,12 @@ course (preserving the ?course=<slug> query string)."
 (defun course-notebook-row->public-plist (cn)
   "Convert a course-notebook DAO into a plist for the public course view.
 
-CN's underlying user-notebook is fetched via course-notebook-notebook
+CN's underlying notebook is fetched via course-notebook-notebook
 and projected into (:slug :title :summary :position)."
   (let ((nb (course-notebook-notebook cn)))
-    (list :slug (when nb (user-notebook-slug nb))
-          :title (when nb (user-notebook-title nb))
-          :summary (when nb (user-notebook-summary nb))
+    (list :slug (when nb (notebook-slug nb))
+          :title (when nb (notebook-title nb))
+          :summary (when nb (notebook-summary nb))
           :position (course-notebook-position cn))))
 
 (defun public-course-handler (params)
@@ -1459,8 +1459,8 @@ No authentication required."
      (recurya/web/ui/course-list:render :courses courses
                                         :pagination pagination))))
 
-(defun %maybe-persist-user-notebook-cell-run (uid nb-uuid cell result code)
-  "Persist saved code, submission, and progress for a user-notebook cell run.
+(defun %maybe-persist-notebook-cell-run (uid nb-uuid cell result code)
+  "Persist saved code, submission, and progress for a notebook cell run.
 Anonymous users (UID NIL) are skipped silently; DB errors are logged but
 do not poison the response."
   (when uid
@@ -1474,14 +1474,14 @@ do not poison the response."
             (record-submission uid nb-uuid cell-id-str (or code "") status-str)
             (when (eq status :pass)
               (mark-cell-passed uid nb-uuid cell-id-str))))
-      (error (e) (log:warn "Failed to persist user-notebook cell run: ~A" e)))))
+      (error (e) (log:warn "Failed to persist notebook cell run: ~A" e)))))
 
-(defun public-user-notebook-cell-run-handler (params)
+(defun public-notebook-cell-run-handler (params)
   "Handle POST /n/:slug/cells/:index/run - HTMX fragment for cell execution.
 Anonymous users may run cells but their progress is not persisted.
 Drafts are visible (and runnable) only to the owner."
   (let* ((slug (get-path-param params :slug))
-         (nb-row (and slug (get-user-notebook-by-slug slug)))
+         (nb-row (and slug (get-notebook-by-slug slug)))
          (user (get-current-user))
          (uid (and user (getf user :id))))
     (cond
@@ -1489,7 +1489,7 @@ Drafts are visible (and runnable) only to the owner."
       ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response "Notebook not found" :status 404))
       (t
-       (let* ((notebook (user-notebook-row->notebook-struct nb-row))
+       (let* ((notebook (notebook-row->notebook-struct nb-row))
               (cells (notebook-cells notebook))
               (index-raw (get-path-param params :index))
               (index (typecase index-raw
@@ -1507,10 +1507,10 @@ Drafts are visible (and runnable) only to the owner."
                     '(:prose :code-solution))
             (html-response "Cannot run this cell" :status 400))
            (t
-            (let* ((nb-uuid (princ-to-string (user-notebook-id nb-row)))
+            (let* ((nb-uuid (princ-to-string (notebook-id nb-row)))
                    (result (run-cell notebook index codes-list))
                    (body (recurya/web/ui/notebook:render-cell-result result)))
-              (%maybe-persist-user-notebook-cell-run
+              (%maybe-persist-notebook-cell-run
                uid nb-uuid (nth index cells) result (nth index codes-list))
               (html-response body)))))))))
 
@@ -1679,7 +1679,7 @@ For HTMX requests, returns HX-Redirect header. For normal requests, redirects."
 
 (defun sicp-notebook-redirect-handler (params)
   "GET /wardlisp/learn/:id -> 301 /n/:id.
-   Permanent redirect from the legacy notebook URL to the public user-notebook URL.
+   Permanent redirect from the legacy notebook URL to the public notebook URL.
    The :id path parameter is reused verbatim as the new slug."
   (let ((id (get-path-param params :id)))
     (list 301
@@ -1731,23 +1731,23 @@ without restarting the server."
   (setf (ningle/app:route app "/auth/:provider/callback")
           (make-dynamic-handler 'oauth-callback-handler))
   (setf (ningle/app:route app "/notebooks/me")
-          (make-dynamic-handler 'user-notebooks-handler))
+          (make-dynamic-handler 'notebooks-handler))
   (setf (ningle/app:route app "/notebooks/new")
-          (make-dynamic-handler 'user-notebook-new-handler))
+          (make-dynamic-handler 'notebook-new-handler))
   (setf (ningle/app:route app "/notebooks" :method :post)
-          (make-dynamic-handler 'user-notebook-create-handler))
+          (make-dynamic-handler 'notebook-create-handler))
   (setf (ningle/app:route app "/notebooks/:id/edit")
-          (make-dynamic-handler 'user-notebook-edit-handler))
+          (make-dynamic-handler 'notebook-edit-handler))
   (setf (ningle/app:route app "/notebooks/:id" :method :post)
-          (make-dynamic-handler 'user-notebook-update-handler))
+          (make-dynamic-handler 'notebook-update-handler))
   (setf (ningle/app:route app "/notebooks/:id/toggle-status" :method :post)
-          (make-dynamic-handler 'user-notebook-toggle-status-handler))
+          (make-dynamic-handler 'notebook-toggle-status-handler))
   (setf (ningle/app:route app "/notebooks/:id/state" :method :post)
-          (make-dynamic-handler 'user-notebook-set-state-handler))
+          (make-dynamic-handler 'notebook-set-state-handler))
   (setf (ningle/app:route app "/notebooks/:id/confirm-delete")
-          (make-dynamic-handler 'user-notebook-confirm-delete-handler))
+          (make-dynamic-handler 'notebook-confirm-delete-handler))
   (setf (ningle/app:route app "/notebooks/:id/delete" :method :post)
-          (make-dynamic-handler 'user-notebook-delete-handler))
+          (make-dynamic-handler 'notebook-delete-handler))
   (setf (ningle/app:route app "/courses/me")
           (make-dynamic-handler 'courses-me-handler))
   (setf (ningle/app:route app "/courses/new")
@@ -1779,9 +1779,9 @@ without restarting the server."
   (setf (ningle/app:route app "/notebooks")
           (make-dynamic-handler 'notebooks-public-handler))
   (setf (ningle/app:route app "/n/:slug")
-          (make-dynamic-handler 'public-user-notebook-handler))
+          (make-dynamic-handler 'public-notebook-handler))
   (setf (ningle/app:route app "/n/:slug/cells/:index/run" :method :post)
-          (make-dynamic-handler 'public-user-notebook-cell-run-handler))
+          (make-dynamic-handler 'public-notebook-cell-run-handler))
   (setf (ningle/app:route app "/c/:slug")
           (make-dynamic-handler 'public-course-handler))
   (setf (ningle/app:route app "/courses")

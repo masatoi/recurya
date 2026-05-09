@@ -1,6 +1,6 @@
-;;;; web/ui/user-notebooks.lisp --- Admin user-notebook list page with HTMX interactions.
+;;;; web/ui/notebooks-dashboard.lisp --- Admin notebook list page with HTMX interactions.
 
-(defpackage #:recurya/web/ui/user-notebooks
+(defpackage #:recurya/web/ui/notebooks-dashboard
   (:use #:cl)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:recurya/web/ui/layout
@@ -9,9 +9,9 @@
                 #:common-styles
                 #:format-timestamp)
   (:export #:render
-           #:render-user-notebook-state-dropdown))
+           #:render-notebook-state-dropdown))
 
-(in-package #:recurya/web/ui/user-notebooks)
+(in-package #:recurya/web/ui/notebooks-dashboard)
 
 (defparameter *page-styles*
   "/* User-notebooks admin page styles */
@@ -60,8 +60,8 @@
                        color: var(--color-error-text); }
 tr.htmx-swapping { opacity: 0; transition: opacity 0.3s ease; }")
 
-(defun render-user-notebook-state-dropdown (id status visibility)
-  "Render the user-notebook 3-state pill wrapped in a <details>/<summary>
+(defun render-notebook-state-dropdown (id status visibility)
+  "Render the notebook 3-state pill wrapped in a <details>/<summary>
 dropdown with three HTMX buttons (Draft / Private / Public).
 
 The outer <details> element gets id=state-dropdown-{ID} and the HTMX
@@ -107,7 +107,7 @@ referencing the pill by that id continues to work."
             "Public"))))))
 
 (defun render (&key user notebooks pagination message errors)
-  "Render the admin user-notebook list page as an HTML string.
+  "Render the admin notebook list page as an HTML string.
 
 NOTEBOOKS is a list of plists with :id :title :slug :status
 :published-at :created-at."
@@ -157,7 +157,7 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                            title))
                       (:td
                        (:raw
-                        (render-user-notebook-state-dropdown
+                        (render-notebook-state-dropdown
                          id status visibility)))
                       (:td
                        (if published-at

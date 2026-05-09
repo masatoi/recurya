@@ -121,7 +121,7 @@
 (defun setup-wardlisp-routes (app)
   "Register all WardLisp routes on the Ningle app.
    The /wardlisp/learn/* routes are now permanent redirects to the public
-   user-notebook (/n/:slug) and course (/c/:slug) endpoints — see
+   notebook (/n/:slug) and course (/c/:slug) endpoints — see
    recurya/web/routes for the redirect handlers."
   (setf (ningle/app:route app "/wardlisp/")
         (make-dynamic-handler 'wardlisp-home-handler))
