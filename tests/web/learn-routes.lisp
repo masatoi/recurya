@@ -17,6 +17,7 @@
   (:use #:cl
         #:rove)
   (:import-from #:recurya/web/routes
+                #:+sicp-author-handle+
                 #:sicp-learn-redirect-handler
                 #:sicp-notebook-redirect-handler
                 #:sicp-cell-run-redirect-handler
@@ -56,21 +57,23 @@
 ;;; ---------------------------------------------------------------------------
 
 (deftest sicp-old-routes-redirect-301
-  (testing "GET /wardlisp/learn redirects 301 to /c/sicp"
+  (testing "GET /wardlisp/learn redirects 301 to /c/@<sicp-author>/sicp"
     (let ((response (sicp-learn-redirect-handler nil)))
       (ok (= 301 (response-status response)))
-      (ok (string= "/c/sicp" (response-location response))))))
+      (ok (string= (format nil "/c/@~A/sicp" +sicp-author-handle+)
+                   (response-location response))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; GET /wardlisp/learn/:id -> 301 /n/:id
 ;;; ---------------------------------------------------------------------------
 
 (deftest sicp-notebook-redirect
-  (testing "GET /wardlisp/learn/sicp-1-1-1 redirects 301 to /n/sicp-1-1-1"
+  (testing "GET /wardlisp/learn/sicp-1-1-1 redirects 301 to /@<sicp-author>/sicp-1-1-1"
     (let ((response (sicp-notebook-redirect-handler
                      (path-params :id "sicp-1-1-1"))))
       (ok (= 301 (response-status response)))
-      (ok (string= "/n/sicp-1-1-1" (response-location response))))))
+      (ok (string= (format nil "/@~A/sicp-1-1-1" +sicp-author-handle+)
+                   (response-location response))))))
 
 ;;; ---------------------------------------------------------------------------
 ;;; POST /wardlisp/learn/:id/cells/:index/run -> 308 /n/:id/cells/:index/run
@@ -81,7 +84,8 @@
     (let ((response (sicp-cell-run-redirect-handler
                      (path-params :id "sicp-1-1-1" :index "0"))))
       (ok (= 308 (response-status response)))
-      (ok (string= "/n/sicp-1-1-1/cells/0/run"
+      (ok (string= (format nil "/@~A/sicp-1-1-1/cells/0/run"
+                           +sicp-author-handle+)
                    (response-location response))))))
 
 ;;; ---------------------------------------------------------------------------

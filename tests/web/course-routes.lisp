@@ -20,7 +20,6 @@
                 #:course-notebook-move-up-handler
                 #:course-notebook-move-down-handler
                 #:course-notebook-remove-handler
-                #:public-course-handler
                 #:public-course-by-handle-handler
                 #:courses-public-handler)
   (:import-from #:recurya/db/notebooks
@@ -862,148 +861,56 @@ where the lists are aligned with the attached positions."
               (ok (= (second cn-ids)
                      (course-notebook-id (first rows)))))))))))
 
-(deftest public-course-handler-404-missing
-  (with-test-db
-    (with-mock-session (make-session)
-      (let ((res (public-course-handler '((:slug . "no-such-course")))))
-        (ok (= 404 (response-status res)))))))
-
-(deftest public-course-handler-200-published-anonymous
-  (with-test-db
-    (let* ((author (mk-user))
-           (dao (get-user-by-id (getf author :id)))
-           (course (create-course! :title "Public Course"
-                                   :summary "Course summary text."
-                                   :status "published"
-                                   :visibility "public"
-                                   :published-at (local-time:now)
-                                   :author dao))
-           (slug (course-slug course))
-           (nb (create-notebook!
-                :title "Attached Notebook"
-                :body-md (format nil "===prose===~%hi")
-                :cells nil
-                :status "published"
-                :published-at (local-time:now)
-                :author dao)))
-      (add-notebook-to-course! (course-id course) (notebook-id nb))
-      (with-mock-session (make-session)
-        (let* ((res (public-course-handler (list (cons :slug slug))))
-               (body (first (response-body res))))
-          (ok (= 200 (response-status res)))
-          (ok (search "Public Course" body))
-          (ok (search "Course summary text." body))
-          (ok (search "attached-notebook" body))
-          (ok (search "Attached" body)))))))
-
-(deftest public-course-handler-404-draft-other-user
-  (with-test-db
-    (let* ((owner (mk-user))
-           (other (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (course (create-course! :title "Draft Course"
-                                   :status "draft"
-                                   :author owner-dao))
-           (slug (course-slug course)))
-      (with-mock-session (make-session :user other)
-        (let ((res (public-course-handler (list (cons :slug slug)))))
-          (ok (= 404 (response-status res))))))))
-
-(deftest public-course-handler-200-draft-owner
-  (with-test-db
-    (let* ((owner (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (course (create-course! :title "Owner Draft"
-                                   :status "draft"
-                                   :author owner-dao))
-           (slug (course-slug course)))
-      (with-mock-session (make-session :user owner)
-        (let* ((res (public-course-handler (list (cons :slug slug))))
-               (body (first (response-body res))))
-          (ok (= 200 (response-status res)))
-          (ok (search "Owner Draft" body)))))))
-
-(deftest public-course-handler-published-private-404-for-others
-  (with-test-db
-    (let* ((owner (mk-user))
-           (other (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (course (create-course! :title "Pub Priv Course"
-                                   :status "published"
-                                   :visibility "private"
-                                   :published-at (local-time:now)
-                                   :author owner-dao))
-           (slug (course-slug course)))
-      (with-mock-session (make-session :user other)
-        (let ((res (public-course-handler (list (cons :slug slug)))))
-          (ok (= 404 (response-status res)))))
-      (with-mock-session (make-session)
-        (let ((res (public-course-handler (list (cons :slug slug)))))
-          (ok (= 404 (response-status res))))))))
-
-(deftest public-course-handler-published-private-200-for-owner
-  (with-test-db
-    (let* ((owner (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (course (create-course! :title "Owner Pub Priv"
-                                   :status "published"
-                                   :visibility "private"
-                                   :published-at (local-time:now)
-                                   :author owner-dao))
-           (slug (course-slug course)))
-      (with-mock-session (make-session :user owner)
-        (let* ((res (public-course-handler (list (cons :slug slug))))
-               (body (first (response-body res))))
-          (ok (= 200 (response-status res)))
-          (ok (search "Owner Pub Priv" body)))))))
-
 (deftest public-course-handler-shows-attached-notebooks-in-order
-  (with-test-db
-    (let* ((author (mk-user))
-           (dao (get-user-by-id (getf author :id)))
-           (course (create-course! :title "Ordered"
-                                   :status "published"
-                                   :visibility "public"
-                                   :published-at (local-time:now)
-                                   :author dao))
-           (course-uuid (course-id course))
-           (slug (course-slug course))
-           (nb-a (create-notebook!
-                  :title "Notebook-A"
-                  :body-md (format nil "===prose===~%a")
-                  :cells nil
-                  :status "published"
-                  :published-at (local-time:now)
-                  :author dao))
-           (nb-b (create-notebook!
-                  :title "Notebook-B"
-                  :body-md (format nil "===prose===~%b")
-                  :cells nil
-                  :status "published"
-                  :published-at (local-time:now)
-                  :author dao))
-           (nb-c (create-notebook!
-                  :title "Notebook-C"
-                  :body-md (format nil "===prose===~%c")
-                  :cells nil
-                  :status "published"
-                  :published-at (local-time:now)
-                  :author dao)))
-      (add-notebook-to-course! course-uuid (notebook-id nb-a) :position 0)
-      (add-notebook-to-course! course-uuid (notebook-id nb-b) :position 1)
-      (add-notebook-to-course! course-uuid (notebook-id nb-c) :position 2)
-      (with-mock-session (make-session)
-        (let* ((res (public-course-handler (list (cons :slug slug))))
-               (body (first (response-body res)))
-               (pa (search "Notebook-A" body))
-               (pb (search "Notebook-B" body))
-               (pc (search "Notebook-C" body)))
-          (ok (= 200 (response-status res)))
-          (ok pa)
-          (ok pb)
-          (ok pc)
-          (ok (and pa pb (< pa pb)))
-          (ok (and pb pc (< pb pc))))))))
+  (testing "GET /c/@:handle/:slug renders attached notebooks in position order"
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (handle (recurya/db/users:users-handle dao))
+             (course (create-course! :title "Ordered"
+                                     :status "published"
+                                     :visibility "public"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (course-uuid (course-id course))
+             (slug (course-slug course))
+             (nb-a (create-notebook!
+                    :title "Notebook-A"
+                    :body-md (format nil "===prose===~%a")
+                    :cells nil
+                    :status "published"
+                    :published-at (local-time:now)
+                    :author dao))
+             (nb-b (create-notebook!
+                    :title "Notebook-B"
+                    :body-md (format nil "===prose===~%b")
+                    :cells nil
+                    :status "published"
+                    :published-at (local-time:now)
+                    :author dao))
+             (nb-c (create-notebook!
+                    :title "Notebook-C"
+                    :body-md (format nil "===prose===~%c")
+                    :cells nil
+                    :status "published"
+                    :published-at (local-time:now)
+                    :author dao)))
+        (add-notebook-to-course! course-uuid (notebook-id nb-a) :position 0)
+        (add-notebook-to-course! course-uuid (notebook-id nb-b) :position 1)
+        (add-notebook-to-course! course-uuid (notebook-id nb-c) :position 2)
+        (with-mock-session (make-session)
+          (let* ((res (public-course-by-handle-handler
+                       (list (cons :captures (list handle slug)))))
+                 (body (first (response-body res)))
+                 (pa (search "Notebook-A" body))
+                 (pb (search "Notebook-B" body))
+                 (pc (search "Notebook-C" body)))
+            (ok (= 200 (response-status res)))
+            (ok pa)
+            (ok pb)
+            (ok pc)
+            (ok (and pa pb (< pa pb)))
+            (ok (and pb pc (< pb pc)))))))))
 
 (deftest courses-public-handler-shows-published-only
   (with-test-db

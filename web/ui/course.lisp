@@ -53,7 +53,10 @@ Returns 0 when slug is missing or value is nil."
   "Render the public course detail page.
 
 COURSE is a plist with :slug :title :summary :status.
-NOTEBOOKS is a list of plists with :slug :title :summary :position.
+NOTEBOOKS is a list of plists with :slug :title :summary :position
+:author-handle. The :author-handle of each attached notebook is used
+to build the /@<handle>/<slug> link; notebooks without an author-handle
+render the title as plain text.
 USER is the current session plist (or nil when anonymous).
 PASSED-BY-NOTEBOOK is an alist mapping notebook-slug -> integer,
 the count of cells the current user has passed for that notebook.
@@ -90,22 +93,28 @@ Empty alist is treated as no progress."
                      (nb-title (getf nb :title))
                      (nb-summary (getf nb :summary))
                      (position (getf nb :position))
+                     (author-handle (getf nb :author-handle))
                      (passed (%passed-count slug passed-by-notebook))
                      (course-slug (getf course :slug))
-                     (href (if course-slug
-                               (format nil "/n/~A?course=~A"
-                                       slug course-slug)
-                               (format nil "/n/~A" slug))))
+                     (href (when (and author-handle slug)
+                             (if course-slug
+                                 (format nil "/@~A/~A?course=~A"
+                                         author-handle slug course-slug)
+                                 (format nil "/@~A/~A"
+                                         author-handle slug)))))
                 (:div :class "nb-card"
                       (when position
                         (:div :class "nb-card__index"
                               (format nil "Notebook ~A"
                                       (1+ position))))
                       (:h2 :class "nb-card__title"
-                           (:a :href href nb-title))
+                           (if href
+                               (:a :href href nb-title)
+                               (:span nb-title)))
                       (when (and nb-summary (string/= nb-summary ""))
                         (:p :class "nb-card__summary" nb-summary))
                       (:div :class "nb-card__progress"
                             (format nil "~A passed" passed))
-                      (:a :class "nb-card__open"
-                          :href href "Open notebook →"))))))))))))
+                      (when href
+                        (:a :class "nb-card__open"
+                            :href href "Open notebook →")))))))))))))

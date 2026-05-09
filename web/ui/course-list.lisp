@@ -52,8 +52,9 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 COURSES is a list of plists with :slug :title :summary :author-name
 :author-handle :notebook-count :published-at.
 
-Each card links to /c/@<handle>/<slug> when :author-handle is present;
-falls back to the legacy /c/<slug> URL for orphaned/anonymous data."
+Each card links to /c/@<handle>/<slug>. Courses without an
+:author-handle render the title as plain text (no link) — the
+slug-only legacy URL was removed in Phase 7C."
   (with-html-string
     (:doctype)
     (:html
@@ -76,13 +77,14 @@ falls back to the legacy /c/<slug> URL for orphaned/anonymous data."
                       (author-name (getf c :author-name))
                       (author-handle (getf c :author-handle))
                       (notebook-count (getf c :notebook-count))
-                      (detail-url (if author-handle
-                                      (format nil "/c/@~A/~A"
-                                              author-handle slug)
-                                      (format nil "/c/~A" slug))))
+                      (detail-url (when author-handle
+                                    (format nil "/c/@~A/~A"
+                                            author-handle slug))))
                  (:div :class "c-card"
                        (:h2 :class "c-card__title"
-                            (:a :href detail-url title))
+                            (if detail-url
+                                (:a :href detail-url title)
+                                (:span title)))
                        (:div :class "c-card__meta"
                              (when author-handle
                                (:a :href (format nil "/@~A" author-handle)
@@ -96,9 +98,10 @@ falls back to the legacy /c/<slug> URL for orphaned/anonymous data."
                                      (format-timestamp published-at)))
                        (when (and summary (string/= summary ""))
                          (:p :class "c-card__summary" summary))
-                       (:a :class "c-card__open"
-                           :href detail-url
-                           "Open →"))))
+                       (when detail-url
+                         (:a :class "c-card__open"
+                             :href detail-url
+                             "Open →")))))
              (when pagination
                (let ((current-page (getf pagination :current-page))
                      (total-pages (getf pagination :total-pages))

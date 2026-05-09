@@ -52,8 +52,9 @@ main { max-width: 760px; margin: 0 auto; padding: 3rem 1.5rem 4rem; }
 NOTEBOOKS is a list of plists with :slug :title :summary
 :published-at :author-name :author-handle.
 
-Each card links to /@<handle>/<slug> when :author-handle is present;
-falls back to the legacy /n/<slug> URL for orphaned/anonymous data."
+Each card links to /@<handle>/<slug>. Notebooks without an
+:author-handle render the title as plain text (no link) — the
+slug-only legacy URL was removed in Phase 7C."
   (with-html-string
     (:doctype)
     (:html
@@ -75,12 +76,13 @@ falls back to the legacy /n/<slug> URL for orphaned/anonymous data."
                       (published-at (getf nb :published-at))
                       (author-name (getf nb :author-name))
                       (author-handle (getf nb :author-handle))
-                      (detail-url (if author-handle
-                                      (format nil "/@~A/~A" author-handle slug)
-                                      (format nil "/n/~A" slug))))
+                      (detail-url (when author-handle
+                                    (format nil "/@~A/~A" author-handle slug))))
                  (:div :class "nb-card"
                        (:h2 :class "nb-card__title"
-                            (:a :href detail-url title))
+                            (if detail-url
+                                (:a :href detail-url title)
+                                (:span title)))
                        (:div :class "nb-card__meta"
                              (when author-handle
                                (:a :href (format nil "/@~A" author-handle)
@@ -91,9 +93,10 @@ falls back to the legacy /n/<slug> URL for orphaned/anonymous data."
                                      (format-timestamp published-at)))
                        (when (and summary (string/= summary ""))
                          (:p :class "nb-card__summary" summary))
-                       (:a :class "nb-card__open"
-                           :href detail-url
-                           "Open →"))))
+                       (when detail-url
+                         (:a :class "nb-card__open"
+                             :href detail-url
+                             "Open →")))))
              (when pagination
                (let ((current-page (getf pagination :current-page))
                      (total-pages (getf pagination :total-pages))

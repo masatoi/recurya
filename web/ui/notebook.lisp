@@ -139,30 +139,39 @@ and string (UUID) representations. NIL becomes \"\"."
         ((symbolp id) (string-downcase (symbol-name id)))
         (t (string id))))
 
-(defun render-course-sidebar (course-title course-slug notebooks current-id)
+(defun render-course-sidebar (course-title course-slug course-handle
+                              notebooks current-id)
   "Render a flat-list left sidebar for a generic course.
-COURSE-TITLE and COURSE-SLUG, if both non-nil, render a course header link
-pointing at /c/<slug>. NOTEBOOKS is a list of plists with keys :slug
-:title (and optionally :position) in the desired display order.
+COURSE-TITLE, COURSE-SLUG, and COURSE-HANDLE, when all non-nil, render
+a course header link pointing at /c/@<handle>/<slug>. NOTEBOOKS is a
+list of plists with keys :slug :title :author-handle (and optionally
+:position) in the desired display order. Each list item links to
+/@<author-handle>/<slug> when the notebook's :author-handle is present;
+notebooks without an :author-handle render the title as plain text.
 CURRENT-ID is the slug (or url id) of the active notebook used to mark
 the matching entry as 'sb-link active'."
   (with-html
     (:aside :class "sidebar"
-            (when (and course-title course-slug)
+            (when (and course-title course-slug course-handle)
               (:a :class "sidebar-home"
-                  :href (format nil "/c/~A" course-slug)
+                  :href (format nil "/c/@~A/~A"
+                                course-handle course-slug)
                   (format nil "📘 ~A" course-title)))
             (:ul :class "sb-list"
                  (dolist (nb notebooks)
                    (let ((slug (getf nb :slug))
-                         (title (getf nb :title)))
+                         (title (getf nb :title))
+                         (author-handle (getf nb :author-handle)))
                      (:li
-                      (:a :href (format nil "/n/~A" slug)
-                          :class (if (and slug current-id
-                                          (string= slug current-id))
-                                     "sb-link active"
-                                     "sb-link")
-                          title))))))))
+                      (if (and slug author-handle)
+                          (:a :href (format nil "/@~A/~A"
+                                            author-handle slug)
+                              :class (if (and current-id
+                                              (string= slug current-id))
+                                         "sb-link active"
+                                         "sb-link")
+                              title)
+                          (:span :class "sb-link" title)))))))))
 
 (defun render-prose-tree (tree)
   "Render a Spinneret DSL list at runtime to an HTML string."
@@ -233,7 +242,7 @@ the matching entry as 'sb-link active'."
 (defun render (notebook
                &key user saved-codes passed-cells
                     (sidebar-notebooks nil) run-cell-base
-                    course-title course-slug
+                    course-title course-slug course-handle
                     breadcrumb course-prev-url course-next-url)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
@@ -286,6 +295,7 @@ notebooks within the same course."
                       ((null sidebar-notebooks) nil)
                       ((listp sidebar-notebooks)
                        (render-course-sidebar course-title course-slug
+                                              course-handle
                                               sidebar-notebooks
                                               (notebook-url-id notebook))))
                     (:main

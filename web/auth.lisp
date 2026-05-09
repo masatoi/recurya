@@ -55,11 +55,12 @@ their prefix would also catch /dashboard/notebooks and /dashboard/courses,
 which we DO want to gate behind onboarding.")
 
 (defparameter *handle-onboarding-skip-prefixes*
-  '("/auth/" "/static/" "/n/" "/c/" "/wardlisp" "/onboarding/")
+  '("/auth/" "/static/" "/@" "/c/@" "/wardlisp" "/onboarding/")
   "Path prefixes that bypass the require-real-handle redirect. Covers
-OAuth callbacks, static assets, public single-notebook (/n/...) and
-single-course (/c/...) views, the WardLisp public surface, and any
-future /onboarding/* sub-paths.")
+OAuth callbacks, static assets, public profile/notebook (/@<handle>/...)
+and single-course (/c/@<handle>/...) views, the WardLisp public surface,
+and any future /onboarding/* sub-paths. Phase 7C dropped the legacy
+/n/ and /c/ slug-only prefixes.")
 
 (defun %require-real-handle-skip-p (path)
   "True if PATH should bypass the onboarding redirect."

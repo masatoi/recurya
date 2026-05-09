@@ -297,9 +297,12 @@ the middleware passes the request through."
         ;; /notebooks (public listing) must be allowed.
         (let ((res (funcall wrapped (mk-env :path-info "/notebooks" :session session))))
           (ok (= 200 (response-status res)) "/notebooks should be allowed"))
-        ;; /n/<slug> public notebook page must be allowed.
-        (let ((res (funcall wrapped (mk-env :path-info "/n/some-slug" :session session))))
-          (ok (= 200 (response-status res)) "/n/<slug> should be allowed"))
+        ;; /@<handle>/<slug> public notebook page must be allowed.
+        (let ((res (funcall wrapped (mk-env :path-info "/@alice/some-slug" :session session))))
+          (ok (= 200 (response-status res)) "/@<handle>/<slug> should be allowed"))
+        ;; /c/@<handle>/<slug> public course page must be allowed.
+        (let ((res (funcall wrapped (mk-env :path-info "/c/@alice/some-slug" :session session))))
+          (ok (= 200 (response-status res)) "/c/@<handle>/<slug> should be allowed"))
         ;; /static/* must be allowed.
         (let ((res (funcall wrapped (mk-env :path-info "/static/app.css" :session session))))
           (ok (= 200 (response-status res)) "/static/* should be allowed"))

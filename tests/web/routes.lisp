@@ -61,17 +61,17 @@
 ;;; Tests
 
 (deftest root-handler-redirects-based-on-session
-  (testing "root redirects unauthenticated users to /notebooks (public listing)"
+  (testing "anonymous GET / -> 302 /notebooks"
     (with-mock-session (make-session)
       (let ((response (root-handler nil)))
         (ok (= 302 (response-status response)))
         (ok (string= "/notebooks" (response-location response))))))
 
-  (testing "root redirects authenticated users to /dashboard/notebooks"
+  (testing "logged-in GET / -> 302 /dashboard"
     (with-mock-session (make-session :user '(:id "123" :email "test@example.com"))
       (let ((response (root-handler nil)))
         (ok (= 302 (response-status response)))
-        (ok (string= "/dashboard/notebooks" (response-location response)))))))
+        (ok (string= "/dashboard" (response-location response)))))))
 
 (deftest dashboard-home-redirects-to-notebooks
   (testing "GET /dashboard redirects to /dashboard/notebooks"

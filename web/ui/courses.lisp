@@ -112,6 +112,7 @@ referencing the pill by that id continues to work."
 COURSES is a list of plists with :id :slug :title :status
 :published-at :created-at :notebook-count."
   (let ((user-timezone (getf user :timezone))
+        (user-handle (getf user :handle))
         (all-styles
          (concatenate 'string (common-styles) (header-styles) *page-styles*)))
     (spinneret:with-html-string
@@ -152,8 +153,11 @@ COURSES is a list of plists with :id :slug :title :status
                           (created-at (getf course :created-at)))
                      (:tr :id (format nil "course-row-~A" id)
                       (:td
-                       (if (and slug (string= status "published"))
-                           (:a :href (format nil "/c/~A" slug) title)
+                       (if (and slug user-handle
+                                (string= status "published"))
+                           (:a :href (format nil "/c/@~A/~A"
+                                             user-handle slug)
+                            title)
                            title))
                       (:td
                        (:raw
