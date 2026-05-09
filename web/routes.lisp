@@ -11,10 +11,14 @@
   (:import-from #:recurya/db/users
                 #:update-user!
                 #:get-user-by-id
-                #:find-or-create-oauth-user)
+                #:find-or-create-oauth-user
+                #:placeholder-handle-p)
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
   (:import-from #:recurya/web/ui/account)
+  (:import-from #:recurya/web/ui/onboarding)
+  (:import-from #:recurya/web/ui/csrf)
+  (:import-from #:recurya/utils/handle)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:lack/request #:request-env)
   (:import-from #:recurya/web/ui/notebooks-dashboard
@@ -110,6 +114,8 @@
   (:export #:setup-routes
            #:account-confirm-delete-handler
            #:account-delete-handler
+           #:onboarding-handle-page-handler
+           #:onboarding-handle-create-handler
            #:notebooks-handler
            #:notebook-new-handler
            #:notebook-create-handler
@@ -276,6 +282,7 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
   (list :id (recurya/models/users:users-id user)
         :email (recurya/models/users:users-email user)
         :name (recurya/models/users:users-display-name user)
+        :handle (recurya/models/users:users-handle user)
         :role (intern (string-upcase (recurya/models/users:users-role user)) :keyword)
         :provider (recurya/models/users:users-provider user)
         :language (recurya/models/users:users-language user)
@@ -1620,6 +1627,74 @@ For HTMX requests, returns HX-Redirect header. For normal requests, redirects."
                     (list ""))
               (redirect "/login"))))))
 
+(defun onboarding-handle-page-handler (params)
+  "Handle GET /onboarding/handle - show the handle setup form.
+
+Behavior:
+  * Anonymous users are redirected to /login.
+  * Users whose handle is already a real (non-placeholder) handle are
+    redirected to / (the dashboard / public landing).
+  * Users with a placeholder handle (Phase 5 'u-XXXXXXXX') see the form."
+  (declare (ignore params))
+  (let ((session-user (get-current-user)))
+    (cond
+      ((null session-user)
+       (redirect "/login"))
+      ((not (placeholder-handle-p (getf session-user :handle)))
+       (redirect "/"))
+      (t
+       (html-response
+        (recurya/web/ui/onboarding:render-onboarding-handle-page
+         :suggested-handle (getf session-user :handle)))))))
+
+(defun onboarding-handle-create-handler (params)
+  "Handle POST /onboarding/handle - validate and persist a new user-chosen handle.
+
+Validation pipeline:
+  1. session must contain a user, otherwise redirect to /login.
+  2. trimmed/lowercased handle must satisfy
+     RECURYA/UTILS/HANDLE:VALID-HANDLE-P (re-render with 400 on failure).
+  3. handle must not be in RECURYA/UTILS/HANDLE:RESERVED-HANDLE-P (400).
+  4. handle must be unique across users (409 if taken).
+On success, persists the new handle on the USERS DAO, refreshes the
+session plist, and redirects to /."
+  (let* ((session-user (get-current-user))
+         (raw (or (get-param params "handle") ""))
+         (handle (string-downcase (string-trim '(#\Space #\Tab) raw))))
+    (flet ((render-error (msg &key (status 400))
+             (html-response
+              (recurya/web/ui/onboarding:render-onboarding-handle-page
+               :error msg
+               :suggested-handle (if (zerop (length handle))
+                                     (getf session-user :handle)
+                                     handle))
+              :status status)))
+      (cond
+        ((null session-user)
+         (redirect "/login"))
+        ((not (recurya/utils/handle:valid-handle-p handle))
+         (render-error
+          "Invalid handle. Use 3-64 lowercase letters, digits or hyphens, and start/end with a letter or digit."))
+        ((recurya/utils/handle:reserved-handle-p handle)
+         (render-error
+          "That handle is reserved. Please choose a different one."))
+        ((mito:find-dao 'recurya/models/users:users :handle handle)
+         (render-error
+          "That handle is already taken. Please choose a different one."
+          :status 409))
+        (t
+         (let* ((user-id (getf session-user :id))
+                (dao (mito:find-dao 'recurya/models/users:users :id user-id)))
+           (cond
+             ((null dao)
+              (clear-session!)
+              (redirect "/login"))
+             (t
+              (setf (recurya/models/users:users-handle dao) handle)
+              (mito:save-dao dao)
+              (set-session-user! (user-dao->plist dao))
+              (redirect "/")))))))))
+
 ;;; Dynamic dispatch support for REPL-driven development
 
 (defun %parse-sync-payload (raw-json)
@@ -1786,6 +1861,10 @@ without restarting the server."
           (make-dynamic-handler 'public-course-handler))
   (setf (ningle/app:route app "/courses")
           (make-dynamic-handler 'courses-public-handler))
+  (setf (ningle/app:route app "/onboarding/handle")
+          (make-dynamic-handler 'onboarding-handle-page-handler))
+  (setf (ningle/app:route app "/onboarding/handle" :method :post)
+          (make-dynamic-handler 'onboarding-handle-create-handler))
   (setf (ningle/app:route app "/account")
           (make-dynamic-handler 'account-page-handler))
   (setf (ningle/app:route app "/account" :method :post)

@@ -78,6 +78,7 @@
                "recurya/web/ui/login"
                "recurya/web/ui/errors"
                "recurya/web/ui/account"
+               "recurya/web/ui/onboarding"
                "recurya/web/ui/notebook-form"
                "recurya/web/ui/notebooks-dashboard"
                "recurya/web/ui/courses"
@@ -122,6 +123,7 @@
                "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/oauth"
+               "recurya/tests/web/onboarding"
                "recurya/tests/web/routes"
                "recurya/tests/web/notebook-routes"
                "recurya/tests/web/course-routes"

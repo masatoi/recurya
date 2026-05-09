@@ -18,6 +18,7 @@
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
+    :recurya/tests/web/onboarding
     :recurya/tests/web/routes
     :recurya/tests/web/notebook-routes
     :recurya/tests/web/course-routes
