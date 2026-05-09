@@ -10,7 +10,8 @@
   (:import-from #:recurya/web/ui/layout
                 #:header
                 #:header-styles
-                #:common-styles)
+                #:common-styles
+                #:page-shell)
   (:import-from #:recurya/web/ui/csrf
                 #:csrf-input)
   (:export #:render))
@@ -91,71 +92,63 @@ form.settings .button-primary {
         (display-name (or (getf user :name) ""))
         (language (or (getf user :language) "en"))
         (timezone (or (getf user :timezone) "UTC"))
-        (all-styles (concatenate 'string (common-styles) (header-styles) *account-styles*)))
-    (spinneret:with-html-string
-      (:doctype)
-      (:html
-        (:head
-          (:meta :charset "utf-8")
-          (:meta :name "viewport" :content "width=device-width, initial-scale=1")
-          (:title "Account settings - recurya")
-          (:script :src "https://unpkg.com/htmx.org@2.0.4"
-           :integrity "sha384-HGfztofotfshcF7+8n44JQL2oJmowVChPTg48S+jvZoztPfvwD79OC/LTtG6dMp+"
-           :crossorigin "anonymous")
-          (:style (:raw all-styles)))
-        (:body
-          (:raw (header user))
-          (:main
-            (:div :class "card"
-              (:h1 "Account settings")
-              (:p :class "muted" "Update your profile information or request account deletion.")
-              (when message
-                (:div :class "message success" message))
-              (when error
-                (:div :class "message error" error))
-              (:form :class "settings" :method "post" :action "/account"
-                (:raw (csrf-input))
-                (:div
-                  (:label :for "account-email" "Email")
-                  (:input :id "account-email" :type "text" :value email :readonly t))
-                (:div
-                  (:label :for "account-display-name" "Display name")
-                  (:input :id "account-display-name"
-                          :name "display-name"
-                          :type "text"
-                          :value display-name
-                          :required t
-                          :minlength "1"
-                          :maxlength "120"))
-                ;; Language and Timezone settings
-                (:div :class "settings-section"
-                  (:h3 "Regional settings")
-                  (:div :class "settings-row"
-                    (:div
-                      (:label :for "account-language" "Language")
-                      (:select :id "account-language" :name "language"
-                        (dolist (lang *languages*)
-                          (let ((code (car lang))
-                                (label (cdr lang)))
-                            (if (string= code language)
-                                (:option :value code :selected t label)
-                                (:option :value code label))))))
-                    (:div
-                      (:label :for "account-timezone" "Timezone")
-                      (:select :id "account-timezone" :name "timezone"
-                        (dolist (tz *timezones*)
-                          (let ((code (car tz))
-                                (label (cdr tz)))
-                            (if (string= code timezone)
-                                (:option :value code :selected t label)
-                                (:option :value code label))))))))
-                (:button :type "submit" :class "button-primary" "Save changes")))
-            (:div :class "card"
-              (:h2 "Danger zone")
-              (:p :class "muted" "Deleting your account removes all datasets, features, jobs, and stored files. This action cannot be undone.")
-              (:button :type "button" :class "button-danger"
-                       :hx-get "/account/confirm-delete"
-                       :hx-target "#modal-container"
-                       :hx-swap "innerHTML"
-                       "Delete account")))
-          (:div :id "modal-container"))))))
+        (page-styles (concatenate 'string (common-styles) *account-styles*)))
+    (page-shell
+     :title "Account settings - recurya"
+     :styles page-styles
+     :user user
+     :body-content
+     (with-html-string
+       (:div :class "card"
+         (:h1 "Account settings")
+         (:p :class "muted" "Update your profile information or request account deletion.")
+         (when message
+           (:div :class "message success" message))
+         (when error
+           (:div :class "message error" error))
+         (:form :class "settings" :method "post" :action "/account"
+           (:raw (csrf-input))
+           (:div
+             (:label :for "account-email" "Email")
+             (:input :id "account-email" :type "text" :value email :readonly t))
+           (:div
+             (:label :for "account-display-name" "Display name")
+             (:input :id "account-display-name"
+                     :name "display-name"
+                     :type "text"
+                     :value display-name
+                     :required t
+                     :minlength "1"
+                     :maxlength "120"))
+           ;; Language and Timezone settings
+           (:div :class "settings-section"
+             (:h3 "Regional settings")
+             (:div :class "settings-row"
+               (:div
+                 (:label :for "account-language" "Language")
+                 (:select :id "account-language" :name "language"
+                   (dolist (lang *languages*)
+                     (let ((code (car lang))
+                           (label (cdr lang)))
+                       (if (string= code language)
+                           (:option :value code :selected t label)
+                           (:option :value code label))))))
+               (:div
+                 (:label :for "account-timezone" "Timezone")
+                 (:select :id "account-timezone" :name "timezone"
+                   (dolist (tz *timezones*)
+                     (let ((code (car tz))
+                           (label (cdr tz)))
+                       (if (string= code timezone)
+                           (:option :value code :selected t label)
+                           (:option :value code label))))))))
+           (:button :type "submit" :class "button-primary" "Save changes")))
+       (:div :class "card"
+         (:h2 "Danger zone")
+         (:p :class "muted" "Deleting your account removes all datasets, features, jobs, and stored files. This action cannot be undone.")
+         (:button :type "button" :class "button-danger"
+                  :hx-get "/account/confirm-delete"
+                  :hx-target "#modal-container"
+                  :hx-swap "innerHTML"
+                  "Delete account"))
+       (:div :id "modal-container")))))
