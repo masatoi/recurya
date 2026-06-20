@@ -12,7 +12,6 @@
                 #:notebook-create-handler
                 #:notebook-edit-handler
                 #:notebook-update-handler
-                #:notebook-toggle-status-handler
                 #:notebook-set-state-handler
                 #:notebook-confirm-delete-handler
                 #:notebook-delete-handler
@@ -435,57 +434,6 @@ Stable.
           (ok (= (length cells-before) (length cells-after)))
           (ok (equalp cells-before cells-after)))))))
 
-(deftest toggle-status-401-anonymous
-  (with-mock-session (make-session)
-    (let ((res (notebook-toggle-status-handler '((:id . "x")))))
-      (ok (= 401 (response-status res))))))
-
-(deftest toggle-status-404-missing
-  (with-test-db
-    (let ((user (mk-user)))
-      (with-mock-session (make-session :user user)
-        (let ((res (notebook-toggle-status-handler
-                    '((:id . "00000000-0000-0000-0000-000000000000")))))
-          (ok (= 404 (response-status res))))))))
-
-(deftest toggle-status-403-non-owner
-  (with-test-db
-    (let* ((owner (mk-user))
-           (other (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (nb (create-notebook! :title "Owned"
-                                       :body-md "===prose===
-hi"
-                                       :cells '() :author owner-dao))
-           (id (princ-to-string (notebook-id nb))))
-      (with-mock-session (make-session :user other)
-        (let ((res (notebook-toggle-status-handler (list (cons :id id)))))
-          (ok (= 403 (response-status res))))))))
-
-(deftest toggle-status-flips-and-sets-published-at
-  (with-test-db
-    (let* ((user (mk-user))
-           (dao (get-user-by-id (getf user :id)))
-           (nb (create-notebook! :title "T"
-                                       :body-md "===prose===
-hi"
-                                       :cells '() :author dao))
-           (id (princ-to-string (notebook-id nb))))
-      (with-mock-session (make-session :user user)
-        (let ((res (notebook-toggle-status-handler (list (cons :id id)))))
-          (ok (= 200 (response-status res)))
-          (ok (search "data-status=published" (first (response-body res))))
-          (let ((after (get-notebook-by-id id)))
-            (ok (string= "published" (notebook-status after)))
-            (ok (recurya/db/notebooks:notebook-published-at after))))
-        (let ((res2 (notebook-toggle-status-handler (list (cons :id id)))))
-          (ok (= 200 (response-status res2)))
-          (ok (search "data-status=draft" (first (response-body res2))))
-          (let ((after (get-notebook-by-id id)))
-            (ok (string= "draft" (notebook-status after)))
-            (ok (recurya/db/notebooks:notebook-published-at after)
-                "published_at is preserved on un-publish")))))))
-
 (deftest list-renders-3-state-pill-classes
   (testing "Notebooks listing emits status-{draft|private|public} CSS classes
 that drive the 3-state pill colour, computed from (status, visibility)."
@@ -517,29 +465,6 @@ hi"
                 "published+private gets status-private class")
             (ok (search "status-public" body)
                 "published+public gets status-public class")))))))
-
-(deftest toggle-status-pill-from-draft-emits-private-state
-  (testing "Legacy toggle-status flips draft to published while preserving
-visibility, so the returned pill shows status-private when visibility was
-already private."
-    (with-test-db
-      (let* ((user (mk-user))
-             (dao (get-user-by-id (getf user :id)))
-             (nb (create-notebook!
-                  :title "T" :body-md "===prose===
-hi"
-                  :cells '() :author dao
-                  :status "draft" :visibility "private"))
-             (id (princ-to-string (notebook-id nb))))
-        (with-mock-session (make-session :user user)
-          (let* ((res (notebook-toggle-status-handler
-                       (list (cons :id id))))
-                 (body (first (response-body res))))
-            (ok (= 200 (response-status res)))
-            (ok (search "status-private" body)
-                "pill turns purple/private after publish")
-            (ng (search "status-draft" body)
-                "draft class no longer applies")))))))
 
 (deftest set-state-401-anonymous
   (with-mock-session (make-session)
