@@ -13,6 +13,9 @@
                 #:*lack-middleware-csrf*)
   (:import-from #:recurya/web/app
                 #:make-recurya-app)
+  (:import-from #:recurya/web/auth
+                #:require-dashboard-auth
+                #:require-real-handle)
   (:import-from #:recurya/web/routes
                 #:setup-routes)
   (:import-from #:recurya/web/ui/errors
@@ -72,19 +75,35 @@ inspection would interfere)."
   (let ((app (make-recurya-app)))
     (setup-routes app)
     ;; Lack middleware stack (outermost listed first):
-    ;; 1. :static         — serves /static/* from resources/static/ on disk
-    ;; 2. :session        — cookie-based session (provides ningle/context:*session*)
-    ;; 3. #'csrf-with-skip — CSRF token check on POST/PUT/DELETE/PATCH;
-    ;;                       bypassed for paths in *csrf-skip-paths*. Must run
-    ;;                       after :session because it reads :lack.session.
-    ;; 4. :backtrace      — renders a debug backtrace page on unhandled errors
-    ;; 5. app             — the Ningle router with all route handlers
+    ;; 1. :static                  — serves /static/* from resources/static/ on disk
+    ;; 2. :session                 — cookie-based session (provides ningle/context:*session*)
+    ;; 3. #'require-dashboard-auth — Login guard: redirects anonymous requests
+    ;;                               to /dashboard or /dashboard/* back to
+    ;;                               /login. Reads :lack.session, so must run
+    ;;                               after :session. Runs before
+    ;;                               require-real-handle so anonymous users go
+    ;;                               to /login (not /onboarding/handle).
+    ;; 4. #'csrf-with-skip         — CSRF token check on POST/PUT/DELETE/PATCH;
+    ;;                               bypassed for paths in *csrf-skip-paths*.
+    ;;                               Must run after :session because it reads
+    ;;                               :lack.session.
+    ;; 5. #'require-real-handle    — Onboarding guard: redirects users with
+    ;;                               placeholder handles to /onboarding/handle.
+    ;;                               Reads :lack.session, so must run after
+    ;;                               :session. Sits before :backtrace so its
+    ;;                               302 response is unaffected by error
+    ;;                               handling.
+    ;; 6. :backtrace               — renders a debug backtrace page on
+    ;;                               unhandled errors.
+    ;; 7. app                      — the Ningle router with all route handlers.
     (lack/builder:builder
      (:static :path "/static/"
               :root (asdf:system-relative-pathname
                      :recurya "resources/static/"))
      :session
+     #'require-dashboard-auth
      #'csrf-with-skip
+     #'require-real-handle
      :backtrace
      app)))
 

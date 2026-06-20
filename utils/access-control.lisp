@@ -2,10 +2,10 @@
 
 (defpackage #:recurya/utils/access-control
   (:use #:cl)
-  (:import-from #:recurya/db/user-notebooks
-                #:user-notebook-status
-                #:user-notebook-visibility
-                #:user-notebook-author-id)
+  (:import-from #:recurya/db/notebooks
+                #:notebook-status
+                #:notebook-visibility
+                #:notebook-author-id)
   (:import-from #:recurya/db/courses
                 #:course-status
                 #:course-visibility
@@ -20,7 +20,7 @@
 (defun owner-of-notebook-p (user notebook)
   "Return T when USER (a session plist with :id) owns NOTEBOOK."
   (and user notebook
-       (equal (princ-to-string (user-notebook-author-id notebook))
+       (equal (princ-to-string (notebook-author-id notebook))
               (princ-to-string (getf user :id)))))
 
 (defun can-view-notebook-p (user notebook)
@@ -33,8 +33,8 @@ anonymous viewer."
   (cond
     ((null notebook) nil)
     ((owner-of-notebook-p user notebook) t)
-    ((string/= "published" (user-notebook-status notebook)) nil)
-    (t (let ((vis (user-notebook-visibility notebook)))
+    ((string/= "published" (notebook-status notebook)) nil)
+    (t (let ((vis (notebook-visibility notebook)))
          (cond
            ((string= vis "public") t)
            ((string= vis "private") nil)
@@ -63,8 +63,8 @@ Same rules as CAN-VIEW-NOTEBOOK-P: owner always; otherwise published+public."
 (defun publicly-listable-notebook-p (notebook)
   "Return T when NOTEBOOK is safe to surface in anonymous public listings."
   (and notebook
-       (string= "published" (user-notebook-status notebook))
-       (string= "public" (user-notebook-visibility notebook))))
+       (string= "published" (notebook-status notebook))
+       (string= "public" (notebook-visibility notebook))))
 
 (defun publicly-listable-course-p (course)
   "Return T when COURSE is safe to surface in anonymous public listings."

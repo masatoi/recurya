@@ -7,6 +7,7 @@
                 #:trim-whitespace
                 #:blank-string-p
                 #:normalize-string
+                #:slugify
                 #:parse-json
                 #:json->string))
 
@@ -172,3 +173,11 @@
       (ok (= 42 (gethash "number" parsed)))
       (ok (eq t (gethash "bool" parsed)))
       (ok (equalp #(1 2 3) (gethash "array" parsed))))))
+
+(deftest test-slugify-basic
+  (testing "slugify converts titles to URL-friendly slugs"
+    (ok (equal "hello-world" (slugify "Hello World")))
+    (ok (equal "my-first-post" (slugify "My First Post!")))
+    (ok (equal "foo-bar-baz" (slugify "  foo--bar--baz  ")))
+    (ok (equal "already-a-slug" (slugify "already-a-slug")))
+    (ok (equal "numbers-123-ok" (slugify "Numbers 123 OK")))))

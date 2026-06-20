@@ -33,9 +33,11 @@
                  :accessor course-published-at)
    (author :col-type users :initarg :author :accessor course-author))
   (:auto-pk nil)
-  (:unique-keys slug)
-  (:keys (status :created_at) (author_id :created_at))
-  (:documentation "A learning course bundling user_notebook items in order."))
+  (:unique-keys (author_id slug))
+  (:keys (status :created_at)
+         (author_id :created_at)
+         (visibility :status))
+  (:documentation "A learning course bundling notebook items in order."))
 
 (defun course-id (c) (%course-id c))
 

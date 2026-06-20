@@ -50,12 +50,12 @@
                ;; Shared utilities
                "recurya/utils/common"
                "recurya/utils/html-sanitize"
+               "recurya/utils/handle"
                ;; Database layer
                "recurya/db/core"
                "recurya/db/jsonb"
                "recurya/db/users"
-               "recurya/db/posts"
-               "recurya/db/user-notebooks"
+               "recurya/db/notebooks"
                "recurya/db/courses"
                "recurya/utils/access-control"
                "recurya/db/course-notebooks"
@@ -63,8 +63,7 @@
                "recurya/db"
                ;; Models
                "recurya/models/users"
-               "recurya/models/post"
-               "recurya/models/user-notebook"
+               "recurya/models/notebook"
                "recurya/models/course"
                "recurya/models/course-notebook"
                "recurya/models/learn-progress"
@@ -79,18 +78,15 @@
                "recurya/web/ui/login"
                "recurya/web/ui/errors"
                "recurya/web/ui/account"
-               ;; Blog UI
-               "recurya/web/ui/posts"
-               "recurya/web/ui/post-form"
-               "recurya/web/ui/user-notebook-form"
-               "recurya/web/ui/user-notebooks"
+               "recurya/web/ui/onboarding"
+               "recurya/web/ui/notebook-form"
+               "recurya/web/ui/notebooks-dashboard"
                "recurya/web/ui/courses"
                "recurya/web/ui/course-form"
-               "recurya/web/ui/blog"
-               "recurya/web/ui/blog-post"
                "recurya/web/ui/notebook-list"
                "recurya/web/ui/course"
                "recurya/web/ui/course-list"
+               "recurya/web/ui/profile"
                "recurya/web/routes"
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
@@ -116,23 +112,26 @@
                ;; Utils tests
                "recurya/tests/utils/common"
                "recurya/tests/utils/html-sanitize"
+               "recurya/tests/utils/handle"
                "recurya/tests/utils/access-control"
                ;; DB tests
                "recurya/tests/db/core"
                "recurya/tests/db/jsonb"
                "recurya/tests/db/users"
-               "recurya/tests/db/posts"
-               "recurya/tests/db/user-notebooks"
+               "recurya/tests/db/notebooks"
                "recurya/tests/db/courses"
                "recurya/tests/db/course-notebooks"
                "recurya/tests/db/learn"
                ;; Web tests
                "recurya/tests/web/oauth"
+               "recurya/tests/web/onboarding"
                "recurya/tests/web/routes"
-               "recurya/tests/web/user-notebook-routes"
+               "recurya/tests/web/notebook-routes"
                "recurya/tests/web/course-routes"
+               "recurya/tests/web/profile"
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
+               "recurya/tests/web/dashboard-auth"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
@@ -140,6 +139,7 @@
                "recurya/tests/game/notebook-parser"
                ;; Integration tests
                "recurya/tests/integration/sicp-canonical-solutions"
+               "recurya/tests/integration/sicp-seed"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner

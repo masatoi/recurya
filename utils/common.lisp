@@ -8,6 +8,8 @@
   (:import-from #:uuid)
   (:import-from #:alexandria
                 #:when-let)
+  (:import-from #:cl-ppcre
+                #:regex-replace-all)
   (:import-from #:com.inuoe.jzon
                 #:parse
                 #:stringify)
@@ -18,6 +20,7 @@
    #:trim-whitespace
    #:blank-string-p
    #:normalize-string
+   #:slugify
    ;; JSON utilities
    #:parse-json
    #:json->string))
@@ -100,6 +103,28 @@ Returns:
   NIL otherwise."
   (when-let ((trimmed (trim-whitespace string)))
     (string-downcase trimmed)))
+
+(declaim (ftype (function (t) (or string null)) slugify))
+
+(defun slugify (title)
+  "Convert TITLE to a URL-friendly slug.
+
+Downcases, replaces non-alphanumeric characters with hyphens,
+collapses consecutive hyphens, and trims leading/trailing hyphens.
+
+Arguments:
+  TITLE - A string to slugify.
+
+Returns:
+  A lowercase, hyphen-separated slug string."
+  (let* ((lower (string-downcase title))
+         ;; Replace non-alphanumeric (except hyphens) with hyphens
+         (replaced (regex-replace-all "[^a-z0-9-]" lower "-"))
+         ;; Collapse consecutive hyphens
+         (collapsed (regex-replace-all "-+" replaced "-"))
+         ;; Trim leading/trailing hyphens
+         (trimmed (string-trim '(#\-) collapsed)))
+    trimmed))
 
 ;;; ============================================================
 ;;; JSON Utilities

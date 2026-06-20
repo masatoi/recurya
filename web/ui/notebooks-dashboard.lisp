@@ -1,6 +1,6 @@
-;;;; web/ui/courses.lisp --- Admin course list page with HTMX interactions.
+;;;; web/ui/notebooks-dashboard.lisp --- Admin notebook list page with HTMX interactions.
 
-(defpackage #:recurya/web/ui/courses
+(defpackage #:recurya/web/ui/notebooks-dashboard
   (:use #:cl)
   (:import-from #:spinneret #:with-html-string)
   (:import-from #:recurya/web/ui/layout
@@ -8,12 +8,12 @@
                 #:format-timestamp
                 #:page-shell)
   (:export #:render
-           #:render-course-state-dropdown))
+           #:render-notebook-state-dropdown))
 
-(in-package #:recurya/web/ui/courses)
+(in-package #:recurya/web/ui/notebooks-dashboard)
 
 (defparameter *page-styles*
-  "/* Courses admin page styles */
+  "/* User-notebooks admin page styles */
 .actions-bar { display: flex; justify-content: flex-end; margin-bottom: 1rem; }
 .new-nb-btn {
   display: inline-flex; align-items: center; gap: 0.4rem;
@@ -59,8 +59,8 @@
                        color: var(--color-error-text); }
 tr.htmx-swapping { opacity: 0; transition: opacity 0.3s ease; }")
 
-(defun render-course-state-dropdown (id status visibility)
-  "Render the course 3-state pill wrapped in a <details>/<summary>
+(defun render-notebook-state-dropdown (id status visibility)
+  "Render the notebook 3-state pill wrapped in a <details>/<summary>
 dropdown with three HTMX buttons (Draft / Private / Public).
 
 The outer <details> element gets id=state-dropdown-{ID} and the HTMX
@@ -80,7 +80,7 @@ referencing the pill by that id continues to work."
                 (t "Private")))
          (dropdown-id (format nil "state-dropdown-~A" id))
          (dropdown-target (format nil "#state-dropdown-~A" id))
-         (state-url (format nil "/dashboard/courses/~A/state" id)))
+         (state-url (format nil "/dashboard/notebooks/~A/state" id)))
     (with-html-string
       (:details :class "status-pill-menu" :id dropdown-id
         (:summary :class (format nil "status-pill ~A" state-class)
@@ -105,67 +105,69 @@ referencing the pill by that id continues to work."
             :hx-include "#csrf-form"
             "Public"))))))
 
-(defun render (&key user courses pagination message errors)
-  "Render the admin course list page as an HTML string.
+(defun render (&key user notebooks pagination message errors)
+  "Render the admin notebook list page as an HTML string.
 
-COURSES is a list of plists with :id :slug :title :status
-:published-at :created-at :notebook-count."
+NOTEBOOKS is a list of plists with :id :title :slug :status
+:published-at :created-at."
   (let ((user-timezone (getf user :timezone))
         (user-handle (getf user :handle))
-        (page-styles
-         (concatenate 'string (common-styles) *page-styles*)))
+        (styles (concatenate 'string (common-styles) *page-styles*)))
     (page-shell
-     :title "recurya - My Courses"
-     :styles page-styles
+     :title "recurya - My Notebooks"
+     :styles styles
      :user user
      :body-content
      (with-html-string
        (:div :class "card"
-        (:h1 "My Courses")
-        (:p :class "muted" "Manage your authored courses.")
+        (:h1 "My Notebooks")
+        (:p :class "muted" "Manage your user-authored notebooks.")
         (:div :class "actions-bar"
-         (:a :class "new-nb-btn" :href "/dashboard/courses/new" "+ New Course"))
+         (:a :class "new-nb-btn" :href "/dashboard/notebooks/new"
+          "+ New Notebook"))
         (:div :id "flash-area"
          (when message (:div :class "flash-message success" message))
          (when errors
            (:div :class "flash-message error"
             (dolist (err errors) (:p err)))))
-        (if courses
+        (if notebooks
             (progn
              (:table
               (:thead
-               (:tr (:th "Title") (:th "Status") (:th "Notebooks")
+               (:tr (:th "Title") (:th "Status") (:th "Published")
                 (:th "Created") (:th "Actions")))
-              (:tbody :id "courses-body"
-               (dolist (course courses)
-                 (let* ((id (getf course :id))
-                        (slug (getf course :slug))
-                        (title (getf course :title))
-                        (status (getf course :status))
-                        (visibility (or (getf course :visibility) "private"))
-                        (notebook-count (getf course :notebook-count))
-                        (created-at (getf course :created-at)))
-                   (:tr :id (format nil "course-row-~A" id)
+              (:tbody :id "notebooks-body"
+               (dolist (nb notebooks)
+                 (let* ((id (getf nb :id))
+                        (slug (getf nb :slug))
+                        (title (getf nb :title))
+                        (status (getf nb :status))
+                        (visibility (or (getf nb :visibility) "private"))
+                        (published-at (getf nb :published-at))
+                        (created-at (getf nb :created-at)))
+                   (:tr :id (format nil "nb-row-~A" id)
                     (:td
-                     (if (and slug user-handle
-                              (string= status "published"))
-                         (:a :href (format nil "/c/@~A/~A"
-                                           user-handle slug)
+                     (if (and slug user-handle (string= status "published"))
+                         (:a :href (format nil "/@~A/~A" user-handle slug)
                           title)
                          title))
                     (:td
                      (:raw
-                      (render-course-state-dropdown
-                       id status visibility)))
-                    (:td (or notebook-count 0))
+                      (render-notebook-state-dropdown id status visibility)))
                     (:td
-                     (or (format-timestamp created-at user-timezone) "—"))
+                     (if published-at
+                         (or (format-timestamp published-at user-timezone)
+                             "&#x2014;")
+                         "&#x2014;"))
+                    (:td
+                     (or (format-timestamp created-at user-timezone) "&#x2014;"))
                     (:td
                      (:div :class "actions-cell"
                       (:a :class "link" :href
-                       (format nil "/dashboard/courses/~A/edit" id) "Edit")
+                       (format nil "/dashboard/notebooks/~A/edit" id) "Edit")
                       (:button :class "button-danger btn-sm" :hx-get
-                       (format nil "/dashboard/courses/~A/confirm-delete" id)
+                       (format nil "/dashboard/notebooks/~A/confirm-delete"
+                               id)
                        :hx-target "#modal-container" :hx-swap "innerHTML"
                        "Delete"))))))))
              (when pagination
@@ -181,11 +183,11 @@ COURSES is a list of plists with :id :slug :title :status
                   (:nav :class "pagination-nav"
                    (if has-prev
                        (:a :class "pagination-btn" :href prev-url
-                        "← Previous")
-                       (:span :class "pagination-btn disabled" "← Previous"))
+                        "&#x2190; Previous")
+                       (:span :class "pagination-btn disabled" "&#x2190; Previous"))
                    (if has-next
-                       (:a :class "pagination-btn" :href next-url "Next →")
+                       (:a :class "pagination-btn" :href next-url "Next &#x2192;")
                        (:span :class "pagination-btn disabled"
-                        "Next →")))))))
-            (:p :class "muted" "No courses yet. Create your first one!")))
+                        "Next &#x2192;")))))))
+            (:p :class "muted" "No notebooks yet. Create your first one!")))
        (:div :id "modal-container")))))

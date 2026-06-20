@@ -12,11 +12,8 @@
                 #:insert-dao
                 #:save-dao
                 #:delete-dao)
-  (:import-from #:sxql
-                #:order-by)
-  (:import-from #:recurya/db/core
-                #:generate-uuid)
-  ;; Import users class and accessors from models
+  (:import-from #:sxql #:order-by)
+  (:import-from #:recurya/db/core #:generate-uuid)
   (:import-from #:recurya/models/users
                 #:users
                 #:users-id
@@ -24,6 +21,7 @@
                 #:users-password-hash
                 #:users-password-salt
                 #:users-display-name
+                #:users-handle
                 #:users-role
                 #:users-language
                 #:users-timezone
@@ -31,30 +29,30 @@
                 #:users-provider-uid
                 #:users-created-at
                 #:users-updated-at)
-  (:export
-   ;; Re-export the Mito class and accessors
-   #:users
-   #:users-id
-   #:users-email
-   #:users-password-hash
-   #:users-password-salt
-   #:users-display-name
-   #:users-role
-   #:users-language
-   #:users-timezone
-   #:users-provider
-   #:users-provider-uid
-   #:users-created-at
-   #:users-updated-at
-   ;; CRUD operations
-   #:create-user!
-   #:get-user-by-id
-   #:get-user-by-email
-   #:get-user-by-provider
-   #:find-or-create-oauth-user
-   #:update-user!
-   #:delete-user!
-   #:list-users))
+  (:export #:users
+           #:users-id
+           #:users-email
+           #:users-password-hash
+           #:users-password-salt
+           #:users-display-name
+           #:users-handle
+           #:users-role
+           #:users-language
+           #:users-timezone
+           #:users-provider
+           #:users-provider-uid
+           #:users-created-at
+           #:users-updated-at
+           #:create-user!
+           #:get-user-by-id
+           #:get-user-by-email
+           #:get-user-by-handle
+           #:get-user-by-provider
+           #:find-or-create-oauth-user
+           #:update-user!
+           #:delete-user!
+           #:list-users
+           #:placeholder-handle-p))
 
 (in-package #:recurya/db/users)
 
@@ -62,7 +60,37 @@
 ;;; CRUD Operations using Mito DAO
 ;;; ============================================================
 
-(defun create-user! (&key email password-hash password-salt display-name (role "user"))
+(defun %generate-placeholder-handle ()
+  "Generate a placeholder handle for new OAuth users.
+
+The Phase 6 onboarding flow detects the 'u-' prefix and routes the
+user to /onboarding/handle to pick a real handle. The 8-character
+suffix is the prefix of a fresh UUID v4 in lowercase hex, so it is
+URL-safe and unlikely to collide.
+
+Returns:
+  A string of the form 'u-XXXXXXXX' where X is a lowercase hex digit."
+  (let ((uuid (generate-uuid)))
+    (format nil "u-~A" (subseq uuid 0 8))))
+
+(defun placeholder-handle-p (handle)
+  "True if HANDLE is a Phase-5-style placeholder (u-<hex>) requiring onboarding.
+
+The placeholder format is 'u-XXXXXXXX' where X is exactly 8 lowercase hex
+digits, as produced by %GENERATE-PLACEHOLDER-HANDLE. Real handles must
+satisfy RECURYA/UTILS/HANDLE:VALID-HANDLE-P (different shape) and never
+match this pattern.
+
+Arguments:
+  HANDLE - The handle string to test.
+
+Returns:
+  T if HANDLE matches the placeholder pattern; NIL otherwise."
+  (and (stringp handle)
+       (cl-ppcre:scan "\\Au-[a-f0-9]{8}\\z" handle)
+       t))
+
+(defun create-user! (&key email password-hash password-salt display-name handle (role "user"))
   "Create a new user and return the created user instance.
 
 Used by tests and legacy admin seeding. OAuth-based registration goes
@@ -73,6 +101,9 @@ Arguments:
   PASSWORD-HASH - Pre-computed password hash (optional, NIL for OAuth-only)
   PASSWORD-SALT - Salt used for hashing (optional, NIL for OAuth-only)
   DISPLAY-NAME  - Optional display name
+  HANDLE        - Per-user URL handle (required at the DB level once
+                  Phase 5 migration runs; may be NIL here for legacy
+                  call sites until callers are updated)
   ROLE          - User role (default: \"user\")
 
 Returns:
@@ -81,6 +112,7 @@ Returns:
     (insert-dao (make-instance 'users
                                :id user-id
                                :email email
+                               :handle handle
                                :password-hash password-hash
                                :password-salt password-salt
                                :display-name (or display-name email)
@@ -107,6 +139,17 @@ Returns:
 
 Note: Email lookup is case-sensitive."
   (find-dao 'users :email email))
+
+(defun get-user-by-handle (handle)
+  "Fetch a user by their URL handle.
+
+Arguments:
+  HANDLE - The unique handle string.
+
+Returns:
+  USERS DAO if found, NIL otherwise."
+  (when (and handle (stringp handle) (plusp (length handle)))
+    (find-dao 'users :handle handle)))
 
 (defun get-user-by-provider (provider provider-uid)
   "Fetch a user by their OAuth (provider, provider-uid) pair.
@@ -144,6 +187,7 @@ Returns the USER instance."
            (insert-dao (make-instance 'users
                                       :id (generate-uuid)
                                       :email (or email "")
+                                      :handle (%generate-placeholder-handle)
                                       :display-name (or display-name email "User")
                                       :role role
                                       :provider provider

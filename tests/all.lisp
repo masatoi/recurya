@@ -13,17 +13,19 @@
     :recurya/tests/db/core
     :recurya/tests/db/jsonb
     :recurya/tests/db/users
-    :recurya/tests/db/posts
-    :recurya/tests/db/user-notebooks
+    :recurya/tests/db/notebooks
     :recurya/tests/db/courses
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
     :recurya/tests/web/oauth
+    :recurya/tests/web/onboarding
     :recurya/tests/web/routes
-    :recurya/tests/web/user-notebook-routes
+    :recurya/tests/web/notebook-routes
     :recurya/tests/web/course-routes
+    :recurya/tests/web/profile
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
+    :recurya/tests/web/dashboard-auth
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests
@@ -32,7 +34,8 @@
     :recurya/tests/game/notebook
     :recurya/tests/game/notebook-parser
     ;; Integration tests
-    :recurya/tests/integration/sicp-canonical-solutions)
+    :recurya/tests/integration/sicp-canonical-solutions
+    :recurya/tests/integration/sicp-seed)
   "List of all test packages to run.")
 
 (defun run-all-tests ()

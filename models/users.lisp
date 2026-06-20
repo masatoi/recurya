@@ -13,6 +13,7 @@
            #:users-password-hash
            #:users-password-salt
            #:users-display-name
+           #:users-handle
            #:users-role
            #:users-language
            #:users-timezone
@@ -31,6 +32,9 @@
    (email :col-type (:varchar 255)
           :initarg :email
           :accessor users-email)
+   (handle :col-type (:varchar 64)
+           :initarg :handle
+           :accessor users-handle)
    (password-hash :col-type (or (:varchar 255) :null)
                   :initarg :password-hash
                   :initform nil
@@ -64,7 +68,7 @@
                  :accessor users-provider-uid))
   ;; Disable Mito's auto-generated integer PK; we use an explicit UUID column.
   (:auto-pk nil)
-  (:unique-keys email)
+  (:unique-keys email handle)
   (:documentation "User account. Authenticates via OAuth (provider/provider-uid).
    Legacy password fields remain nullable for back-compat with old rows."))
 

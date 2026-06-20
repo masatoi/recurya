@@ -9,6 +9,7 @@
                 #:users-id
                 #:users-email
                 #:users-display-name
+                #:users-handle
                 #:users-role
                 #:users-password-hash
                 #:users-password-salt
@@ -31,6 +32,7 @@
   (testing "create-user! persists credentials"
     (with-test-db
       (let* ((created (create-user! :email "user@example.com"
+                                    :handle "user-example"
                                     :display-name "Example User"
                                     :password-hash "hash"
                                     :password-salt "salt"
@@ -47,6 +49,7 @@
   (testing "update-user! refreshes mutable fields"
     (with-test-db
       (let* ((created (create-user! :email "change@example.com"
+                                    :handle "change-user"
                                     :display-name "Original"
                                     :password-hash "hash"
                                     :password-salt "salt"
@@ -61,6 +64,7 @@
   (testing "delete-user! removes row"
     (with-test-db
       (create-user! :email "delete@example.com"
+                    :handle "delete-user"
                     :display-name "Delete"
                     :password-hash "hash"
                     :password-salt "salt"
@@ -102,6 +106,7 @@
   (testing "links provider to an existing email account when uid is new"
     (with-test-db
       (let* ((existing (create-user! :email "shared@example.com"
+                                     :handle "shared-user"
                                      :display-name "Shared"
                                      :role "user"))
              (linked (find-or-create-oauth-user :provider "google"
@@ -113,3 +118,30 @@
         (ok (equal "g-merge" (users-provider-uid linked)))
         (ok (equal (users-id linked)
                    (users-id (get-user-by-provider "google" "g-merge"))))))))
+
+(deftest users-handle-required-and-unique
+  (testing "handle is required (NOT NULL) at the DB level"
+    (with-test-db
+      (ok (signals
+            (create-user! :email "no-handle@example.com"
+                          :display-name "NoHandle"
+                          :password-hash "hash"
+                          :password-salt "salt"
+                          :role "user")
+            'error))))
+  (testing "handle is unique across users"
+    (with-test-db
+      (create-user! :email "alice@example.com"
+                    :handle "alice"
+                    :display-name "Alice"
+                    :password-hash "hash"
+                    :password-salt "salt"
+                    :role "user")
+      (ok (signals
+            (create-user! :email "bob@example.com"
+                          :handle "alice"
+                          :display-name "Bob"
+                          :password-hash "hash"
+                          :password-salt "salt"
+                          :role "user")
+            'error)))))

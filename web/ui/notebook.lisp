@@ -23,6 +23,8 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
+  (:import-from #:recurya/game/notebook-parser #:render-cell-prose-html)
+  (:import-from #:recurya/web/ui/layout #:header #:header-styles)
   (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
   (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
   (:export #:render #:render-cell-result))
@@ -84,7 +86,12 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
                padding: 1rem 1.25rem; border-radius: 0 8px 8px 0; }
 .cell--code { background: #1e293b; border-radius: 10px; padding: 1rem; }
 .cell--exercise { border: 1px solid #f59e0b; }
-.cell__desc { color: #fbbf24; font-size: 0.95rem; margin-bottom: 0.75rem; }
+.cell__desc { color: #fbbf24; font-size: 0.95rem; line-height: 1.65;
+              margin-bottom: 0.75rem; white-space: pre-wrap;
+              padding: 0.5rem 0.75rem; background: rgba(251,191,36,0.07);
+              border-radius: 6px; border-left: 3px solid #f59e0b; }
+.cell__desc p { margin: 0 0 0.4rem 0; }
+.cell__desc p:last-child { margin-bottom: 0; }
 .notebook-code { width:100%; background:#0f172a; color:#e2e8f0;
                  border:1px solid #334155; border-radius:6px;
                  font-family:'SF Mono',monospace; padding:0.5rem;
@@ -118,12 +125,7 @@ h1 { font-size: 1.6rem; letter-spacing: -0.02em; color: #f8fafc; }
 .print-output { background:#0f172a; padding:0.5rem;
                 border-radius: 4px; color: #94a3b8;
                 font-family: monospace; font-size: 0.85rem;
-                white-space: pre-wrap; margin-top: 0.5rem; }
-.user-banner { background: #1e293b; padding: 0.5rem 1rem; border-radius: 6px;
-               margin-bottom: 1rem; font-size: 0.85rem; color: #94a3b8; }
-.user-banner.anon { background: #1e2530; }
-.user-banner a { color: #38bdf8; text-decoration: none; margin-left: 0.5rem; }
-.user-banner strong { color: #f8fafc; }")
+                white-space: pre-wrap; margin-top: 0.5rem; }")
 
 (defun notebook-url-id (notebook)
   "Lowercase id of the notebook, for use in URLs.
@@ -139,30 +141,39 @@ and string (UUID) representations. NIL becomes \"\"."
         ((symbolp id) (string-downcase (symbol-name id)))
         (t (string id))))
 
-(defun render-course-sidebar (course-title course-slug notebooks current-id)
+(defun render-course-sidebar (course-title course-slug course-handle
+                              notebooks current-id)
   "Render a flat-list left sidebar for a generic course.
-COURSE-TITLE and COURSE-SLUG, if both non-nil, render a course header link
-pointing at /c/<slug>. NOTEBOOKS is a list of plists with keys :slug
-:title (and optionally :position) in the desired display order.
+COURSE-TITLE, COURSE-SLUG, and COURSE-HANDLE, when all non-nil, render
+a course header link pointing at /c/@<handle>/<slug>. NOTEBOOKS is a
+list of plists with keys :slug :title :author-handle (and optionally
+:position) in the desired display order. Each list item links to
+/@<author-handle>/<slug> when the notebook's :author-handle is present;
+notebooks without an :author-handle render the title as plain text.
 CURRENT-ID is the slug (or url id) of the active notebook used to mark
 the matching entry as 'sb-link active'."
   (with-html
     (:aside :class "sidebar"
-            (when (and course-title course-slug)
+            (when (and course-title course-slug course-handle)
               (:a :class "sidebar-home"
-                  :href (format nil "/c/~A" course-slug)
+                  :href (format nil "/c/@~A/~A"
+                                course-handle course-slug)
                   (format nil "📘 ~A" course-title)))
             (:ul :class "sb-list"
                  (dolist (nb notebooks)
                    (let ((slug (getf nb :slug))
-                         (title (getf nb :title)))
+                         (title (getf nb :title))
+                         (author-handle (getf nb :author-handle)))
                      (:li
-                      (:a :href (format nil "/n/~A" slug)
-                          :class (if (and slug current-id
-                                          (string= slug current-id))
-                                     "sb-link active"
-                                     "sb-link")
-                          title))))))))
+                      (if (and slug author-handle)
+                          (:a :href (format nil "/@~A/~A"
+                                            author-handle slug)
+                              :class (if (and current-id
+                                              (string= slug current-id))
+                                         "sb-link active"
+                                         "sb-link")
+                              title)
+                          (:span :class "sb-link" title)))))))))
 
 (defun render-prose-tree (tree)
   "Render a Spinneret DSL list at runtime to an HTML string."
@@ -199,7 +210,9 @@ the matching entry as 'sb-link active'."
                 "cell cell--code")
             :data-cell-id cid-str :data-original-code original-code
             :data-textarea-id (format nil "editor-source~A" id-suffix)
-            (when exercise-p (:div :class "cell__desc" (cell-description cell)))
+            (when exercise-p
+          (:div :class "cell__desc"
+           (:raw (render-cell-prose-html (or (cell-description cell) "")))))
             (when passed-p (:span :class "badge-pass" "✓ done"))
             (:raw
              (editor-textarea "codes[]" initial-code :id-suffix id-suffix
@@ -233,7 +246,7 @@ the matching entry as 'sb-link active'."
 (defun render (notebook
                &key user saved-codes passed-cells
                     (sidebar-notebooks nil) run-cell-base
-                    course-title course-slug
+                    course-title course-slug course-handle
                     breadcrumb course-prev-url course-next-url)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
@@ -272,6 +285,7 @@ notebooks within the same course."
         (:meta :name "viewport"
                :content "width=device-width, initial-scale=1")
         (:title (notebook-title notebook))
+        (:style (:raw (header-styles)))
         (:style (:raw *styles*))
         (:script :src "https://unpkg.com/htmx.org@2.0.4"
                  :integrity
@@ -280,32 +294,16 @@ notebooks within the same course."
         (:raw (editor-head-tags)))
        (:body :data-notebook-id (notebook-url-id notebook)
               :data-logged-in (if *user* "true" "false")
-              (:raw (or (csrf-form-block) ""))
+              (:raw (header user))
               (:div :class "layout"
                     (cond
                       ((null sidebar-notebooks) nil)
                       ((listp sidebar-notebooks)
                        (render-course-sidebar course-title course-slug
+                                              course-handle
                                               sidebar-notebooks
                                               (notebook-url-id notebook))))
                     (:main
-                     (cond
-                       (*user*
-                        (:div :class "user-banner" "ログイン中: "
-                              (:strong (or (getf *user* :name) "User")) " · "
-                              (:form :method "post" :action "/logout"
-                                     :style "display:inline;"
-                                     (:raw (or (csrf-input) ""))
-                                     (:button :type "submit"
-                                              :class "user-banner__logout"
-                                              :style
-                                              "background:none;border:none;color:#38bdf8;cursor:pointer;padding:0;font:inherit;"
-                                              "ログアウト"))))
-                       (t
-                        (:div :class "user-banner anon"
-                              "進捗を端末を超えて保存するには "
-                              (:a :href "/login" "ログイン")
-                              " してください。")))
                      (cond
                        (breadcrumb
                         (:div :class "breadcrumb"
