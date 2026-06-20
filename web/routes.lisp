@@ -39,7 +39,6 @@
   (:import-from #:recurya/db/notebooks
                 #:create-notebook!
                 #:get-notebook-by-id
-                #:get-notebook-by-slug
                 #:find-notebook-by-handle-and-slug
                 #:list-public-notebooks-of
                 #:update-notebook!
@@ -128,7 +127,6 @@
            #:notebook-create-handler
            #:notebook-edit-handler
            #:notebook-update-handler
-           #:notebook-toggle-status-handler
            #:notebook-set-state-handler
            #:notebook-confirm-delete-handler
            #:notebook-delete-handler
@@ -141,7 +139,6 @@
            #:course-create-handler
            #:course-edit-handler
            #:course-update-handler
-           #:course-toggle-status-handler
            #:course-set-state-handler
            #:course-confirm-delete-handler
            #:course-delete-handler
@@ -815,62 +812,6 @@ populated with the user's other published notebooks."
                      :published-at published-at)
                     (redirect "/dashboard/courses")))))))))))
 
-(defun render-course-status-pill (id status &optional (visibility "private"))
-  "Render the course status pill HTML fragment for HTMX swap.
-
-Renders a 3-state pill computed from (STATUS, VISIBILITY):
-  (draft, *)               -> Draft (yellow, class=status-draft)
-  (published, private)     -> Private (purple, class=status-private)
-  (published, public)      -> Public (green, class=status-public)
-
-Click POSTs to /dashboard/courses/:id/toggle-status (legacy 2-state toggle)."
-  (let* ((status-lower (string-downcase (or status "draft")))
-         (visibility-lower (string-downcase (or visibility "private")))
-         (state-class (cond ((equal status-lower "draft") "status-draft")
-                            ((equal visibility-lower "public") "status-public")
-                            (t "status-private")))
-         (label (cond ((equal status-lower "draft") "Draft")
-                      ((equal visibility-lower "public") "Public")
-                      (t "Private"))))
-    (with-html-string
-     (:span :class (format nil "status-pill ~A" state-class)
-      :id (format nil "status-~A" id)
-      :data-status status-lower :data-visibility visibility-lower
-      :hx-post (format nil "/dashboard/courses/~A/toggle-status" id)
-      :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
-      :hx-include "#csrf-form"
-      label))))
-
-(defun course-toggle-status-handler (params)
-  "Handle POST /dashboard/courses/:id/toggle-status - legacy 2-state toggle.
-Toggles between draft and published while preserving the visibility column.
-Returns the updated 3-state status pill HTML fragment for HTMX swap."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (html-response "Unauthorized" :status 401)
-        (let* ((id (get-path-param params :id))
-               (c (and id (get-course-by-id id))))
-          (cond ((null c) (html-response "Not found" :status 404))
-                ((not
-                  (equal (princ-to-string (course-author-id c))
-                         (princ-to-string (getf user :id))))
-                 (html-response "Forbidden" :status 403))
-                (t
-                 (let* ((current (course-status c))
-                        (current-vis (course-visibility c))
-                        (new-status
-                          (if (equal current "published")
-                              "draft"
-                              "published"))
-                        (published-at
-                          (when (equal new-status "published")
-                            (local-time:now))))
-                   (update-course! id :status new-status :published-at
-                                   published-at)
-                   (html-response
-                    (render-course-status-pill id new-status
-                                               current-vis)))))))))
-
 (defun %decode-state-token (token)
   "Decode the new pill state TOKEN into (values STATUS VISIBILITY) or
 NIL if invalid.
@@ -1130,63 +1071,6 @@ notebooks dropdown in sync."
                    (course-notebook-notebook-id row))
                   (%render-course-notebook-list-fragment
                    c (getf user :id)))))))))))
-
-(defun render-notebook-status-pill (id status &optional (visibility "private"))
-  "Render the notebook status pill HTML fragment for HTMX swap.
-
-Renders a 3-state pill computed from (STATUS, VISIBILITY):
-  (draft, *)               -> Draft (yellow, class=status-draft)
-  (published, private)     -> Private (purple, class=status-private)
-  (published, public)      -> Public (green, class=status-public)
-
-Click POSTs to /dashboard/notebooks/:id/toggle-status (legacy 2-state toggle).
-The Task 14 dropdown is layered on top of this in the listing template."
-  (let* ((status-lower (string-downcase (or status "draft")))
-         (visibility-lower (string-downcase (or visibility "private")))
-         (state-class (cond ((equal status-lower "draft") "status-draft")
-                            ((equal visibility-lower "public") "status-public")
-                            (t "status-private")))
-         (label (cond ((equal status-lower "draft") "Draft")
-                      ((equal visibility-lower "public") "Public")
-                      (t "Private"))))
-    (with-html-string
-     (:span :class (format nil "status-pill ~A" state-class)
-      :id (format nil "status-~A" id)
-      :data-status status-lower :data-visibility visibility-lower
-      :hx-post (format nil "/dashboard/notebooks/~A/toggle-status" id)
-      :hx-target (format nil "#status-~A" id) :hx-swap "outerHTML"
-      :hx-include "#csrf-form"
-      label))))
-
-(defun notebook-toggle-status-handler (params)
-  "Handle POST /dashboard/notebooks/:id/toggle-status - legacy 2-state toggle.
-Toggles between draft and published while preserving the visibility column.
-Returns the updated 3-state status pill HTML fragment for HTMX swap."
-  (let ((user (get-current-user)))
-    (if (null user)
-        (html-response "Unauthorized" :status 401)
-        (let* ((id (get-path-param params :id))
-               (nb (and id (get-notebook-by-id id))))
-          (cond ((null nb) (html-response "Not found" :status 404))
-                ((not
-                  (equal (princ-to-string (notebook-author-id nb))
-                         (princ-to-string (getf user :id))))
-                 (html-response "Forbidden" :status 403))
-                (t
-                 (let* ((current (notebook-status nb))
-                        (current-vis (notebook-visibility nb))
-                        (new-status
-                          (if (equal current "published")
-                              "draft"
-                              "published"))
-                        (published-at
-                          (when (equal new-status "published")
-                            (local-time:now))))
-                   (update-notebook! id :status new-status :published-at
-                                          published-at)
-                   (html-response
-                    (render-notebook-status-pill id new-status
-                                                      current-vis)))))))))
 
 (defun notebook-set-state-handler (params)
   "Handle POST /dashboard/notebooks/:id/state with form param state= one of
@@ -1969,8 +1853,6 @@ The captured groups arrive in the handler's PARAMS alist under
           (make-dynamic-handler 'notebook-edit-handler))
   (setf (ningle/app:route app "/dashboard/notebooks/:id" :method :post)
           (make-dynamic-handler 'notebook-update-handler))
-  (setf (ningle/app:route app "/dashboard/notebooks/:id/toggle-status" :method :post)
-          (make-dynamic-handler 'notebook-toggle-status-handler))
   (setf (ningle/app:route app "/dashboard/notebooks/:id/state" :method :post)
           (make-dynamic-handler 'notebook-set-state-handler))
   (setf (ningle/app:route app "/dashboard/notebooks/:id/confirm-delete")
@@ -1987,8 +1869,6 @@ The captured groups arrive in the handler's PARAMS alist under
           (make-dynamic-handler 'course-edit-handler))
   (setf (ningle/app:route app "/dashboard/courses/:id" :method :post)
           (make-dynamic-handler 'course-update-handler))
-  (setf (ningle/app:route app "/dashboard/courses/:id/toggle-status" :method :post)
-          (make-dynamic-handler 'course-toggle-status-handler))
   (setf (ningle/app:route app "/dashboard/courses/:id/state" :method :post)
           (make-dynamic-handler 'course-set-state-handler))
   (setf (ningle/app:route app "/dashboard/courses/:id/confirm-delete")

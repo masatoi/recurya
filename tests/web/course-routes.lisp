@@ -12,7 +12,6 @@
                 #:course-create-handler
                 #:course-edit-handler
                 #:course-update-handler
-                #:course-toggle-status-handler
                 #:course-set-state-handler
                 #:course-confirm-delete-handler
                 #:course-delete-handler
@@ -351,51 +350,6 @@ HX-Request header is included so htmx-request-p returns T."
           (let ((after (get-course-by-id id)))
             (ok (string= "public" (course-visibility after)))))))))
 
-(deftest course-toggle-status-401-anonymous
-  (with-mock-session (make-session)
-    (let ((res (course-toggle-status-handler '((:id . "x")))))
-      (ok (= 401 (response-status res))))))
-
-(deftest course-toggle-status-404-missing
-  (with-test-db
-    (let ((user (mk-user)))
-      (with-mock-session (make-session :user user)
-        (let ((res (course-toggle-status-handler
-                    '((:id . "00000000-0000-0000-0000-000000000000")))))
-          (ok (= 404 (response-status res))))))))
-
-(deftest course-toggle-status-403-non-owner
-  (with-test-db
-    (let* ((owner (mk-user))
-           (other (mk-user))
-           (owner-dao (get-user-by-id (getf owner :id)))
-           (c (create-course! :title "Owned" :author owner-dao))
-           (id (princ-to-string (course-id c))))
-      (with-mock-session (make-session :user other)
-        (let ((res (course-toggle-status-handler (list (cons :id id)))))
-          (ok (= 403 (response-status res))))))))
-
-(deftest course-toggle-status-flips-and-sets-published-at
-  (with-test-db
-    (let* ((user (mk-user))
-           (dao (get-user-by-id (getf user :id)))
-           (c (create-course! :title "T" :author dao))
-           (id (princ-to-string (course-id c))))
-      (with-mock-session (make-session :user user)
-        (let ((res (course-toggle-status-handler (list (cons :id id)))))
-          (ok (= 200 (response-status res)))
-          (ok (search "data-status=published" (first (response-body res))))
-          (let ((after (get-course-by-id id)))
-            (ok (string= "published" (course-status after)))
-            (ok (course-published-at after))))
-        (let ((res2 (course-toggle-status-handler (list (cons :id id)))))
-          (ok (= 200 (response-status res2)))
-          (ok (search "data-status=draft" (first (response-body res2))))
-          (let ((after (get-course-by-id id)))
-            (ok (string= "draft" (course-status after)))
-            (ok (course-published-at after)
-                "published_at is preserved on un-publish")))))))
-
 (deftest course-list-renders-3-state-pill-classes
   (testing "Courses listing emits status-{draft|private|public} CSS classes."
     (with-test-db
@@ -416,22 +370,6 @@ HX-Request header is included so htmx-request-p returns T."
             (ok (search "status-draft" body))
             (ok (search "status-private" body))
             (ok (search "status-public" body))))))))
-
-(deftest course-toggle-status-pill-from-draft-emits-private-state
-  (testing "Legacy course toggle-status preserves visibility so a draft+private
-course flips to published+private and the pill shows status-private."
-    (with-test-db
-      (let* ((user (mk-user))
-             (dao (get-user-by-id (getf user :id)))
-             (c (create-course! :title "C" :author dao
-                                :status "draft" :visibility "private"))
-             (id (princ-to-string (course-id c))))
-        (with-mock-session (make-session :user user)
-          (let* ((res (course-toggle-status-handler (list (cons :id id))))
-                 (body (first (response-body res))))
-            (ok (= 200 (response-status res)))
-            (ok (search "status-private" body))
-            (ng (search "status-draft" body))))))))
 
 (deftest course-set-state-401-anonymous
   (with-mock-session (make-session)
