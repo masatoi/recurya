@@ -570,6 +570,16 @@ not a bare pill span."
           (let ((res (course-delete-handler (list (cons :id id)))))
             (ok (= 403 (response-status res)))))))))
 
+(deftest course-delete-404-missing
+  ;; Regression: the null-course branch used to call an undefined (not-found),
+  ;; crashing instead of returning 404 for a delete of a non-existent course.
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((res (course-delete-handler
+                    '((:id . "00000000-0000-0000-0000-000000000000")))))
+          (ok (= 404 (response-status res))))))))
+
 (deftest course-delete-htmx-returns-oob-row
   (with-test-db
     (let* ((user (mk-user))

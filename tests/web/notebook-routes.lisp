@@ -1076,6 +1076,7 @@ and the breadcrumb shows Notebooks > Course Title > Notebook Title."
              (course (create-course! :title "SICP"
                                      :slug "sicp"
                                      :status "published"
+                                     :visibility "public"
                                      :published-at (local-time:now)
                                      :author dao))
              (nb (create-notebook!
@@ -1111,6 +1112,7 @@ preserving the ?course=<slug> query string."
              (course (create-course! :title "SICP"
                                      :slug "sicp"
                                      :status "published"
+                                     :visibility "public"
                                      :published-at (local-time:now)
                                      :author dao))
              (nb1 (create-notebook!
@@ -1159,6 +1161,7 @@ c"
              (course (create-course! :title "SICP"
                                      :slug "sicp"
                                      :status "published"
+                                     :visibility "public"
                                      :published-at (local-time:now)
                                      :author dao))
              (nb1 (create-notebook!
@@ -1200,6 +1203,7 @@ b"
              (course (create-course! :title "SICP"
                                      :slug "sicp"
                                      :status "published"
+                                     :visibility "public"
                                      :published-at (local-time:now)
                                      :author dao))
              (nb1 (create-notebook!
@@ -1260,6 +1264,49 @@ hi"
             (ng (search "?course=no-such-course" body)
                 "no prev/next URLs referencing the unknown course")
             (ok (search "Standalone" body))))))))
+
+(deftest notebook-page-with-private-course-hides-sidebar
+  (testing "?course=<slug> for a published-but-PRIVATE course is ignored for
+anonymous viewers: the public notebook still renders, but the private
+course's title, sidebar link and prev/next URLs never leak. Regression
+guard for the can-view-course-p gate on the ?course= sidebar context."
+    (with-test-db
+      (let* ((author (mk-user))
+             (dao (get-user-by-id (getf author :id)))
+             (handle (users-handle dao))
+             (course (create-course! :title "Secret Syllabus"
+                                     :slug "secret"
+                                     :status "published"
+                                     :visibility "private"
+                                     :published-at (local-time:now)
+                                     :author dao))
+             (nb (create-notebook!
+                  :title "Public Lesson"
+                  :slug "public-lesson"
+                  :body-md "===prose===
+hi"
+                  :cells nil
+                  :status "published"
+                  :visibility "public"
+                  :published-at (local-time:now)
+                  :author dao)))
+        (add-notebook-to-course! (course-id course) (notebook-id nb)
+                                 :position 0)
+        (with-mock-session (make-session)
+          (let* ((res (public-notebook-by-handle-handler
+                       `((:captures . (,handle "public-lesson"))
+                         ("course" . "secret"))))
+                 (body (first (response-body res))))
+            ;; The public notebook itself still renders.
+            (ok (= 200 (response-status res)))
+            (ok (search "Public Lesson" body))
+            ;; The private course context must NOT leak to an anonymous viewer.
+            (ng (search "Secret Syllabus" body)
+                "private course title must not appear in sidebar/breadcrumb")
+            (ng (search (format nil "/c/@~A/secret" handle) body)
+                "no link to the private course page")
+            (ng (search "?course=secret" body)
+                "no prev/next URLs scoped to the private course")))))))
 
 (deftest by-handle-different-authors-same-slug-isolated
   (testing "GET /@:handle/:slug returns each author's notebook when both

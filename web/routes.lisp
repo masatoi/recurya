@@ -957,7 +957,8 @@ For HTMX requests returns an empty OOB row swap; otherwise redirects."
         (redirect "/login")
         (let* ((id (get-path-param params :id))
                (c (and id (get-course-by-id id))))
-          (cond ((null c) (html-response (not-found) :status 404))
+          (cond ((null c)
+                 (html-response (recurya/web/ui/errors:not-found) :status 404))
                 ((not (equal (princ-to-string (course-author-id c))
                              (princ-to-string (getf user :id))))
                  (html-response "Forbidden" :status 403))
@@ -1353,8 +1354,16 @@ viewer cannot view it."
                          (notebook-slug nb-row))))
               (course-slug-param (get-param params "course"))
               (course-row
-               (and course-slug-param
-                    (get-course-by-slug course-slug-param)))
+               ;; Per-author slug uniqueness makes a bare ?course= slug
+               ;; ambiguous, and the param is attacker-controllable. Only
+               ;; honor the sidebar context for courses the viewer may
+               ;; actually see (owner, or published+public); otherwise drop
+               ;; it so a private/draft course's title and member notebook
+               ;; slugs never leak. can-view-course-p tolerates a NIL course.
+               (let ((c (and course-slug-param
+                             (get-course-by-slug course-slug-param))))
+                 (when (recurya/utils/access-control:can-view-course-p user c)
+                   c)))
               (course-author
                (and course-row (course-author course-row)))
               (course-handle
