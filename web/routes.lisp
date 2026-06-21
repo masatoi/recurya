@@ -1244,9 +1244,12 @@ viewer cannot view it."
                ;; Per-author slug uniqueness makes a bare ?course= slug
                ;; ambiguous, and the param is attacker-controllable. Only
                ;; honor the sidebar context for courses the viewer may
-               ;; actually see (owner, or published+public); otherwise drop
-               ;; it so a private/draft course's title and member notebook
-               ;; slugs never leak. can-view-course-p tolerates a NIL course.
+               ;; actually see (owner, published+public, or published+unlisted);
+               ;; otherwise drop it so a private/draft course's title and
+               ;; member notebook slugs never leak. Unlisted courses are
+               ;; link-shareable, so surfacing their title/sibling slugs to a
+               ;; viewer who already reached a member notebook is acceptable.
+               ;; can-view-course-p tolerates a NIL course.
                (let ((c (and course-slug-param
                              (get-course-by-slug course-slug-param))))
                  (when (recurya/utils/access-control:can-view-course-p user c)
@@ -1375,7 +1378,12 @@ the viewer cannot view it."
       ((not (recurya/utils/access-control:can-view-course-p user course-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
-       (let* ((rows (list-course-notebooks (course-id course-row)))
+       (let* ((rows (remove-if-not
+                     (lambda (cn)
+                       (let ((nb (course-notebook-notebook cn)))
+                         (and nb
+                              (recurya/utils/access-control:publicly-listable-notebook-p nb))))
+                     (list-course-notebooks (course-id course-row))))
               (notebooks (mapcar #'course-notebook-row->public-plist rows)))
          (html-response
           (recurya/web/ui/course:render

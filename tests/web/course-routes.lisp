@@ -828,6 +828,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%a")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao))
              (nb-b (create-notebook!
@@ -835,6 +836,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%b")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao))
              (nb-c (create-notebook!
@@ -842,6 +844,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%c")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao)))
         (add-notebook-to-course! course-uuid (notebook-id nb-a) :position 0)
@@ -1057,3 +1060,33 @@ where the lists are aligned with the attached positions."
         (with-mock-session (make-session)
           (let ((listing (first (response-body (courses-public-handler nil)))))
             (ng (search "HiddenCourse" listing))))))))
+
+(deftest public-course-hides-non-public-member-notebooks
+  (testing "the public course page lists only publicly-listable member
+notebooks; an unlisted member is dropped from the public discovery surface"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "cm" :handle "cm-7b"))
+             (handle (users-handle dao))
+             (course (create-course! :title "Mixed" :slug "mixed"
+                                     :status "published" :visibility "public"
+                                     :published-at (local-time:now) :author dao))
+             (pub (create-notebook! :title "PublicMember" :slug "pub-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "public"
+                                    :published-at (local-time:now)))
+             (unl (create-notebook! :title "UnlistedMember" :slug "unl-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "unlisted"
+                                    :published-at (local-time:now))))
+        (add-notebook-to-course! (course-id course) (notebook-id pub) :position 0)
+        (add-notebook-to-course! (course-id course) (notebook-id unl) :position 1)
+        (with-mock-session (make-session)
+          (let ((body (first (response-body
+                              (public-course-by-handle-handler
+                               `((:captures . (,handle "mixed"))))))))
+            (ok (search "PublicMember" body) "public member is listed")
+            (ng (search "UnlistedMember" body) "unlisted member is hidden")
+            (ng (search "/@cm-7b/unl-member" body)
+                "no link to the unlisted member")))))))
