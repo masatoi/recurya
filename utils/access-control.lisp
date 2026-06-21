@@ -26,10 +26,11 @@
 (defun can-view-notebook-p (user notebook)
   "Return T when USER may view NOTEBOOK.
 
-Owner can always view their own notebook. Non-owners may view only
-notebooks whose status is \"published\" and whose visibility is
-\"public\". USER is a session plist with at least :id, or NIL for an
-anonymous viewer."
+Owner can always view their own notebook. Non-owners may view notebooks
+whose status is \"published\" and whose visibility is \"public\" or
+\"unlisted\" (unlisted = reachable by anyone with the URL, just hidden
+from public listings). USER is a session plist with at least :id, or NIL
+for an anonymous viewer."
   (cond
     ((null notebook) nil)
     ((owner-of-notebook-p user notebook) t)
@@ -37,6 +38,7 @@ anonymous viewer."
     (t (let ((vis (notebook-visibility notebook)))
          (cond
            ((string= vis "public") t)
+           ((string= vis "unlisted") t)
            ((string= vis "private") nil)
            (t nil))))))
 
@@ -49,7 +51,8 @@ anonymous viewer."
 (defun can-view-course-p (user course)
   "Return T when USER may view COURSE.
 
-Same rules as CAN-VIEW-NOTEBOOK-P: owner always; otherwise published+public."
+Same rules as CAN-VIEW-NOTEBOOK-P: owner always; otherwise published and
+visibility \"public\" or \"unlisted\"."
   (cond
     ((null course) nil)
     ((owner-of-course-p user course) t)
@@ -57,6 +60,7 @@ Same rules as CAN-VIEW-NOTEBOOK-P: owner always; otherwise published+public."
     (t (let ((vis (course-visibility course)))
          (cond
            ((string= vis "public") t)
+           ((string= vis "unlisted") t)
            ((string= vis "private") nil)
            (t nil))))))
 
