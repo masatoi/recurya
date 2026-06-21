@@ -177,7 +177,13 @@ NOTEBOOKS is a list of plists with :id :title :slug :status
                        (format nil "/dashboard/notebooks/~A/confirm-delete"
                                id)
                        :hx-target "#modal-container" :hx-swap "innerHTML"
-                       "Delete"))))))))
+                       "Delete")
+                      (when (and (string= visibility "unlisted")
+                                 slug user-handle)
+                        (:button :type "button" :class "link copy-link-btn"
+                         :data-share-url (format nil "/@~A/~A" user-handle slug)
+                         :onclick "navigator.clipboard.writeText(location.origin+this.dataset.shareUrl)"
+                         "Copy link")))))))))
              (when pagination
                (let ((current-page (getf pagination :current-page))
                      (total-pages (getf pagination :total-pages))

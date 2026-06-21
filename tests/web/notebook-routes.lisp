@@ -78,6 +78,7 @@ HX-Request header is included so htmx-request-p returns T."
     (list :id (users-id dao)
           :email (format nil "nb-route-~A@example.com" (make-v4-uuid))
           :name (users-display-name dao)
+          :handle (users-handle dao)
           :role :user
           :provider "google"
           :timezone "UTC"
@@ -1365,3 +1366,24 @@ hi"
             (let ((after (get-notebook-by-id id)))
               (ok (string= "published" (notebook-status after)))
               (ok (string= "unlisted" (notebook-visibility after))))))))))
+
+(deftest dashboard-shows-copy-link-for-unlisted-only
+  (testing "an unlisted notebook row exposes a copy-link affordance; a public
+notebook row does not"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-notebook!
+         :title "UnlistedRow" :slug "unlisted-row" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published" :visibility "unlisted"
+         :published-at (local-time:now))
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (notebooks-handler nil)))))
+            (ok (search "copy-link-btn" body)
+                "unlisted row has a copy-link button")
+            (ok (search "data-share-url" body)
+                "copy button carries data-share-url (distinct from the title href)")
+            (ok (search (format nil "/@~A/unlisted-row" (getf user :handle))
+                        body)
+                "share URL targets the notebook")))))))

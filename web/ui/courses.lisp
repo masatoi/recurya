@@ -175,7 +175,13 @@ COURSES is a list of plists with :id :slug :title :status
                       (:button :class "button-danger btn-sm" :hx-get
                        (format nil "/dashboard/courses/~A/confirm-delete" id)
                        :hx-target "#modal-container" :hx-swap "innerHTML"
-                       "Delete"))))))))
+                       "Delete")
+                      (when (and (string= visibility "unlisted")
+                                 slug user-handle)
+                        (:button :type "button" :class "link copy-link-btn"
+                         :data-share-url (format nil "/c/@~A/~A" user-handle slug)
+                         :onclick "navigator.clipboard.writeText(location.origin+this.dataset.shareUrl)"
+                         "Copy link")))))))))
              (when pagination
                (let ((current-page (getf pagination :current-page))
                      (total-pages (getf pagination :total-pages))

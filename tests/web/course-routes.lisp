@@ -87,6 +87,7 @@ HX-Request header is included so htmx-request-p returns T."
     (list :id (users-id dao)
           :email (format nil "course-route-~A@example.com" (make-v4-uuid))
           :name (users-display-name dao)
+          :handle (users-handle dao)
           :role :user
           :provider "google"
           :timezone "UTC"
@@ -1009,3 +1010,18 @@ where the lists are aligned with the attached positions."
             (let ((after (get-course-by-id id)))
               (ok (string= "published" (course-status after)))
               (ok (string= "unlisted" (course-visibility after))))))))))
+
+(deftest dashboard-shows-copy-link-for-unlisted-course-only
+  (testing "an unlisted course row exposes a copy-link affordance"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-course! :title "UnlistedC" :slug "unlisted-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (courses-me-handler nil)))))
+            (ok (search "copy-link-btn" body))
+            (ok (search "data-share-url" body))
+            (ok (search (format nil "/c/@~A/unlisted-c" (getf user :handle))
+                        body))))))))
