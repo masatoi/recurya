@@ -1318,3 +1318,10 @@ hi
       (let ((res (public-notebook-cell-run-by-handle-handler
                   '((:captures . ("ghost-7b" "x" "0"))))))
         (ok (= 404 (response-status res)))))))
+
+(deftest decode-state-token-published-unlisted
+  (testing "%decode-state-token maps published-unlisted to (published, unlisted)"
+    (multiple-value-bind (status vis)
+        (recurya/web/routes::%decode-state-token "published-unlisted")
+      (ok (string= status "published"))
+      (ok (string= vis "unlisted")))))

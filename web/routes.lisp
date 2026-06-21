@@ -819,10 +819,13 @@ NIL if invalid.
 Tokens are:
   \"draft\"               -> (\"draft\" nil)         ; visibility unchanged
   \"published-private\"   -> (\"published\" \"private\")
+  \"published-unlisted\"  -> (\"published\" \"unlisted\")
   \"published-public\"    -> (\"published\" \"public\")"
   (cond ((equal token "draft") (values "draft" nil))
         ((equal token "published-private")
          (values "published" "private"))
+        ((equal token "published-unlisted")
+         (values "published" "unlisted"))
         ((equal token "published-public")
          (values "published" "public"))
         (t nil)))
