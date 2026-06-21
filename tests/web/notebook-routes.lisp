@@ -1341,3 +1341,27 @@ hi")
           (let ((nb (get-notebook-by-slug "unlisted-nb")))
             (ok nb)
             (ok (string= "unlisted" (notebook-visibility nb)))))))))
+
+(deftest notebook-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-notebook-by-id id)))
+              (ok (string= "published" (notebook-status after)))
+              (ok (string= "unlisted" (notebook-visibility after))))))))))

@@ -988,3 +988,24 @@ where the lists are aligned with the attached positions."
           (let ((c (get-course-by-slug "unlisted-course")))
             (ok c)
             (ok (string= "unlisted" (course-visibility c)))))))))
+
+(deftest course-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "S" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-course-by-id id)))
+              (ok (string= "published" (course-status after)))
+              (ok (string= "unlisted" (course-visibility after))))))))))
