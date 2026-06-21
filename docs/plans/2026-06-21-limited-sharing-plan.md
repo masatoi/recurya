@@ -11,11 +11,41 @@
 ## 前提
 
 - 作業ブランチ `feat/limited-sharing` 上で作業する（設計ドキュメント `docs/plans/2026-06-21-limited-sharing-design.md` はコミット済み）。
-- PostgreSQL が起動し、テストDBにスキーマ適用済みであること。空DBなら:
-  `psql postgresql://postgres:postgres@localhost:15434/recurya -f db/schema.sql`
 - `fs-set-project-root {"path": "."}` を最初に実行。
-- 各タスクのテストは cl-mcp の `run-tests` ツールで実行（例: `{"system":"recurya/tests/utils/access-control"}`）。最終タスクで全システム強制コンパイル + 全スイートを fresh プロセスで実行する。
 - **テーブル変更なし**: `models/notebook.lisp` / `models/course.lisp` / `db/schema.sql` は変更しない。
+
+### 実行制約（cl-mcp 共有ランタイム）— 必読
+
+cl-mcp のワーカープールは無効で、**全ツール呼び出しはライブの :3000 Web サーバを兼ねる単一の共有 Lisp プロセス**でインライン実行される。これに起因する厳守事項:
+
+1. **`clear_fasls` 厳禁**: `load-system` を `clear_fasls: true` で呼ぶと依存（`string-case` 等）の再コンパイルでイメージが破損する（`STRING-CASE::NUMERIC-CHAR= FUN-INFO` エラー）。per-task では `clear_fasls` を使わない。`force: true`（デフォルト、依存は再コンパイルしない）は健全なイメージでは安全。
+2. **厳密に逐次実行**: 共有イメージへ複数エージェントが同時に `load-system` / `run-tests` を投げると状態が交錯する。タスク（およびサブエージェント）は **Task 0 → 1 → 2 → … と1つずつ順番に**実行する。並列禁止。
+3. **タスク順序依存**: **Task 2（`published-unlisted` デコード）は Task 4（set-state テスト）より前**に完了していること。
+4. **編集はワーカーに自動反映されない**: `lisp-edit-form` 後は `load-system`（`force`、`clear_fasls` なし）で対象システムを再ロードしてから `run-tests` する。
+5. per-task のテストは cl-mcp `run-tests` で**葉のテストシステム**を対象に実行（例: `{"system":"recurya/tests/web/notebook-routes"}`）。**唯一の強制フルコンパイルは Task 9 の fresh プロセス（docker exec）**で行う。
+
+---
+
+### Task 0: スキーマ前提の確立（必須・冒頭で1回）
+
+**Files:** なし（環境準備）
+
+`with-test-db`（`tests/support/db.lisp`）は行を DELETE するだけで **テーブルを作成しない**。テストDBが空だと全DBテストが `relation "X" does not exist` で失敗する（コード欠陥ではなく環境）。
+
+- [ ] **Step 1: テストDBにスキーマを適用**
+
+```bash
+psql postgresql://postgres:postgres@localhost:15434/recurya -f db/schema.sql
+```
+
+- [ ] **Step 2: スモーク確認**
+
+```bash
+psql postgresql://postgres:postgres@localhost:15434/recurya -c 'SELECT 1 FROM notebook LIMIT 0;'
+```
+Expected: エラーなく完了（テーブル存在）。
+
+以降のタスクで `run-tests` が `relation does not exist` を返したら、それは**スキーマ未適用**の合図であってロジックのバグではない。Task 0 を再実行する。
 
 ## File Structure
 
@@ -346,7 +376,7 @@ git commit -m "feat: accept unlisted visibility in create/update forms and handl
 
 - [ ] **Step 1: 失敗するテストを追加**
 
-`tests/web/notebook-routes.lisp` に追加（既存の set-state テストを踏襲。notebook-routes には set-state テストが無いので新規に状態遷移を検証）:
+`tests/web/notebook-routes.lisp` に追加（既存の `notebook-set-state-decodes-published-public`（notebook-routes.lisp:491 付近）を `published-unlisted` トークン向けに踏襲）:
 
 ```lisp
 (deftest notebook-set-state-published-unlisted
@@ -451,14 +481,21 @@ Expected: 新テストが FAIL（`status-unlisted` クラスも `published-unlis
 
 - [ ] **Step 5: Unlisted ピルの色を両ダッシュボードに追加**
 
-`web/ui/notebooks-dashboard.lisp` の `*page-styles*` 内、
-`.status-pill.status-public { ... }` の行の直後に追加:
+`web/ui/notebooks-dashboard.lisp` の `*page-styles*` 内、`.status-pill.status-public`
+ルールは**2行にまたがる**ことに注意（`lisp-patch-form` の `old_text` は一意一致が必要）。
+2行ルール全体をアンカーにして、その閉じ `}` の直後に追加する。old_text として:
 
+```
+.status-pill.status-public { background: var(--color-success-bg);
+                             color: var(--color-success-text); }
+```
+を、new_text として上記＋改行＋
 ```
 .status-pill.status-unlisted { background: #1e40af; color: #dbeafe; }
 ```
+にする。
 
-`web/ui/courses.lisp` の `*page-styles*` にも同じ1行を同じ位置に追加。
+`web/ui/courses.lisp` の `*page-styles*` にも同じ2行アンカーで同じ1行を追加。
 
 - [ ] **Step 6: テストが通ることを確認**
 
@@ -481,7 +518,29 @@ git commit -m "feat: 4-state dropdown with Unlisted pill for notebooks and cours
 **Files:**
 - Modify: `web/ui/notebooks-dashboard.lisp`（`render` の actions-cell）
 - Modify: `web/ui/courses.lisp`（`render` の actions-cell）
-- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`（`mk-user` ヘルパ修正含む）
+
+- [ ] **Step 0（前提修正・必須）: `mk-user` に `:handle` を持たせる**
+
+両テストファイルの `mk-user` が返すセッション plist には `:handle` が無い。一方、ダッシュボードのコピーリンク（および公開タイトルリンク）は `(getf user :handle)` でガードされるため、`:handle` 無しではボタンが描画されずテストが必ず失敗する（本番は `user-dao->plist` が `:handle` を設定済みなので影響なし）。
+
+`tests/web/notebook-routes.lisp` の `mk-user` を、dao を let で束縛して `:handle` を含める形に置換:
+
+```lisp
+(defun mk-user ()
+  "Create a test user and return the session plist used by handlers."
+  (let ((dao (create-test-user :email-prefix "nb-route")))
+    (list :id (users-id dao)
+          :email (format nil "nb-route-~A@example.com" (make-v4-uuid))
+          :name (users-display-name dao)
+          :handle (users-handle dao)
+          :role :user
+          :provider "google"
+          :timezone "UTC"
+          :language "en")))
+```
+
+`tests/web/course-routes.lisp` の `mk-user` も同様に `:handle (users-handle dao)` を追加（`:email-prefix` は `"course-route"`）。`users-handle` は両テストの defpackage で import 済み。
 
 - [ ] **Step 1: 失敗するテストを追加**
 
@@ -503,9 +562,11 @@ hi"
           (let ((body (first (response-body (notebooks-handler nil)))))
             (ok (search "copy-link-btn" body)
                 "unlisted row has a copy-link button")
-            (ok (search (format nil "/@~A/unlisted-row" (users-handle dao))
+            (ok (search "data-share-url" body)
+                "copy button carries data-share-url (distinct from the title href)")
+            (ok (search (format nil "/@~A/unlisted-row" (getf user :handle))
                         body)
-                "copy-link carries the share URL")))))))
+                "share URL targets the notebook")))))))
 ```
 
 `users-handle` は notebook-routes テストの defpackage に既に import 済み。
@@ -524,7 +585,8 @@ hi"
         (with-mock-session (make-session :user user)
           (let ((body (first (response-body (courses-me-handler nil)))))
             (ok (search "copy-link-btn" body))
-            (ok (search (format nil "/c/@~A/unlisted-c" (users-handle dao))
+            (ok (search "data-share-url" body))
+            (ok (search (format nil "/c/@~A/unlisted-c" (getf user :handle))
                         body))))))))
 ```
 
@@ -775,8 +837,7 @@ hi"
 (deftest unlisted-course-absent-from-public-listing
   (testing "an unlisted course does not appear on /courses"
     (with-test-db
-      (let* ((dao (create-test-user :email-prefix "hidc" :handle "hidc-7b")))
-        (declare (ignore))
+      (let ((dao (create-test-user :email-prefix "hidc" :handle "hidc-7b")))
         (create-course! :title "HiddenCourse" :slug "hidden-course"
                         :status "published" :visibility "unlisted"
                         :published-at (local-time:now) :author dao)
@@ -785,9 +846,9 @@ hi"
             (ng (search "HiddenCourse" listing))))))))
 ```
 
-import 確認: notebook-routes の defpackage に `#:notebooks-public-handler` と
-`#:profile-handler` を、course-routes の defpackage に `#:courses-public-handler` を
-`:import-from #:recurya/web/routes` 配下へ追加（未 import の場合のみ）。
+import 確認（検証済み）:
+- notebook-routes の defpackage の `:import-from #:recurya/web/routes` に **`#:profile-handler` を追加する（必須）**。`profile-handler` は現状未 import。
+- `#:notebooks-public-handler`（notebook-routes）と `#:courses-public-handler`（course-routes）は**既に import 済み**なので追加不要。
 
 - [ ] **Step 2: テストを実行して通ることを確認**
 
@@ -804,7 +865,115 @@ git commit -m "test: guard that unlisted items stay out of listings and profile"
 
 ---
 
-### Task 8: 全体検証 + マージ + push
+### Task 8: 公開Courseページから非公開メンバーnotebookを除外（発見面の保証）
+
+**Files:**
+- Modify: `web/routes.lisp`（`%render-public-course-response` のメンバー絞り込み + `%render-public-notebook-response` の `?course=` コメント更新）
+- Test: `tests/web/course-routes.lisp`
+
+`list-course-notebooks` は可視性で絞らないため、public（検索・インデックス対象）の Course ページが、添付後に unlisted/private/draft へ降格されたメンバーnotebookのタイトル・要約・`/@handle/slug` リンクを露出してしまう。これは unlisted の「発見面に出さない」保証に反する（既存の private/draft 降格漏れも同様）。公開Courseレンダリング時に **publicly-listable なメンバーのみ**へ絞る。
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/course-routes.lisp` に追加（`create-notebook!`, `notebook-id`, `add-notebook-to-course!`, `public-course-by-handle-handler`, `users-handle` は course-routes テストの defpackage に import 済み）:
+
+```lisp
+(deftest public-course-hides-non-public-member-notebooks
+  (testing "the public course page lists only publicly-listable member
+notebooks; an unlisted member is dropped from the public discovery surface"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "cm" :handle "cm-7b"))
+             (handle (users-handle dao))
+             (course (create-course! :title "Mixed" :slug "mixed"
+                                     :status "published" :visibility "public"
+                                     :published-at (local-time:now) :author dao))
+             (pub (create-notebook! :title "PublicMember" :slug "pub-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "public"
+                                    :published-at (local-time:now)))
+             (unl (create-notebook! :title "UnlistedMember" :slug "unl-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "unlisted"
+                                    :published-at (local-time:now))))
+        (add-notebook-to-course! (course-id course) (notebook-id pub) :position 0)
+        (add-notebook-to-course! (course-id course) (notebook-id unl) :position 1)
+        (with-mock-session (make-session)
+          (let ((body (first (response-body
+                              (public-course-by-handle-handler
+                               `((:captures . (,handle "mixed"))))))))
+            (ok (search "PublicMember" body) "public member is listed")
+            (ng (search "UnlistedMember" body) "unlisted member is hidden")
+            (ng (search "/@cm-7b/unl-member" body)
+                "no link to the unlisted member")))))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: FAIL（unlisted メンバーが現状は表示される）。
+
+- [ ] **Step 3: `%render-public-course-response` でメンバーを publicly-listable に絞る**
+
+`web/routes.lisp` の `%render-public-course-response` 内、
+```lisp
+       (let* ((rows (list-course-notebooks (course-id course-row)))
+              (notebooks (mapcar #'course-notebook-row->public-plist rows)))
+```
+を以下に置換:
+```lisp
+       (let* ((rows (remove-if-not
+                     (lambda (cn)
+                       (let ((nb (course-notebook-notebook cn)))
+                         (and nb
+                              (recurya/utils/access-control:publicly-listable-notebook-p nb))))
+                     (list-course-notebooks (course-id course-row))))
+              (notebooks (mapcar #'course-notebook-row->public-plist rows)))
+```
+（`course-notebook-notebook` は routes の defpackage で import 済み。`publicly-listable-notebook-p` は完全修飾で呼ぶ。）
+
+- [ ] **Step 4: `?course=` ガードのコメントドリフトを修正**
+
+同ファイル `%render-public-notebook-response` の `?course=` 解決箇所のコメントを、unlisted も許可される現状に合わせて置換:
+```lisp
+               ;; Per-author slug uniqueness makes a bare ?course= slug
+               ;; ambiguous, and the param is attacker-controllable. Only
+               ;; honor the sidebar context for courses the viewer may
+               ;; actually see (owner, or published+public); otherwise drop
+               ;; it so a private/draft course's title and member notebook
+               ;; slugs never leak. can-view-course-p tolerates a NIL course.
+```
+を
+```lisp
+               ;; Per-author slug uniqueness makes a bare ?course= slug
+               ;; ambiguous, and the param is attacker-controllable. Only
+               ;; honor the sidebar context for courses the viewer may
+               ;; actually see (owner, published+public, or published+unlisted);
+               ;; otherwise drop it so a private/draft course's title and
+               ;; member notebook slugs never leak. Unlisted courses are
+               ;; link-shareable, so surfacing their title/sibling slugs to a
+               ;; viewer who already reached a member notebook is acceptable.
+               ;; can-view-course-p tolerates a NIL course.
+```
+
+- [ ] **Step 5: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS。既存の公開Course閲覧テスト（public member を含むもの）も PASS。
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add web/routes.lisp tests/web/course-routes.lisp
+git commit -m "fix: drop non-public member notebooks from public course pages"
+```
+
+> スコープ注: 「Course へ unlisted notebook を添付できるか」（`course-eligible-notebooks` が public のみ提示）は本実装では**従来どおり public のみ**に据え置く（YAGNI）。よって unlisted がCourse公開ページに出る経路は「添付後に降格」のみで、Step 3 がそれを塞ぐ。
+
+---
+
+### Task 9: 全体検証 + マージ + push
 
 **Files:** なし（検証とGit操作）
 
@@ -842,15 +1011,19 @@ Expected: push 成功、`main` と `origin/main` が同期。
 ## Self-Review
 
 **Spec coverage（design セクション → タスク対応）:**
+- 環境前提（空DBスキーマ） → Task 0
 - §3 アクセスモデル（閲覧/掲載分離）→ Task 1
 - §A can-view-* → Task 1
 - §B 一覧変更不要 → Task 7（回帰ガード）
 - §C 状態モデル & UI（4状態 / decode / create-update / forms）→ Task 2, 3, 4
 - §D ピル表示 → Task 4
-- §E 共有URLコピー → Task 5
+- §E 共有URLコピー → Task 5（`mk-user` の `:handle` 修正含む）
 - §F noindex → Task 6
-- §マイグレーション不要 → Task 8 Step 1（無変更確認）
+- 発見面の保証（公開Courseの非公開メンバー除外・降格漏れ修正・?course=コメント）→ Task 8
+- §マイグレーション不要 → Task 9 Step 1（無変更確認）
 - すべてのセクションに対応タスクあり。ギャップなし。
+
+**レビュー反映済み（2026-06-21 adversarial review）:** mk-user :handle [blocker], Task 0 スキーマ前提 [major], cl-mcp 実行制約 [major], profile-handler import 必須化 [minor], Task 8 公開Courseメンバー絞り込み [Option 1], および nice-to-have（data-share-url アサーション・?course=コメント・誤前提プロローグ・CSS 2行アンカー・declare ignore 削除）。
 
 **Placeholder scan:** "TBD"/"TODO"/曖昧指示なし。全コード手順に実コードを記載。noindex 注入点は確定済み（notebook=引数, course=head-extras）。
 

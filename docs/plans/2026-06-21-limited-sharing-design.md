@@ -76,10 +76,13 @@ Course の両方でこのユースケースを満たす。
 - `notebook-form` / `course-form` の visibility select に Unlisted オプションを追加
   （作成時に直接 unlisted 指定可能にする）。
 
-### D. ピル表示 (`web/ui/styles.lisp` ほか)
+### D. ピル表示（ダッシュボードの `*page-styles*`）
 
-- `*status-pill-styles*` に `status-unlisted` クラスを追加。色は public(緑) /
-  private(紫) / draft(黄) と区別できる青系。
+- `.status-pill.status-{draft,private,public}` の色ルールは
+  `web/ui/notebooks-dashboard.lisp` と `web/ui/courses.lisp` のそれぞれの
+  `*page-styles*` 文字列内にある（`styles.lisp` ではない）。両方に
+  `.status-pill.status-unlisted` を追加する。色は public(緑) / private(紫) /
+  draft(黄) と区別できる青系。
 - ドロップダウン summary ピルおよび一覧の3状態ピル計算で、
   `published かつ unlisted` のとき `status-unlisted` / ラベル "Unlisted" を出す。
 
@@ -131,6 +134,21 @@ Course の両方でこのユースケースを満たす。
   CHECK制約 / enum が無いことを最終確認する。
 - ロールバックはコード revert のみ（既存 unlisted データは public/private いずれにも
   寄せられるが、開発初期につき考慮不要）。
+
+### G. 公開Courseページの非公開メンバー除外（発見面の保証）
+
+公開（public）Courseページは検索・インデックス対象の発見面である。`list-course-notebooks`
+は可視性で絞らないため、添付後に unlisted（または private/draft）へ降格された
+メンバーnotebookのタイトル・要約・`/@handle/slug` リンクが露出し得る。これは unlisted の
+「発見面に出さない」保証に反するため、`%render-public-course-response` で
+**publicly-listable なメンバーのみ**に絞る（`publicly-listable-notebook-p`）。
+
+- Course へ unlisted notebook を添付する経路（`course-eligible-notebooks`）は従来どおり
+  **public のみ**に据え置く（YAGNI）。よって露出経路は「添付後に降格」のみで、上記の
+  絞り込みがそれを塞ぐ。
+- `?course=` サイドバーは unlisted Course も解決対象に含まれるようになる（`can-view-course-p`
+  が unlisted を許可するため）。unlisted Course はリンク共有可なので、メンバーnotebookを
+  既に閲覧している人にそのCourseのタイトル/兄弟slugを見せることは許容する（コメントを更新）。
 
 ## スコープ外（YAGNI）
 
