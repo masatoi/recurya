@@ -17,7 +17,8 @@
                 #:notebook-delete-handler
                 #:notebooks-public-handler
                 #:public-notebook-by-handle-handler
-                #:public-notebook-cell-run-by-handle-handler)
+                #:public-notebook-cell-run-by-handle-handler
+                #:profile-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -78,6 +79,7 @@ HX-Request header is included so htmx-request-p returns T."
     (list :id (users-id dao)
           :email (format nil "nb-route-~A@example.com" (make-v4-uuid))
           :name (users-display-name dao)
+          :handle (users-handle dao)
           :role :user
           :provider "google"
           :timezone "UTC"
@@ -1318,3 +1320,116 @@ hi
       (let ((res (public-notebook-cell-run-by-handle-handler
                   '((:captures . ("ghost-7b" "x" "0"))))))
         (ok (= 404 (response-status res)))))))
+
+(deftest decode-state-token-published-unlisted
+  (testing "%decode-state-token maps published-unlisted to (published, unlisted)"
+    (multiple-value-bind (status vis)
+        (recurya/web/routes::%decode-state-token "published-unlisted")
+      (ok (string= status "published"))
+      (ok (string= vis "unlisted")))))
+
+(deftest create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted NB")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (notebook-create-handler params)
+          (let ((nb (get-notebook-by-slug "unlisted-nb")))
+            (ok nb)
+            (ok (string= "unlisted" (notebook-visibility nb)))))))))
+
+(deftest notebook-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-notebook-by-id id)))
+              (ok (string= "published" (notebook-status after)))
+              (ok (string= "unlisted" (notebook-visibility after))))))))))
+
+(deftest dashboard-shows-copy-link-for-unlisted-only
+  (testing "an unlisted notebook row exposes a copy-link affordance; a public
+notebook row does not"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-notebook!
+         :title "UnlistedRow" :slug "unlisted-row" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published" :visibility "unlisted"
+         :published-at (local-time:now))
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (notebooks-handler nil)))))
+            (ok (search "copy-link-btn" body)
+                "unlisted row has a copy-link button")
+            (ok (search "data-share-url" body)
+                "copy button carries data-share-url (distinct from the title href)")
+            (ok (search (format nil "/@~A/unlisted-row" (getf user :handle))
+                        body)
+                "share URL targets the notebook")))))))
+
+(deftest unlisted-notebook-page-has-noindex
+  (testing "an unlisted notebook page carries robots=noindex; a public one
+does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ix-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "U" :slug "u-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (create-notebook! :title "P" :slug "p-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "u-nb")))))))
+                (p-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "p-nb"))))))))
+            (ok (search "noindex" u-body) "unlisted page is noindex")
+            (ng (search "noindex" p-body) "public page is indexable")))))))
+
+(deftest unlisted-notebook-absent-from-public-listing-and-profile
+  (testing "an unlisted notebook appears on neither /notebooks nor /@handle"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "hid" :handle "hid-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "HiddenList" :slug "hidden-list"
+                          :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (notebooks-public-handler nil))))
+                (profile (first (response-body
+                                 (profile-handler
+                                  `((:captures . (,handle))))))))
+            (ng (search "HiddenList" listing) "not in /notebooks")
+            (ng (search "HiddenList" profile) "not on /@handle profile")))))))

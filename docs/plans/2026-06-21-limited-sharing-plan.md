@@ -1,0 +1,1030 @@
+# 限定共有（unlisted visibility）実装計画
+
+> **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
+
+**Goal:** Notebook と Course に `unlisted`（限定公開）可視性を追加し、URLを知る人は閲覧でき、公開一覧・プロフィール・検索には出ないようにする。
+
+**Architecture:** `visibility` の第3値として `"unlisted"` を導入。閲覧可否（`can-view-*`）は published かつ visibility ∈ {public, unlisted} で許可し、一覧掲載（`publicly-listable-*` / DBクエリの `visibility="public"`）は public のみのまま据え置く。状態UIは3状態→4状態ドロップダウンに拡張。`visibility` は CHECK制約なしの `VARCHAR(32)` なので **DBマイグレーション・`deftable` 変更は不要**。
+
+**Tech Stack:** Common Lisp / Mito ORM / Ningle / Spinneret / HTMX / Rove（テスト）。Lispファイルの読み書きは cl-mcp ツール（`lisp-read-file` / `lisp-edit-form` / `lisp-patch-form` / `run-tests`）を使用。
+
+## 前提
+
+- 作業ブランチ `feat/limited-sharing` 上で作業する（設計ドキュメント `docs/plans/2026-06-21-limited-sharing-design.md` はコミット済み）。
+- `fs-set-project-root {"path": "."}` を最初に実行。
+- **テーブル変更なし**: `models/notebook.lisp` / `models/course.lisp` / `db/schema.sql` は変更しない。
+
+### 実行制約（cl-mcp 共有ランタイム）— 必読
+
+cl-mcp のワーカープールは無効で、**全ツール呼び出しはライブの :3000 Web サーバを兼ねる単一の共有 Lisp プロセス**でインライン実行される。これに起因する厳守事項:
+
+1. **`clear_fasls` 厳禁**: `load-system` を `clear_fasls: true` で呼ぶと依存（`string-case` 等）の再コンパイルでイメージが破損する（`STRING-CASE::NUMERIC-CHAR= FUN-INFO` エラー）。per-task では `clear_fasls` を使わない。`force: true`（デフォルト、依存は再コンパイルしない）は健全なイメージでは安全。
+2. **厳密に逐次実行**: 共有イメージへ複数エージェントが同時に `load-system` / `run-tests` を投げると状態が交錯する。タスク（およびサブエージェント）は **Task 0 → 1 → 2 → … と1つずつ順番に**実行する。並列禁止。
+3. **タスク順序依存**: **Task 2（`published-unlisted` デコード）は Task 4（set-state テスト）より前**に完了していること。
+4. **編集はワーカーに自動反映されない**: `lisp-edit-form` 後は `load-system`（`force`、`clear_fasls` なし）で対象システムを再ロードしてから `run-tests` する。
+5. per-task のテストは cl-mcp `run-tests` で**葉のテストシステム**を対象に実行（例: `{"system":"recurya/tests/web/notebook-routes"}`）。**唯一の強制フルコンパイルは Task 9 の fresh プロセス（docker exec）**で行う。
+
+---
+
+### Task 0: スキーマ前提の確立（必須・冒頭で1回）
+
+**Files:** なし（環境準備）
+
+`with-test-db`（`tests/support/db.lisp`）は行を DELETE するだけで **テーブルを作成しない**。テストDBが空だと全DBテストが `relation "X" does not exist` で失敗する（コード欠陥ではなく環境）。
+
+- [ ] **Step 1: テストDBにスキーマを適用**
+
+```bash
+psql postgresql://postgres:postgres@localhost:15434/recurya -f db/schema.sql
+```
+
+- [ ] **Step 2: スモーク確認**
+
+```bash
+psql postgresql://postgres:postgres@localhost:15434/recurya -c 'SELECT 1 FROM notebook LIMIT 0;'
+```
+Expected: エラーなく完了（テーブル存在）。
+
+以降のタスクで `run-tests` が `relation does not exist` を返したら、それは**スキーマ未適用**の合図であってロジックのバグではない。Task 0 を再実行する。
+
+## File Structure
+
+| ファイル | 責務 | 変更種別 |
+|---|---|---|
+| `utils/access-control.lisp` | 閲覧可否判定に unlisted を許可 | Modify |
+| `web/routes.lisp` | `%decode-state-token` 拡張 / create・update の visibility 検証 / 公開ページへ noindex 受け渡し | Modify |
+| `web/ui/notebook-form.lisp` | visibility select に Unlisted 追加 | Modify |
+| `web/ui/course-form.lisp` | visibility select に Unlisted 追加 | Modify |
+| `web/ui/notebooks-dashboard.lisp` | 4状態ドロップダウン / Unlisted ピル色 / コピーリンク | Modify |
+| `web/ui/courses.lisp` | 同上（Course側） | Modify |
+| `web/ui/notebook.lisp` | 公開Notebookページ head に noindex（`:noindex` 引数） | Modify |
+| `web/ui/course.lisp` | 公開Courseページ head に noindex（`:noindex` 引数→head-extras） | Modify |
+| `tests/utils/access-control.lisp` | unlisted 閲覧可・非掲載のテスト | Modify |
+| `tests/web/notebook-routes.lisp` | unlisted の状態遷移・閲覧・非掲載・コピーリンク・noindex | Modify |
+| `tests/web/course-routes.lisp` | 同上（Course側） | Modify |
+
+---
+
+### Task 1: アクセス制御 — unlisted を URL閲覧可にする（一覧は非掲載のまま）
+
+**Files:**
+- Modify: `utils/access-control.lisp`（`can-view-notebook-p`, `can-view-course-p`）
+- Test: `tests/utils/access-control.lisp`
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/utils/access-control.lisp` の末尾に以下4つの deftest を追加（既存ヘルパ `mk-notebook` / `mk-course` / `mk-user-plist` を利用）:
+
+```lisp
+(deftest can-view-notebook-published-unlisted
+  (testing "published+unlisted notebooks are viewable by anyone with the URL"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (other-dao (create-test-user :email-prefix "other"))
+             (owner (mk-user-plist owner-dao))
+             (other (mk-user-plist other-dao))
+             (nb (mk-notebook owner-dao
+                              :status "published"
+                              :visibility "unlisted")))
+        (ok (can-view-notebook-p owner nb) "owner can view")
+        (ok (can-view-notebook-p other nb) "other user can view")
+        (ok (can-view-notebook-p nil nb)   "anonymous can view")))))
+
+(deftest unlisted-notebook-not-publicly-listable
+  (testing "unlisted notebooks are excluded from public listings"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (nb (mk-notebook owner-dao
+                              :status "published"
+                              :visibility "unlisted")))
+        (ng (publicly-listable-notebook-p nb))))))
+
+(deftest can-view-course-published-unlisted
+  (testing "published+unlisted courses are viewable by anyone with the URL"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (other-dao (create-test-user :email-prefix "other"))
+             (owner (mk-user-plist owner-dao))
+             (other (mk-user-plist other-dao))
+             (c (mk-course owner-dao
+                           :status "published"
+                           :visibility "unlisted")))
+        (ok (can-view-course-p owner c) "owner can view")
+        (ok (can-view-course-p other c) "other user can view")
+        (ok (can-view-course-p nil c)   "anonymous can view")))))
+
+(deftest unlisted-course-not-publicly-listable
+  (testing "unlisted courses are excluded from public listings"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (c (mk-course owner-dao
+                           :status "published"
+                           :visibility "unlisted")))
+        (ng (publicly-listable-course-p c))))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/utils/access-control"}`
+Expected: `can-view-notebook-published-unlisted` と `can-view-course-published-unlisted` が FAIL（unlisted がまだ閲覧不可）。`unlisted-*-not-publicly-listable` は PASS（既に public のみ掲載）。
+
+- [ ] **Step 3: `can-view-notebook-p` に unlisted 分岐を追加**
+
+`utils/access-control.lisp` の `can-view-notebook-p` の `cond` 内 visibility 判定を以下に置換:
+
+```lisp
+    (t (let ((vis (notebook-visibility notebook)))
+         (cond
+           ((string= vis "public") t)
+           ((string= vis "unlisted") t)
+           ((string= vis "private") nil)
+           (t nil))))))
+```
+
+- [ ] **Step 4: `can-view-course-p` に unlisted 分岐を追加**
+
+同ファイルの `can-view-course-p` の `cond` 内 visibility 判定を以下に置換:
+
+```lisp
+    (t (let ((vis (course-visibility course)))
+         (cond
+           ((string= vis "public") t)
+           ((string= vis "unlisted") t)
+           ((string= vis "private") nil)
+           (t nil))))))
+```
+
+`publicly-listable-notebook-p` / `publicly-listable-course-p` は **変更しない**（public のみのまま）。
+
+- [ ] **Step 5: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/utils/access-control"}`
+Expected: 全 PASS。
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add utils/access-control.lisp tests/utils/access-control.lisp
+git commit -m "feat: allow unlisted notebooks/courses to be viewed by URL"
+```
+
+---
+
+### Task 2: 状態トークン `published-unlisted` のデコード
+
+**Files:**
+- Modify: `web/routes.lisp`（`%decode-state-token`）
+- Test: `tests/web/notebook-routes.lisp`
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/notebook-routes.lisp` の末尾に追加（内部関数なので `::` で参照）:
+
+```lisp
+(deftest decode-state-token-published-unlisted
+  (testing "%decode-state-token maps published-unlisted to (published, unlisted)"
+    (multiple-value-bind (status vis)
+        (recurya/web/routes::%decode-state-token "published-unlisted")
+      (ok (string= status "published"))
+      (ok (string= vis "unlisted")))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}`
+Expected: `decode-state-token-published-unlisted` が FAIL（`vis` が nil）。
+
+- [ ] **Step 3: `%decode-state-token` に published-unlisted を追加**
+
+`web/routes.lisp` の `%decode-state-token` を以下に置換:
+
+```lisp
+(defun %decode-state-token (token)
+  "Decode the new pill state TOKEN into (values STATUS VISIBILITY) or
+NIL if invalid.
+
+Tokens are:
+  \"draft\"               -> (\"draft\" nil)         ; visibility unchanged
+  \"published-private\"   -> (\"published\" \"private\")
+  \"published-unlisted\"  -> (\"published\" \"unlisted\")
+  \"published-public\"    -> (\"published\" \"public\")"
+  (cond ((equal token "draft") (values "draft" nil))
+        ((equal token "published-private")
+         (values "published" "private"))
+        ((equal token "published-unlisted")
+         (values "published" "unlisted"))
+        ((equal token "published-public")
+         (values "published" "public"))
+        (t nil)))
+```
+
+- [ ] **Step 4: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}`
+Expected: `decode-state-token-published-unlisted` PASS（他テストも従来どおり）。
+
+- [ ] **Step 5: コミット**
+
+```bash
+git add web/routes.lisp tests/web/notebook-routes.lisp
+git commit -m "feat: decode published-unlisted state token"
+```
+
+---
+
+### Task 3: create/update ハンドラとフォームで unlisted を受け付ける
+
+**Files:**
+- Modify: `web/routes.lisp`（`notebook-create-handler`, `notebook-update-handler`, `course-create-handler`, `course-update-handler` の visibility 検証）
+- Modify: `web/ui/notebook-form.lisp`, `web/ui/course-form.lisp`（visibility select）
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/notebook-routes.lisp` に追加（既存 `create-handler-persists-visibility-public` を踏襲）:
+
+```lisp
+(deftest create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted NB")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (notebook-create-handler params)
+          (let ((nb (get-notebook-by-slug "unlisted-nb")))
+            (ok nb)
+            (ok (string= "unlisted" (notebook-visibility nb)))))))))
+```
+
+`get-notebook-by-slug` と `notebook-visibility` は notebook-routes テストの defpackage に既に import 済み。
+
+`tests/web/course-routes.lisp` に追加（既存 `course-create-handler-persists-visibility-public` を踏襲）:
+
+```lisp
+(deftest course-create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted Course")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "unlisted-course")))
+            (ok c)
+            (ok (string= "unlisted" (course-visibility c)))))))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テストが FAIL（"unlisted" が member 検証で弾かれ "private" にフォールバック）。
+
+- [ ] **Step 3: 4ハンドラの visibility member 検証に "unlisted" を追加**
+
+`web/routes.lisp` の **`notebook-create-handler`** と **`course-create-handler`** の
+```lisp
+               (visibility
+                 (if (member visibility-raw '("private" "public") :test #'equal)
+                     visibility-raw
+                     "private")))
+```
+を
+```lisp
+               (visibility
+                 (if (member visibility-raw '("private" "unlisted" "public") :test #'equal)
+                     visibility-raw
+                     "private")))
+```
+に置換する（両ハンドラとも同一文字列なので各1箇所）。
+
+`web/routes.lisp` の **`notebook-update-handler`** と **`course-update-handler`** の
+```lisp
+                      (cond
+                        ((member visibility-raw '("private" "public")
+                                 :test #'equal)
+                         visibility-raw)
+```
+を
+```lisp
+                      (cond
+                        ((member visibility-raw '("private" "unlisted" "public")
+                                 :test #'equal)
+                         visibility-raw)
+```
+に置換する（両ハンドラとも同一文字列なので各1箇所）。
+
+- [ ] **Step 4: フォームの visibility select に Unlisted を追加**
+
+`web/ui/notebook-form.lisp` の visibility select の private と public の間に挿入:
+
+```lisp
+                          (:option :value "private"
+                            :selected (when (equal nb-visibility "private") "selected")
+                            "Private (only you)")
+                          (:option :value "unlisted"
+                            :selected (when (equal nb-visibility "unlisted") "selected")
+                            "Unlisted (anyone with the link)")
+                          (:option :value "public"
+                            :selected (when (equal nb-visibility "public") "selected")
+                            "Public (anyone)")))
+```
+
+`web/ui/course-form.lisp` の visibility select も同様に（変数名は `c-visibility`）:
+
+```lisp
+               (:option :value "private"
+                 :selected (when (equal c-visibility "private") "selected")
+                 "Private (only you)")
+               (:option :value "unlisted"
+                 :selected (when (equal c-visibility "unlisted") "selected")
+                 "Unlisted (anyone with the link)")
+               (:option :value "public"
+                 :selected (when (equal c-visibility "public") "selected")
+                 "Public (anyone)")))
+```
+
+- [ ] **Step 5: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS、既存テストも PASS。
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add web/routes.lisp web/ui/notebook-form.lisp web/ui/course-form.lisp \
+        tests/web/notebook-routes.lisp tests/web/course-routes.lisp
+git commit -m "feat: accept unlisted visibility in create/update forms and handlers"
+```
+
+---
+
+### Task 4: 4状態ドロップダウン + Unlisted ピル
+
+**Files:**
+- Modify: `web/ui/notebooks-dashboard.lisp`（`render-notebook-state-dropdown` + `*page-styles*`）
+- Modify: `web/ui/courses.lisp`（`render-course-state-dropdown` + `*page-styles*`）
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/notebook-routes.lisp` に追加（既存の `notebook-set-state-decodes-published-public`（notebook-routes.lisp:491 付近）を `published-unlisted` トークン向けに踏襲）:
+
+```lisp
+(deftest notebook-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (nb (create-notebook!
+                  :title "S" :body-md "===prose===
+hi"
+                  :cells '() :author dao
+                  :status "draft" :visibility "private"))
+             (id (princ-to-string (notebook-id nb))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (notebook-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-notebook-by-id id)))
+              (ok (string= "published" (notebook-status after)))
+              (ok (string= "unlisted" (notebook-visibility after))))))))))
+```
+
+`notebook-set-state-handler` は notebook-routes テストの defpackage に既に import 済み。`notebook-status` も import 済み。
+
+`tests/web/course-routes.lisp` に追加:
+
+```lisp
+(deftest course-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "S" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-course-by-id id)))
+              (ok (string= "published" (course-status after)))
+              (ok (string= "unlisted" (course-visibility after))))))))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テストが FAIL（`status-unlisted` クラスも `published-unlisted` ボタンも未生成）。
+
+- [ ] **Step 3: `render-notebook-state-dropdown` を4状態化**
+
+`web/ui/notebooks-dashboard.lisp` の `render-notebook-state-dropdown` 内
+`state-class` と `label` の `let*` 束縛を以下に置換:
+
+```lisp
+         (state-class
+          (cond ((equal status-lower "draft") "status-draft")
+                ((equal visibility-lower "public") "status-public")
+                ((equal visibility-lower "unlisted") "status-unlisted")
+                (t "status-private")))
+         (label
+          (cond ((equal status-lower "draft") "Draft")
+                ((equal visibility-lower "public") "Public")
+                ((equal visibility-lower "unlisted") "Unlisted")
+                (t "Private")))
+```
+
+同関数の `pill-menu` 内、Private ボタンと Public ボタンの間に Unlisted ボタンを挿入:
+
+```lisp
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-private\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
+            "Private")
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-unlisted\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
+            "Unlisted")
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-public\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
+            "Public"))))))
+```
+
+- [ ] **Step 4: `render-course-state-dropdown` を4状態化**
+
+`web/ui/courses.lisp` の `render-course-state-dropdown` に対し Step 3 と同一の置換を行う（`state-class` / `label` / Unlisted ボタン挿入。`state-url` は courses 用のものがそのまま使われる）。
+
+- [ ] **Step 5: Unlisted ピルの色を両ダッシュボードに追加**
+
+`web/ui/notebooks-dashboard.lisp` の `*page-styles*` 内、`.status-pill.status-public`
+ルールは**2行にまたがる**ことに注意（`lisp-patch-form` の `old_text` は一意一致が必要）。
+2行ルール全体をアンカーにして、その閉じ `}` の直後に追加する。old_text として:
+
+```
+.status-pill.status-public { background: var(--color-success-bg);
+                             color: var(--color-success-text); }
+```
+を、new_text として上記＋改行＋
+```
+.status-pill.status-unlisted { background: #1e40af; color: #dbeafe; }
+```
+にする。
+
+`web/ui/courses.lisp` の `*page-styles*` にも同じ2行アンカーで同じ1行を追加。
+
+- [ ] **Step 6: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS、既存の set-state / dropdown テストも PASS。
+
+- [ ] **Step 7: コミット**
+
+```bash
+git add web/ui/notebooks-dashboard.lisp web/ui/courses.lisp \
+        tests/web/notebook-routes.lisp tests/web/course-routes.lisp
+git commit -m "feat: 4-state dropdown with Unlisted pill for notebooks and courses"
+```
+
+---
+
+### Task 5: ダッシュボードに unlisted の共有リンクコピーを追加
+
+**Files:**
+- Modify: `web/ui/notebooks-dashboard.lisp`（`render` の actions-cell）
+- Modify: `web/ui/courses.lisp`（`render` の actions-cell）
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`（`mk-user` ヘルパ修正含む）
+
+- [ ] **Step 0（前提修正・必須）: `mk-user` に `:handle` を持たせる**
+
+両テストファイルの `mk-user` が返すセッション plist には `:handle` が無い。一方、ダッシュボードのコピーリンク（および公開タイトルリンク）は `(getf user :handle)` でガードされるため、`:handle` 無しではボタンが描画されずテストが必ず失敗する（本番は `user-dao->plist` が `:handle` を設定済みなので影響なし）。
+
+`tests/web/notebook-routes.lisp` の `mk-user` を、dao を let で束縛して `:handle` を含める形に置換:
+
+```lisp
+(defun mk-user ()
+  "Create a test user and return the session plist used by handlers."
+  (let ((dao (create-test-user :email-prefix "nb-route")))
+    (list :id (users-id dao)
+          :email (format nil "nb-route-~A@example.com" (make-v4-uuid))
+          :name (users-display-name dao)
+          :handle (users-handle dao)
+          :role :user
+          :provider "google"
+          :timezone "UTC"
+          :language "en")))
+```
+
+`tests/web/course-routes.lisp` の `mk-user` も同様に `:handle (users-handle dao)` を追加（`:email-prefix` は `"course-route"`）。`users-handle` は両テストの defpackage で import 済み。
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/notebook-routes.lisp` に追加（既存 `list-pill-renders-state-dropdown` を踏襲。`notebooks-handler` 経由で一覧をレンダリング）:
+
+```lisp
+(deftest dashboard-shows-copy-link-for-unlisted-only
+  (testing "an unlisted notebook row exposes a copy-link affordance; a public
+notebook row does not"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-notebook!
+         :title "UnlistedRow" :slug "unlisted-row" :body-md "===prose===
+hi"
+         :cells '() :author dao :status "published" :visibility "unlisted"
+         :published-at (local-time:now))
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (notebooks-handler nil)))))
+            (ok (search "copy-link-btn" body)
+                "unlisted row has a copy-link button")
+            (ok (search "data-share-url" body)
+                "copy button carries data-share-url (distinct from the title href)")
+            (ok (search (format nil "/@~A/unlisted-row" (getf user :handle))
+                        body)
+                "share URL targets the notebook")))))))
+```
+
+`users-handle` は notebook-routes テストの defpackage に既に import 済み。
+
+`tests/web/course-routes.lisp` に追加:
+
+```lisp
+(deftest dashboard-shows-copy-link-for-unlisted-course-only
+  (testing "an unlisted course row exposes a copy-link affordance"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-course! :title "UnlistedC" :slug "unlisted-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (courses-me-handler nil)))))
+            (ok (search "copy-link-btn" body))
+            (ok (search "data-share-url" body))
+            (ok (search (format nil "/c/@~A/unlisted-c" (getf user :handle))
+                        body))))))))
+```
+
+`users-handle` は course-routes テストの defpackage に既に import 済み。
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テストが FAIL（`copy-link-btn` 未生成）。
+
+- [ ] **Step 3: Notebook ダッシュボードの actions-cell にコピーリンクを追加**
+
+`web/ui/notebooks-dashboard.lisp` の `render` 内、actions-cell の Delete ボタンの直後に追加:
+
+```lisp
+                      (:button :class "button-danger btn-sm" :hx-get
+                       (format nil "/dashboard/notebooks/~A/confirm-delete"
+                               id)
+                       :hx-target "#modal-container" :hx-swap "innerHTML"
+                       "Delete")
+                      (when (and (string= visibility "unlisted")
+                                 slug user-handle)
+                        (:button :type "button" :class "link copy-link-btn"
+                         :data-share-url (format nil "/@~A/~A" user-handle slug)
+                         :onclick "navigator.clipboard.writeText(location.origin+this.dataset.shareUrl)"
+                         "Copy link")))))))))
+```
+
+注: 既存コードでは actions-cell の `:div` は Delete ボタンで閉じている。Delete ボタンの後ろに `(when ...)` を追加し、`:div`（actions-cell）と各 `let*`/`dolist`/`tr` の閉じ括弧構成を保つこと。`lisp-edit-form` で `render` フォーム全体を置換するのが安全。
+
+- [ ] **Step 4: Course ダッシュボードの actions-cell にコピーリンクを追加**
+
+`web/ui/courses.lisp` の `render` 内、actions-cell の Delete ボタンの直後に追加:
+
+```lisp
+                      (:button :class "button-danger btn-sm" :hx-get
+                       (format nil "/dashboard/courses/~A/confirm-delete" id)
+                       :hx-target "#modal-container" :hx-swap "innerHTML"
+                       "Delete")
+                      (when (and (string= visibility "unlisted")
+                                 slug user-handle)
+                        (:button :type "button" :class "link copy-link-btn"
+                         :data-share-url (format nil "/c/@~A/~A" user-handle slug)
+                         :onclick "navigator.clipboard.writeText(location.origin+this.dataset.shareUrl)"
+                         "Copy link")))))))))
+```
+
+- [ ] **Step 5: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS、既存テストも PASS。
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add web/ui/notebooks-dashboard.lisp web/ui/courses.lisp \
+        tests/web/notebook-routes.lisp tests/web/course-routes.lisp
+git commit -m "feat: copy-link affordance for unlisted notebooks/courses on dashboard"
+```
+
+---
+
+### Task 6: 非公開ページに noindex メタを出力
+
+**Files:**
+- Modify: `web/ui/notebook.lisp`（`render` に `:noindex` 引数 + head に meta）
+- Modify: `web/ui/course.lisp`（`render` に `:noindex` 引数 → page-shell の head-extras）
+- Modify: `web/routes.lisp`（`%render-public-notebook-response`, `%render-public-course-response`）
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/notebook-routes.lisp` に追加:
+
+```lisp
+(deftest unlisted-notebook-page-has-noindex
+  (testing "an unlisted notebook page carries robots=noindex; a public one
+does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ix-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "U" :slug "u-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (create-notebook! :title "P" :slug "p-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "u-nb")))))))
+                (p-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "p-nb"))))))))
+            (ok (search "noindex" u-body) "unlisted page is noindex")
+            (ng (search "noindex" p-body) "public page is indexable")))))))
+```
+
+`tests/web/course-routes.lisp` に追加（既存の公開Course閲覧テストを踏襲。匿名で unlisted course を閲覧）:
+
+```lisp
+(deftest unlisted-course-page-has-noindex
+  (testing "an unlisted course page carries robots=noindex; a public one does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ixc-7b"))
+             (handle (users-handle dao)))
+        (create-course! :title "U" :slug "u-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (create-course! :title "P" :slug "p-c"
+                        :status "published" :visibility "public"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "u-c")))))))
+                (p-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "p-c"))))))))
+            (ok (search "noindex" u-body))
+            (ng (search "noindex" p-body))))))))
+```
+
+`public-course-by-handle-handler` と `users-handle` は course-routes テストの defpackage に既に import 済み。
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テストが FAIL（`noindex` メタ未出力）。
+
+- [ ] **Step 3: 公開Notebook render に `:noindex` 引数を追加**
+
+`web/ui/notebook.lisp` の `render` のラムダリストに `noindex` を追加:
+
+```lisp
+(defun render (notebook
+               &key user saved-codes passed-cells
+                    (sidebar-notebooks nil) run-cell-base
+                    course-title course-slug course-handle
+                    breadcrumb course-prev-url course-next-url
+                    noindex)
+```
+
+同関数の head 内、`(:title (notebook-title notebook))` の直後に追加:
+
+```lisp
+        (:title (notebook-title notebook))
+        (when noindex (:meta :name "robots" :content "noindex"))
+```
+
+- [ ] **Step 4: 公開Course render に `:noindex` 引数を追加**
+
+`web/ui/course.lisp` の `render` のラムダリストに `noindex` を追加:
+
+```lisp
+(defun render (&key course notebooks user passed-by-notebook noindex)
+```
+
+同関数の `page-shell` 呼び出しに `:head-extras` を追加（`:user user` の直後など、キーワード引数として）:
+
+```lisp
+     :user user
+     :head-extras (when noindex
+                    "<meta name=\"robots\" content=\"noindex\">")
+```
+
+- [ ] **Step 5: ハンドラから noindex を渡す**
+
+`web/routes.lisp` の `%render-public-notebook-response` 内、`recurya/web/ui/notebook:render` を呼ぶ箇所が2つある（course-context 有/無）。両方の呼び出しに `:noindex` を追加する。判定値はローカルに束縛して使い回すのが安全。`let*` の束縛に追加:
+
+```lisp
+              (nb-noindex
+               (not (string= (notebook-visibility nb-row) "public")))
+```
+
+そして2つの `(recurya/web/ui/notebook:render notebook ...)` 呼び出しそれぞれに
+`:noindex nb-noindex` を追加する。
+
+`%render-public-course-response` 内の `recurya/web/ui/course:render` 呼び出しに追加:
+
+```lisp
+          (recurya/web/ui/course:render
+           :course (course->plist course-row)
+           :notebooks notebooks
+           :user user
+           :passed-by-notebook nil
+           :noindex (not (string= (course-visibility course-row) "public")))
+```
+
+- [ ] **Step 6: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS、既存の公開ページテストも PASS。
+
+- [ ] **Step 7: コミット**
+
+```bash
+git add web/ui/notebook.lisp web/ui/course.lisp web/routes.lisp \
+        tests/web/notebook-routes.lisp tests/web/course-routes.lisp
+git commit -m "feat: emit robots=noindex on non-public notebook/course pages"
+```
+
+---
+
+### Task 7: 回帰テスト — unlisted は一覧・プロフィールに出ない
+
+**Files:**
+- Test: `tests/web/notebook-routes.lisp`, `tests/web/course-routes.lisp`
+
+このタスクはコード変更なし（Task 1 で据え置いた挙動の回帰ガード）。
+
+- [ ] **Step 1: 回帰テストを追加**
+
+`tests/web/notebook-routes.lisp` に追加（`notebooks-public-handler` と `profile-handler` を使う。`profile-handler` を import に追加する必要がある場合は defpackage の `:import-from #:recurya/web/routes` に `#:profile-handler` を追加）:
+
+```lisp
+(deftest unlisted-notebook-absent-from-public-listing-and-profile
+  (testing "an unlisted notebook appears on neither /notebooks nor /@handle"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "hid" :handle "hid-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "HiddenList" :slug "hidden-list"
+                          :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (notebooks-public-handler nil))))
+                (profile (first (response-body
+                                 (profile-handler
+                                  `((:captures . (,handle))))))))
+            (ng (search "HiddenList" listing) "not in /notebooks")
+            (ng (search "HiddenList" profile) "not on /@handle profile")))))))
+```
+
+`tests/web/course-routes.lisp` に追加（`courses-public-handler` を使う。`profile-handler` で course 非掲載も確認したい場合は notebook-routes 側にまとめる）:
+
+```lisp
+(deftest unlisted-course-absent-from-public-listing
+  (testing "an unlisted course does not appear on /courses"
+    (with-test-db
+      (let ((dao (create-test-user :email-prefix "hidc" :handle "hidc-7b")))
+        (create-course! :title "HiddenCourse" :slug "hidden-course"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (courses-public-handler nil)))))
+            (ng (search "HiddenCourse" listing))))))))
+```
+
+import 確認（検証済み）:
+- notebook-routes の defpackage の `:import-from #:recurya/web/routes` に **`#:profile-handler` を追加する（必須）**。`profile-handler` は現状未 import。
+- `#:notebooks-public-handler`（notebook-routes）と `#:courses-public-handler`（course-routes）は**既に import 済み**なので追加不要。
+
+- [ ] **Step 2: テストを実行して通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/notebook-routes"}` と
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS（Task 1 でロジックは既に正しいため、回帰ガードとして即 green）。
+
+- [ ] **Step 3: コミット**
+
+```bash
+git add tests/web/notebook-routes.lisp tests/web/course-routes.lisp
+git commit -m "test: guard that unlisted items stay out of listings and profile"
+```
+
+---
+
+### Task 8: 公開Courseページから非公開メンバーnotebookを除外（発見面の保証）
+
+**Files:**
+- Modify: `web/routes.lisp`（`%render-public-course-response` のメンバー絞り込み + `%render-public-notebook-response` の `?course=` コメント更新）
+- Test: `tests/web/course-routes.lisp`
+
+`list-course-notebooks` は可視性で絞らないため、public（検索・インデックス対象）の Course ページが、添付後に unlisted/private/draft へ降格されたメンバーnotebookのタイトル・要約・`/@handle/slug` リンクを露出してしまう。これは unlisted の「発見面に出さない」保証に反する（既存の private/draft 降格漏れも同様）。公開Courseレンダリング時に **publicly-listable なメンバーのみ**へ絞る。
+
+- [ ] **Step 1: 失敗するテストを追加**
+
+`tests/web/course-routes.lisp` に追加（`create-notebook!`, `notebook-id`, `add-notebook-to-course!`, `public-course-by-handle-handler`, `users-handle` は course-routes テストの defpackage に import 済み）:
+
+```lisp
+(deftest public-course-hides-non-public-member-notebooks
+  (testing "the public course page lists only publicly-listable member
+notebooks; an unlisted member is dropped from the public discovery surface"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "cm" :handle "cm-7b"))
+             (handle (users-handle dao))
+             (course (create-course! :title "Mixed" :slug "mixed"
+                                     :status "published" :visibility "public"
+                                     :published-at (local-time:now) :author dao))
+             (pub (create-notebook! :title "PublicMember" :slug "pub-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "public"
+                                    :published-at (local-time:now)))
+             (unl (create-notebook! :title "UnlistedMember" :slug "unl-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "unlisted"
+                                    :published-at (local-time:now))))
+        (add-notebook-to-course! (course-id course) (notebook-id pub) :position 0)
+        (add-notebook-to-course! (course-id course) (notebook-id unl) :position 1)
+        (with-mock-session (make-session)
+          (let ((body (first (response-body
+                              (public-course-by-handle-handler
+                               `((:captures . (,handle "mixed"))))))))
+            (ok (search "PublicMember" body) "public member is listed")
+            (ng (search "UnlistedMember" body) "unlisted member is hidden")
+            (ng (search "/@cm-7b/unl-member" body)
+                "no link to the unlisted member")))))))
+```
+
+- [ ] **Step 2: テストが失敗することを確認**
+
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: FAIL（unlisted メンバーが現状は表示される）。
+
+- [ ] **Step 3: `%render-public-course-response` でメンバーを publicly-listable に絞る**
+
+`web/routes.lisp` の `%render-public-course-response` 内、
+```lisp
+       (let* ((rows (list-course-notebooks (course-id course-row)))
+              (notebooks (mapcar #'course-notebook-row->public-plist rows)))
+```
+を以下に置換:
+```lisp
+       (let* ((rows (remove-if-not
+                     (lambda (cn)
+                       (let ((nb (course-notebook-notebook cn)))
+                         (and nb
+                              (recurya/utils/access-control:publicly-listable-notebook-p nb))))
+                     (list-course-notebooks (course-id course-row))))
+              (notebooks (mapcar #'course-notebook-row->public-plist rows)))
+```
+（`course-notebook-notebook` は routes の defpackage で import 済み。`publicly-listable-notebook-p` は完全修飾で呼ぶ。）
+
+- [ ] **Step 4: `?course=` ガードのコメントドリフトを修正**
+
+同ファイル `%render-public-notebook-response` の `?course=` 解決箇所のコメントを、unlisted も許可される現状に合わせて置換:
+```lisp
+               ;; Per-author slug uniqueness makes a bare ?course= slug
+               ;; ambiguous, and the param is attacker-controllable. Only
+               ;; honor the sidebar context for courses the viewer may
+               ;; actually see (owner, or published+public); otherwise drop
+               ;; it so a private/draft course's title and member notebook
+               ;; slugs never leak. can-view-course-p tolerates a NIL course.
+```
+を
+```lisp
+               ;; Per-author slug uniqueness makes a bare ?course= slug
+               ;; ambiguous, and the param is attacker-controllable. Only
+               ;; honor the sidebar context for courses the viewer may
+               ;; actually see (owner, published+public, or published+unlisted);
+               ;; otherwise drop it so a private/draft course's title and
+               ;; member notebook slugs never leak. Unlisted courses are
+               ;; link-shareable, so surfacing their title/sibling slugs to a
+               ;; viewer who already reached a member notebook is acceptable.
+               ;; can-view-course-p tolerates a NIL course.
+```
+
+- [ ] **Step 5: テストが通ることを確認**
+
+`run-tests {"system":"recurya/tests/web/course-routes"}`
+Expected: 新テスト PASS。既存の公開Course閲覧テスト（public member を含むもの）も PASS。
+
+- [ ] **Step 6: コミット**
+
+```bash
+git add web/routes.lisp tests/web/course-routes.lisp
+git commit -m "fix: drop non-public member notebooks from public course pages"
+```
+
+> スコープ注: 「Course へ unlisted notebook を添付できるか」（`course-eligible-notebooks` が public のみ提示）は本実装では**従来どおり public のみ**に据え置く（YAGNI）。よって unlisted がCourse公開ページに出る経路は「添付後に降格」のみで、Step 3 がそれを塞ぐ。
+
+---
+
+### Task 9: 全体検証 + マージ + push
+
+**Files:** なし（検証とGit操作）
+
+- [ ] **Step 1: テーブル無変更を確認**
+
+`git diff --stat main..feat/limited-sharing` に
+`models/notebook.lisp` / `models/course.lisp` / `db/schema.sql` /
+`db/migrations/*` が **含まれないこと** を目視確認。
+
+- [ ] **Step 2: 全システム強制コンパイル + 全スイートを fresh プロセスで実行**
+
+```bash
+docker compose exec -T recurya qlot exec ros run \
+  -e '(handler-bind ((warning (lambda (w) (format t "~&;;WARN;; ~A~%" w)))) (asdf:compile-system :recurya :force t))' \
+  -e '(ql:quickload :recurya/tests :silent t)' \
+  -e '(uiop:quit (if (recurya/tests/all:run-all-tests) 0 1))'
+```
+Expected: 終了コード 0。`;;WARN;;` に undefined/unused/redefining 以外の新規警告が出ないこと。
+
+- [ ] **Step 3: マージして push（プロジェクト慣例: --no-ff）**
+
+```bash
+git checkout main
+git merge --no-ff feat/limited-sharing -m "Merge branch 'feat/limited-sharing' into main
+
+Add unlisted visibility (limited sharing) for notebooks and courses:
+viewable by URL, excluded from public listings/profile, noindex meta,
+and a 4-state dashboard dropdown with copy-link. No migration."
+git push origin main
+```
+Expected: push 成功、`main` と `origin/main` が同期。
+
+---
+
+## Self-Review
+
+**Spec coverage（design セクション → タスク対応）:**
+- 環境前提（空DBスキーマ） → Task 0
+- §3 アクセスモデル（閲覧/掲載分離）→ Task 1
+- §A can-view-* → Task 1
+- §B 一覧変更不要 → Task 7（回帰ガード）
+- §C 状態モデル & UI（4状態 / decode / create-update / forms）→ Task 2, 3, 4
+- §D ピル表示 → Task 4
+- §E 共有URLコピー → Task 5（`mk-user` の `:handle` 修正含む）
+- §F noindex → Task 6
+- 発見面の保証（公開Courseの非公開メンバー除外・降格漏れ修正・?course=コメント）→ Task 8
+- §マイグレーション不要 → Task 9 Step 1（無変更確認）
+- すべてのセクションに対応タスクあり。ギャップなし。
+
+**レビュー反映済み（2026-06-21 adversarial review）:** mk-user :handle [blocker], Task 0 スキーマ前提 [major], cl-mcp 実行制約 [major], profile-handler import 必須化 [minor], Task 8 公開Courseメンバー絞り込み [Option 1], および nice-to-have（data-share-url アサーション・?course=コメント・誤前提プロローグ・CSS 2行アンカー・declare ignore 削除）。
+
+**Placeholder scan:** "TBD"/"TODO"/曖昧指示なし。全コード手順に実コードを記載。noindex 注入点は確定済み（notebook=引数, course=head-extras）。
+
+**Type consistency:** `visibility` 値は一貫して `"private"/"unlisted"/"public"`。状態トークンは `"published-unlisted"`。CSSクラスは `status-unlisted`。コピーボタンクラスは `copy-link-btn`。data属性は `data-share-url`。関数名・引数（`:noindex`, `notebook-visibility`, `course-visibility`, `%decode-state-token`）はタスク間で一致。

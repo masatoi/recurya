@@ -87,6 +87,7 @@ HX-Request header is included so htmx-request-p returns T."
     (list :id (users-id dao)
           :email (format nil "course-route-~A@example.com" (make-v4-uuid))
           :name (users-display-name dao)
+          :handle (users-handle dao)
           :role :user
           :provider "google"
           :timezone "UTC"
@@ -827,6 +828,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%a")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao))
              (nb-b (create-notebook!
@@ -834,6 +836,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%b")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao))
              (nb-c (create-notebook!
@@ -841,6 +844,7 @@ where the lists are aligned with the attached positions."
                     :body-md (format nil "===prose===~%c")
                     :cells nil
                     :status "published"
+                    :visibility "public"
                     :published-at (local-time:now)
                     :author dao)))
         (add-notebook-to-course! course-uuid (notebook-id nb-a) :position 0)
@@ -974,3 +978,115 @@ where the lists are aligned with the attached positions."
           (let ((res (public-course-by-handle-handler
                       '((:captures . ("draftc-c7b" "draft-only"))))))
             (ok (= 404 (response-status res)))))))))
+
+(deftest course-create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted Course")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "unlisted-course")))
+            (ok c)
+            (ok (string= "unlisted" (course-visibility c)))))))))
+
+(deftest course-set-state-published-unlisted
+  (testing "set-state published-unlisted persists unlisted and returns the
+4-state dropdown with an Unlisted summary pill"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id)))
+             (c (create-course! :title "S" :author dao
+                                :status "draft" :visibility "private"))
+             (id (princ-to-string (course-id c))))
+        (with-mock-session (make-session :user user)
+          (let* ((res (course-set-state-handler
+                       (list (cons :id id)
+                             (cons "state" "published-unlisted"))))
+                 (body (first (response-body res))))
+            (ok (= 200 (response-status res)))
+            (ok (search "status-unlisted" body))
+            (ok (search "&quot;state&quot;:&quot;published-unlisted&quot;" body))
+            (let ((after (get-course-by-id id)))
+              (ok (string= "published" (course-status after)))
+              (ok (string= "unlisted" (course-visibility after))))))))))
+
+(deftest dashboard-shows-copy-link-for-unlisted-course-only
+  (testing "an unlisted course row exposes a copy-link affordance"
+    (with-test-db
+      (let* ((user (mk-user))
+             (dao (get-user-by-id (getf user :id))))
+        (create-course! :title "UnlistedC" :slug "unlisted-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session :user user)
+          (let ((body (first (response-body (courses-me-handler nil)))))
+            (ok (search "copy-link-btn" body))
+            (ok (search "data-share-url" body))
+            (ok (search (format nil "/c/@~A/unlisted-c" (getf user :handle))
+                        body))))))))
+
+(deftest unlisted-course-page-has-noindex
+  (testing "an unlisted course page carries robots=noindex; a public one does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ixc-7b"))
+             (handle (users-handle dao)))
+        (create-course! :title "U" :slug "u-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (create-course! :title "P" :slug "p-c"
+                        :status "published" :visibility "public"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "u-c")))))))
+                (p-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "p-c"))))))))
+            (ok (search "noindex" u-body))
+            (ng (search "noindex" p-body))))))))
+
+(deftest unlisted-course-absent-from-public-listing
+  (testing "an unlisted course does not appear on /courses"
+    (with-test-db
+      (let ((dao (create-test-user :email-prefix "hidc" :handle "hidc-7b")))
+        (create-course! :title "HiddenCourse" :slug "hidden-course"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (courses-public-handler nil)))))
+            (ng (search "HiddenCourse" listing))))))))
+
+(deftest public-course-hides-non-public-member-notebooks
+  (testing "the public course page lists only publicly-listable member
+notebooks; an unlisted member is dropped from the public discovery surface"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "cm" :handle "cm-7b"))
+             (handle (users-handle dao))
+             (course (create-course! :title "Mixed" :slug "mixed"
+                                     :status "published" :visibility "public"
+                                     :published-at (local-time:now) :author dao))
+             (pub (create-notebook! :title "PublicMember" :slug "pub-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "public"
+                                    :published-at (local-time:now)))
+             (unl (create-notebook! :title "UnlistedMember" :slug "unl-member"
+                                    :body-md "===prose===
+hi" :cells nil :author dao
+                                    :status "published" :visibility "unlisted"
+                                    :published-at (local-time:now))))
+        (add-notebook-to-course! (course-id course) (notebook-id pub) :position 0)
+        (add-notebook-to-course! (course-id course) (notebook-id unl) :position 1)
+        (with-mock-session (make-session)
+          (let ((body (first (response-body
+                              (public-course-by-handle-handler
+                               `((:captures . (,handle "mixed"))))))))
+            (ok (search "PublicMember" body) "public member is listed")
+            (ng (search "UnlistedMember" body) "unlisted member is hidden")
+            (ng (search "/@cm-7b/unl-member" body)
+                "no link to the unlisted member")))))))

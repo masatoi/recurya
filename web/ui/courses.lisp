@@ -31,6 +31,7 @@
 .status-pill.status-private { background: #6b21a8; color: #f3e8ff; }
 .status-pill.status-public { background: var(--color-success-bg);
                              color: var(--color-success-text); }
+.status-pill.status-unlisted { background: #1e40af; color: #dbeafe; }
 .status-pill-menu { position: relative; display: inline-block; }
 .status-pill-menu > summary { list-style: none; cursor: pointer; }
 .status-pill-menu > summary::-webkit-details-marker { display: none; }
@@ -60,8 +61,8 @@
 tr.htmx-swapping { opacity: 0; transition: opacity 0.3s ease; }")
 
 (defun render-course-state-dropdown (id status visibility)
-  "Render the course 3-state pill wrapped in a <details>/<summary>
-dropdown with three HTMX buttons (Draft / Private / Public).
+  "Render the course status pill wrapped in a <details>/<summary>
+dropdown with four HTMX buttons (Draft / Private / Unlisted / Public).
 
 The outer <details> element gets id=state-dropdown-{ID} and the HTMX
 buttons target it with hx-swap=\"outerHTML\" so a state change replaces
@@ -73,10 +74,12 @@ referencing the pill by that id continues to work."
          (state-class
           (cond ((equal status-lower "draft") "status-draft")
                 ((equal visibility-lower "public") "status-public")
+                ((equal visibility-lower "unlisted") "status-unlisted")
                 (t "status-private")))
          (label
           (cond ((equal status-lower "draft") "Draft")
                 ((equal visibility-lower "public") "Public")
+                ((equal visibility-lower "unlisted") "Unlisted")
                 (t "Private")))
          (dropdown-id (format nil "state-dropdown-~A" id))
          (dropdown-target (format nil "#state-dropdown-~A" id))
@@ -99,6 +102,11 @@ referencing the pill by that id continues to work."
             :hx-target dropdown-target :hx-swap "outerHTML"
             :hx-include "#csrf-form"
             "Private")
+          (:button :type "button" :hx-post state-url
+            :hx-vals "{\"state\":\"published-unlisted\"}"
+            :hx-target dropdown-target :hx-swap "outerHTML"
+            :hx-include "#csrf-form"
+            "Unlisted")
           (:button :type "button" :hx-post state-url
             :hx-vals "{\"state\":\"published-public\"}"
             :hx-target dropdown-target :hx-swap "outerHTML"
@@ -167,7 +175,13 @@ COURSES is a list of plists with :id :slug :title :status
                       (:button :class "button-danger btn-sm" :hx-get
                        (format nil "/dashboard/courses/~A/confirm-delete" id)
                        :hx-target "#modal-container" :hx-swap "innerHTML"
-                       "Delete"))))))))
+                       "Delete")
+                      (when (and (string= visibility "unlisted")
+                                 slug user-handle)
+                        (:button :type "button" :class "link copy-link-btn"
+                         :data-share-url (format nil "/c/@~A/~A" user-handle slug)
+                         :onclick "navigator.clipboard.writeText(location.origin+this.dataset.shareUrl)"
+                         "Copy link")))))))))
              (when pagination
                (let ((current-page (getf pagination :current-page))
                      (total-pages (getf pagination :total-pages))

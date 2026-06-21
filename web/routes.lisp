@@ -470,7 +470,7 @@ so cell ids stay stable across edits."
                (status (get-param params "status"))
                (visibility-raw (get-param params "visibility"))
                (visibility
-                 (if (member visibility-raw '("private" "public") :test #'equal)
+                 (if (member visibility-raw '("private" "unlisted" "public") :test #'equal)
                      visibility-raw
                      "private")))
           (cond
@@ -561,7 +561,7 @@ description) match."
                     (visibility-raw (get-param params "visibility"))
                     (visibility
                       (cond
-                        ((member visibility-raw '("private" "public")
+                        ((member visibility-raw '("private" "unlisted" "public")
                                  :test #'equal)
                          visibility-raw)
                         (visibility-raw "private")
@@ -678,7 +678,7 @@ field is the number of notebooks attached to the course via course_notebook."
                (status (get-param params "status"))
                (visibility-raw (get-param params "visibility"))
                (visibility
-                 (if (member visibility-raw '("private" "public") :test #'equal)
+                 (if (member visibility-raw '("private" "unlisted" "public") :test #'equal)
                      visibility-raw
                      "private")))
           (cond
@@ -781,7 +781,7 @@ populated with the user's other published notebooks."
                     (visibility-raw (get-param params "visibility"))
                     (visibility
                       (cond
-                        ((member visibility-raw '("private" "public")
+                        ((member visibility-raw '("private" "unlisted" "public")
                                  :test #'equal)
                          visibility-raw)
                         (visibility-raw "private")
@@ -819,10 +819,13 @@ NIL if invalid.
 Tokens are:
   \"draft\"               -> (\"draft\" nil)         ; visibility unchanged
   \"published-private\"   -> (\"published\" \"private\")
+  \"published-unlisted\"  -> (\"published\" \"unlisted\")
   \"published-public\"    -> (\"published\" \"public\")"
   (cond ((equal token "draft") (values "draft" nil))
         ((equal token "published-private")
          (values "published" "private"))
+        ((equal token "published-unlisted")
+         (values "published" "unlisted"))
         ((equal token "published-public")
          (values "published" "public"))
         (t nil)))
@@ -1241,9 +1244,12 @@ viewer cannot view it."
                ;; Per-author slug uniqueness makes a bare ?course= slug
                ;; ambiguous, and the param is attacker-controllable. Only
                ;; honor the sidebar context for courses the viewer may
-               ;; actually see (owner, or published+public); otherwise drop
-               ;; it so a private/draft course's title and member notebook
-               ;; slugs never leak. can-view-course-p tolerates a NIL course.
+               ;; actually see (owner, published+public, or published+unlisted);
+               ;; otherwise drop it so a private/draft course's title and
+               ;; member notebook slugs never leak. Unlisted courses are
+               ;; link-shareable, so surfacing their title/sibling slugs to a
+               ;; viewer who already reached a member notebook is acceptable.
+               ;; can-view-course-p tolerates a NIL course.
                (let ((c (and course-slug-param
                              (get-course-by-slug course-slug-param))))
                  (when (recurya/utils/access-control:can-view-course-p user c)
@@ -1315,6 +1321,7 @@ viewer cannot view it."
                 :breadcrumb breadcrumb
                 :course-prev-url prev-url
                 :course-next-url next-url
+                :noindex (not (string= (notebook-visibility nb-row) "public"))
                 :run-cell-base run-cell-base))))
            (t
             (html-response
@@ -1324,6 +1331,7 @@ viewer cannot view it."
               :saved-codes saved
               :passed-cells passed
               :sidebar-notebooks nil
+              :noindex (not (string= (notebook-visibility nb-row) "public"))
               :run-cell-base run-cell-base)))))))))
 
 (defun public-notebook-by-handle-handler (params)
@@ -1370,14 +1378,20 @@ the viewer cannot view it."
       ((not (recurya/utils/access-control:can-view-course-p user course-row))
        (html-response (recurya/web/ui/errors:not-found) :status 404))
       (t
-       (let* ((rows (list-course-notebooks (course-id course-row)))
+       (let* ((rows (remove-if-not
+                     (lambda (cn)
+                       (let ((nb (course-notebook-notebook cn)))
+                         (and nb
+                              (recurya/utils/access-control:publicly-listable-notebook-p nb))))
+                     (list-course-notebooks (course-id course-row))))
               (notebooks (mapcar #'course-notebook-row->public-plist rows)))
          (html-response
           (recurya/web/ui/course:render
            :course (course->plist course-row)
            :notebooks notebooks
            :user user
-           :passed-by-notebook nil)))))))
+           :passed-by-notebook nil
+           :noindex (not (string= (course-visibility course-row) "public")))))))))
 
 (defun public-course-by-handle-handler (params)
   "Handle GET /c/@:handle/:slug - public single course page resolved by

@@ -231,3 +231,49 @@ hi"
         (ok (not (publicly-listable-course-p draft-pub))  "draft+public hidden")
         (ok (not (publicly-listable-course-p draft-priv)) "draft+private hidden")
         (ok (not (publicly-listable-course-p nil))        "nil hidden")))))
+
+(deftest can-view-notebook-published-unlisted
+  (testing "published+unlisted notebooks are viewable by anyone with the URL"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (other-dao (create-test-user :email-prefix "other"))
+             (owner (mk-user-plist owner-dao))
+             (other (mk-user-plist other-dao))
+             (nb (mk-notebook owner-dao
+                              :status "published"
+                              :visibility "unlisted")))
+        (ok (can-view-notebook-p owner nb) "owner can view")
+        (ok (can-view-notebook-p other nb) "other user can view")
+        (ok (can-view-notebook-p nil nb)   "anonymous can view")))))
+
+(deftest unlisted-notebook-not-publicly-listable
+  (testing "unlisted notebooks are excluded from public listings"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (nb (mk-notebook owner-dao
+                              :status "published"
+                              :visibility "unlisted")))
+        (ng (publicly-listable-notebook-p nb))))))
+
+(deftest can-view-course-published-unlisted
+  (testing "published+unlisted courses are viewable by anyone with the URL"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (other-dao (create-test-user :email-prefix "other"))
+             (owner (mk-user-plist owner-dao))
+             (other (mk-user-plist other-dao))
+             (c (mk-course owner-dao
+                           :status "published"
+                           :visibility "unlisted")))
+        (ok (can-view-course-p owner c) "owner can view")
+        (ok (can-view-course-p other c) "other user can view")
+        (ok (can-view-course-p nil c)   "anonymous can view")))))
+
+(deftest unlisted-course-not-publicly-listable
+  (testing "unlisted courses are excluded from public listings"
+    (with-test-db
+      (let* ((owner-dao (create-test-user :email-prefix "owner"))
+             (c (mk-course owner-dao
+                           :status "published"
+                           :visibility "unlisted")))
+        (ng (publicly-listable-course-p c))))))
