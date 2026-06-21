@@ -974,3 +974,17 @@ where the lists are aligned with the attached positions."
           (let ((res (public-course-by-handle-handler
                       '((:captures . ("draftc-c7b" "draft-only"))))))
             (ok (= 404 (response-status res)))))))))
+
+(deftest course-create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted Course")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (course-create-handler params)
+          (let ((c (get-course-by-slug "unlisted-course")))
+            (ok c)
+            (ok (string= "unlisted" (course-visibility c)))))))))

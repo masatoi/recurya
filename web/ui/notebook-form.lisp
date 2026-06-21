@@ -148,6 +148,9 @@ a list of plists like (:line N :message \"...\")."
                           (:option :value "private"
                             :selected (when (equal nb-visibility "private") "selected")
                             "Private (only you)")
+                          (:option :value "unlisted"
+                            :selected (when (equal nb-visibility "unlisted") "selected")
+                            "Unlisted (anyone with the link)")
                           (:option :value "public"
                             :selected (when (equal nb-visibility "public") "selected")
                             "Public (anyone)")))

@@ -1325,3 +1325,19 @@ hi
         (recurya/web/routes::%decode-state-token "published-unlisted")
       (ok (string= status "published"))
       (ok (string= vis "unlisted")))))
+
+(deftest create-handler-persists-visibility-unlisted
+  (with-test-db
+    (let ((user (mk-user)))
+      (with-mock-session (make-session :user user)
+        (let ((params '(("title" . "Unlisted NB")
+                        ("slug" . "")
+                        ("summary" . "")
+                        ("body" . "===prose===
+hi")
+                        ("status" . "published")
+                        ("visibility" . "unlisted"))))
+          (notebook-create-handler params)
+          (let ((nb (get-notebook-by-slug "unlisted-nb")))
+            (ok nb)
+            (ok (string= "unlisted" (notebook-visibility nb)))))))))

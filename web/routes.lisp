@@ -470,7 +470,7 @@ so cell ids stay stable across edits."
                (status (get-param params "status"))
                (visibility-raw (get-param params "visibility"))
                (visibility
-                 (if (member visibility-raw '("private" "public") :test #'equal)
+                 (if (member visibility-raw '("private" "unlisted" "public") :test #'equal)
                      visibility-raw
                      "private")))
           (cond
@@ -561,7 +561,7 @@ description) match."
                     (visibility-raw (get-param params "visibility"))
                     (visibility
                       (cond
-                        ((member visibility-raw '("private" "public")
+                        ((member visibility-raw '("private" "unlisted" "public")
                                  :test #'equal)
                          visibility-raw)
                         (visibility-raw "private")
@@ -678,7 +678,7 @@ field is the number of notebooks attached to the course via course_notebook."
                (status (get-param params "status"))
                (visibility-raw (get-param params "visibility"))
                (visibility
-                 (if (member visibility-raw '("private" "public") :test #'equal)
+                 (if (member visibility-raw '("private" "unlisted" "public") :test #'equal)
                      visibility-raw
                      "private")))
           (cond
@@ -781,7 +781,7 @@ populated with the user's other published notebooks."
                     (visibility-raw (get-param params "visibility"))
                     (visibility
                       (cond
-                        ((member visibility-raw '("private" "public")
+                        ((member visibility-raw '("private" "unlisted" "public")
                                  :test #'equal)
                          visibility-raw)
                         (visibility-raw "private")

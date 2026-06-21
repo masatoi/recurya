@@ -218,6 +218,9 @@ When editing an existing COURSE, the caller may also supply:
                (:option :value "private"
                  :selected (when (equal c-visibility "private") "selected")
                  "Private (only you)")
+               (:option :value "unlisted"
+                 :selected (when (equal c-visibility "unlisted") "selected")
+                 "Unlisted (anyone with the link)")
                (:option :value "public"
                  :selected (when (equal c-visibility "public") "selected")
                  "Public (anyone)")))
