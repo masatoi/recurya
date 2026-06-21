@@ -50,7 +50,7 @@ Returns 0 when slug is missing or value is nil."
   (let ((entry (assoc slug passed-by-notebook :test #'equal)))
     (or (cdr entry) 0)))
 
-(defun render (&key course notebooks user passed-by-notebook)
+(defun render (&key course notebooks user passed-by-notebook noindex)
   "Render the public course detail page.
 
 COURSE is a plist with :slug :title :summary :status.
@@ -70,6 +70,8 @@ Empty alist is treated as no progress."
      :title (or title "Course")
      :styles *styles*
      :user user
+     :head-extras (when noindex
+                    "<meta name=\"robots\" content=\"noindex\">")
      :body-content
      (with-html-string
        (when draft-p

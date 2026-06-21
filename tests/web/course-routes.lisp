@@ -1025,3 +1025,24 @@ where the lists are aligned with the attached positions."
             (ok (search "data-share-url" body))
             (ok (search (format nil "/c/@~A/unlisted-c" (getf user :handle))
                         body))))))))
+
+(deftest unlisted-course-page-has-noindex
+  (testing "an unlisted course page carries robots=noindex; a public one does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ixc-7b"))
+             (handle (users-handle dao)))
+        (create-course! :title "U" :slug "u-c"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (create-course! :title "P" :slug "p-c"
+                        :status "published" :visibility "public"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "u-c")))))))
+                (p-body (first (response-body
+                                (public-course-by-handle-handler
+                                 `((:captures . (,handle "p-c"))))))))
+            (ok (search "noindex" u-body))
+            (ng (search "noindex" p-body))))))))

@@ -247,7 +247,8 @@ the matching entry as 'sb-link active'."
                &key user saved-codes passed-cells
                     (sidebar-notebooks nil) run-cell-base
                     course-title course-slug course-handle
-                    breadcrumb course-prev-url course-next-url)
+                    breadcrumb course-prev-url course-next-url
+                    noindex)
   "Render the full notebook page as a complete HTML document.
 USER is the logged-in user plist or nil.
 SAVED-CODES is an alist (cell-id-string . code-string) of DB-saved code.
@@ -285,6 +286,7 @@ notebooks within the same course."
         (:meta :name "viewport"
                :content "width=device-width, initial-scale=1")
         (:title (notebook-title notebook))
+        (when noindex (:meta :name "robots" :content "noindex"))
         (:style (:raw (header-styles)))
         (:style (:raw *styles*))
         (:script :src "https://unpkg.com/htmx.org@2.0.4"

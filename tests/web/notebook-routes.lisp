@@ -1387,3 +1387,29 @@ hi"
             (ok (search (format nil "/@~A/unlisted-row" (getf user :handle))
                         body)
                 "share URL targets the notebook")))))))
+
+(deftest unlisted-notebook-page-has-noindex
+  (testing "an unlisted notebook page carries robots=noindex; a public one
+does not"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "ix" :handle "ix-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "U" :slug "u-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (create-notebook! :title "P" :slug "p-nb" :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "public"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((u-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "u-nb")))))))
+                (p-body (first (response-body
+                                (public-notebook-by-handle-handler
+                                 `((:captures . (,handle "p-nb"))))))))
+            (ok (search "noindex" u-body) "unlisted page is noindex")
+            (ng (search "noindex" p-body) "public page is indexable")))))))

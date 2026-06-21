@@ -1318,6 +1318,7 @@ viewer cannot view it."
                 :breadcrumb breadcrumb
                 :course-prev-url prev-url
                 :course-next-url next-url
+                :noindex (not (string= (notebook-visibility nb-row) "public"))
                 :run-cell-base run-cell-base))))
            (t
             (html-response
@@ -1327,6 +1328,7 @@ viewer cannot view it."
               :saved-codes saved
               :passed-cells passed
               :sidebar-notebooks nil
+              :noindex (not (string= (notebook-visibility nb-row) "public"))
               :run-cell-base run-cell-base)))))))))
 
 (defun public-notebook-by-handle-handler (params)
@@ -1380,7 +1382,8 @@ the viewer cannot view it."
            :course (course->plist course-row)
            :notebooks notebooks
            :user user
-           :passed-by-notebook nil)))))))
+           :passed-by-notebook nil
+           :noindex (not (string= (course-visibility course-row) "public")))))))))
 
 (defun public-course-by-handle-handler (params)
   "Handle GET /c/@:handle/:slug - public single course page resolved by
