@@ -17,7 +17,8 @@
                 #:notebook-delete-handler
                 #:notebooks-public-handler
                 #:public-notebook-by-handle-handler
-                #:public-notebook-cell-run-by-handle-handler)
+                #:public-notebook-cell-run-by-handle-handler
+                #:profile-handler)
   (:import-from #:recurya/db/users
                 #:get-user-by-id
                 #:users-id
@@ -1413,3 +1414,22 @@ hi"
                                  `((:captures . (,handle "p-nb"))))))))
             (ok (search "noindex" u-body) "unlisted page is noindex")
             (ng (search "noindex" p-body) "public page is indexable")))))))
+
+(deftest unlisted-notebook-absent-from-public-listing-and-profile
+  (testing "an unlisted notebook appears on neither /notebooks nor /@handle"
+    (with-test-db
+      (let* ((dao (create-test-user :email-prefix "hid" :handle "hid-7b"))
+             (handle (users-handle dao)))
+        (create-notebook! :title "HiddenList" :slug "hidden-list"
+                          :body-md "===prose===
+hi"
+                          :cells nil :author dao
+                          :status "published" :visibility "unlisted"
+                          :published-at (local-time:now))
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (notebooks-public-handler nil))))
+                (profile (first (response-body
+                                 (profile-handler
+                                  `((:captures . (,handle))))))))
+            (ng (search "HiddenList" listing) "not in /notebooks")
+            (ng (search "HiddenList" profile) "not on /@handle profile")))))))

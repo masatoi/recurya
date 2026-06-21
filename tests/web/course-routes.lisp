@@ -1046,3 +1046,14 @@ where the lists are aligned with the attached positions."
                                  `((:captures . (,handle "p-c"))))))))
             (ok (search "noindex" u-body))
             (ng (search "noindex" p-body))))))))
+
+(deftest unlisted-course-absent-from-public-listing
+  (testing "an unlisted course does not appear on /courses"
+    (with-test-db
+      (let ((dao (create-test-user :email-prefix "hidc" :handle "hidc-7b")))
+        (create-course! :title "HiddenCourse" :slug "hidden-course"
+                        :status "published" :visibility "unlisted"
+                        :published-at (local-time:now) :author dao)
+        (with-mock-session (make-session)
+          (let ((listing (first (response-body (courses-public-handler nil)))))
+            (ng (search "HiddenCourse" listing))))))))
