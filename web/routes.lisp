@@ -104,6 +104,9 @@
                 #:notebook-cell-result-status
                 #:notebook-cell-result-cell-id)
   (:import-from #:recurya/web/ui/notebook)
+  (:import-from #:recurya/game/notebook-jsonb
+                #:cell->jsonb-form
+                #:jsonb-hash->cell)
   (:import-from #:recurya/db/learn
                 #:upsert-cell-code
                 #:user-cell-codes
@@ -375,46 +378,6 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
       (let ((user-id (getf user :id)))
         (when user-id
           (get-user-by-id user-id))))))
-
-(defun cell->jsonb-form (cell)
-  "Convert a cell struct into a hash-table that jzon serializes as a JSON
-object. Pairs with `jsonb-hash->cell' to round-trip cells through the
-JSONB column while preserving stable cell ids across edits."
-  (let ((h (make-hash-table :test 'equal)))
-    (setf (gethash "cell-id"     h) (or (cell-id cell) "")
-          (gethash "kind"        h) (string-downcase (symbol-name (cell-kind cell)))
-          (gethash "body"        h) (or (cell-body cell) "")
-          (gethash "description" h) (cell-description cell)
-          (gethash "test-cases"  h)
-          (mapcar (lambda (tc)
-                    (let ((th (make-hash-table :test 'equal)))
-                      (setf (gethash "input"       th) (test-case-input tc)
-                            (gethash "expected"    th) (test-case-expected tc)
-                            (gethash "description" th) (test-case-description tc))
-                      th))
-                  (cell-test-cases cell)))
-    h))
-
-(defun jsonb-hash->cell (h)
-  "Reconstruct a cell struct from a JSONB hash-table produced by
-`cell->jsonb-form'. Used to seed parse-notebook-body's existing-cells
-so cell ids stay stable across edits."
-  (let ((kind-str (gethash "kind" h ""))
-        (raw-tcs  (gethash "test-cases" h #())))
-    (recurya/game/notebook:make-cell
-     :id (or (gethash "cell-id" h "") "")
-     :kind (if (and kind-str (plusp (length kind-str)))
-               (intern (string-upcase kind-str) :keyword)
-               :prose)
-     :body (or (gethash "body" h "") "")
-     :description (or (gethash "description" h "") "")
-     :test-cases (mapcar
-                  (lambda (th)
-                    (recurya/game/puzzle:make-test-case
-                     :input       (or (gethash "input" th "") "")
-                     :expected    (or (gethash "expected" th "") "")
-                     :description (or (gethash "description" th "") "")))
-                  (coerce raw-tcs 'list)))))
 
 (defun notebook->plist (nb)
   "Convert a notebook DAO into a plist for UI rendering."
