@@ -46,6 +46,8 @@ exec qlot exec ros run \
     --eval "(recurya/db/core:start!)" \
     --eval "(format t \"Database connection established~%\")" \
     --eval "(force-output)" \
+    --eval "(handler-case (progn (recurya/seed/official-content:seed-official-content!) (format t \"Official content seeded~%\")) (error (e) (format t \"~&[seed] WARN: ~A~%\" e)))" \
+    --eval "(force-output)" \
     --eval "(recurya/web/server:start! :port 3000)" \
     --eval "(format t \"Web server started on port 3000~%\")" \
     --eval "(force-output)" \
