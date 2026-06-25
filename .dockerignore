@@ -15,9 +15,10 @@
 *.swp
 .DS_Store
 
-# Documentation
+# Documentation (keep docs/<course>/ content dirs — the boot seeder reads docs/sicp/*.md)
 README.md
-docs/
+docs/plans/
+docs/*.md
 prompts/
 
 # Test artifacts
