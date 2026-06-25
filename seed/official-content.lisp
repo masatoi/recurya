@@ -108,9 +108,36 @@
 ;;; Stubs (implemented in later tasks)
 ;;;----------------------------------------------------------------------
 
+(defun %split-natural (s)
+  "Split S into alternating non-digit strings and integers.
+   E.g. \"sicp-1-10\" -> (\"sicp-\" 1 \"-\" 10)."
+  (let ((runs nil) (i 0) (n (length s)))
+    (loop while (< i n) do
+      (let ((digitp (and (digit-char-p (char s i)) t))
+            (j i))
+        (loop while (and (< j n)
+                         (eq (and (digit-char-p (char s j)) t) digitp))
+              do (incf j))
+        (let ((chunk (subseq s i j)))
+          (push (if digitp (parse-integer chunk) chunk) runs))
+        (setf i j)))
+    (nreverse runs)))
+
 (defun natural-string< (a b)
-  (declare (ignore a b))
-  (error "not implemented"))
+  "Strict weak order over strings comparing embedded digit runs numerically,
+   so \"x-2\" < \"x-10\". Ties break by overall string length."
+  (loop for ra in (%split-natural a)
+        for rb in (%split-natural b)
+        do (cond
+             ((and (integerp ra) (integerp rb))
+              (when (< ra rb) (return-from natural-string< t))
+              (when (> ra rb) (return-from natural-string< nil)))
+             ((and (stringp ra) (stringp rb))
+              (when (string< ra rb) (return-from natural-string< t))
+              (when (string> ra rb) (return-from natural-string< nil)))
+             ;; Different types at same position: integers sort first.
+             (t (return-from natural-string< (integerp ra))))
+        finally (return (< (length a) (length b)))))
 
 (defun ensure-official-author (spec)
   (declare (ignore spec))
