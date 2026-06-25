@@ -98,7 +98,9 @@
                "recurya/web/ui/playground"
                "recurya/web/ui/reference"
                "recurya/web/routes-wardlisp"
-               "recurya/web/server")
+               "recurya/web/server"
+               ;; Seed / bootstrap
+               "recurya/seed/official-content")
   :description "Recurya - Lisp learning game web system"
   :in-order-to ((test-op (test-op "recurya/tests"))))
 
