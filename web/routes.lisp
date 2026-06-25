@@ -95,9 +95,6 @@
   (:import-from #:recurya/game/notebook
                 #:cell-id
                 #:cell-kind
-                #:cell-body
-                #:cell-description
-                #:cell-test-cases
                 #:make-notebook
                 #:notebook-cells
                 #:run-cell
@@ -115,10 +112,6 @@
                 #:record-submission
                 #:merge-localstorage)
   (:import-from #:recurya/utils/common #:parse-json #:json->string)
-  (:import-from #:recurya/game/puzzle
-                #:test-case-input
-                #:test-case-expected
-                #:test-case-description)
   (:export #:setup-routes
            #:dashboard-home-handler
            #:account-confirm-delete-handler
