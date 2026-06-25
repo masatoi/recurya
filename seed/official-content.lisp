@@ -22,17 +22,16 @@
                 #:users-handle)
   (:import-from #:recurya/db/courses
                 #:create-course!
-                #:get-course-by-slug)
+                #:find-course-by-handle-and-slug)
   (:import-from #:recurya/models/course
                 #:course-id
-                #:course-slug
                 #:course-status
                 #:course-visibility
                 #:course-published-at
                 #:course-author)
   (:import-from #:recurya/db/notebooks
                 #:create-notebook!
-                #:get-notebook-by-slug)
+                #:find-notebook-by-handle-and-slug)
   (:import-from #:recurya/models/notebook
                 #:notebook-id
                 #:notebook-author)
@@ -152,18 +151,23 @@
 (defun %content-markdown-files (content-dir order)
   "Return the *.md pathnames under CONTENT-DIR ordered by ORDER.
    ORDER is :natural (natural-string< by basename) or an explicit list
-   of slugs (basenames without extension)."
-  (let ((files (directory (merge-pathnames
-                           "*.md" (%resolve-content-dir content-dir)))))
-    (etypecase order
-      (symbol
-       (sort (copy-list files) #'natural-string< :key #'pathname-name))
-      (list
-       (let ((by-name (make-hash-table :test 'equal)))
-         (dolist (f files) (setf (gethash (pathname-name f) by-name) f))
-         (loop for slug in order
-               for f = (gethash slug by-name)
-               when f collect f))))))
+   of slugs (basenames without extension). Warns and returns NIL if the
+   resolved directory does not exist."
+  (let ((dir (%resolve-content-dir content-dir)))
+    (unless (uiop:directory-exists-p dir)
+      (warn "official-content: content directory ~A does not exist; skipping."
+            dir)
+      (return-from %content-markdown-files nil))
+    (let ((files (directory (merge-pathnames "*.md" dir))))
+      (etypecase order
+        ((eql :natural)
+         (sort (copy-list files) #'natural-string< :key #'pathname-name))
+        (list
+         (let ((by-name (make-hash-table :test 'equal)))
+           (dolist (f files) (setf (gethash (pathname-name f) by-name) f))
+           (loop for slug in order
+                 for f = (gethash slug by-name)
+                 when f collect f)))))))
 
 (defun %read-file-string (path)
   "Read PATH into a UTF-8 string."
@@ -187,42 +191,25 @@
     (when dirty (save-dao course))
     course))
 
-(defun %already-attached-p (course-id-uuid notebook-id-uuid)
-  "T when (course, notebook) is already in course_notebook."
-  (let ((target (princ-to-string notebook-id-uuid)))
-    (some (lambda (cn)
-            (let ((nb (course-notebook-notebook cn)))
-              (and nb (string= (princ-to-string (notebook-id nb)) target))))
-          (list-course-notebooks course-id-uuid))))
-
-(defun %next-position (course-id-uuid)
-  "Next free position (one past the current max) for COURSE-ID-UUID."
-  (let ((rows (list-course-notebooks course-id-uuid)))
-    (if rows
-        (1+ (reduce #'max rows :key #'course-notebook-position))
-        0)))
-
 (defun %ensure-notebook-row (slug body-md title author)
-  "Find or create a published-public notebook keyed by SLUG, owned by
-   AUTHOR. Returns (values NB CREATED-P CORRECTED-P)."
-  (let ((existing (get-notebook-by-slug slug)))
-    (cond
-      ((and existing (%same-user-p (notebook-author existing) author))
-       (values existing nil nil))
-      (existing
-       (setf (notebook-author existing) author)
-       (save-dao existing)
-       (values existing nil t))
-      (t
-       (multiple-value-bind (cells parse-errors) (parse-notebook-body body-md)
-         (when parse-errors
-           (error "official-content: parse errors in ~A: ~S" slug parse-errors))
-         (values (create-notebook!
-                  :title title :slug slug :body-md body-md
-                  :cells (mapcar #'cell->jsonb-form cells)
-                  :author author :status "published" :visibility "public"
-                  :published-at (local-time:now))
-                 t nil))))))
+  "Find or create a published-public notebook owned by AUTHOR, keyed by
+   (AUTHOR, SLUG). Returns (values NB CREATED-P).
+
+   NOTE: an existing notebook is reused as-is; its body/content is NOT
+   re-synced from BODY-MD (official content is create-once; content
+   updates are out of scope for the boot-time seeder)."
+  (let ((existing (find-notebook-by-handle-and-slug (users-handle author) slug)))
+    (if existing
+        (values existing nil)
+        (multiple-value-bind (cells parse-errors) (parse-notebook-body body-md)
+          (when parse-errors
+            (error "official-content: parse errors in ~A: ~S" slug parse-errors))
+          (values (create-notebook!
+                   :title title :slug slug :body-md body-md
+                   :cells (mapcar #'cell->jsonb-form cells)
+                   :author author :status "published" :visibility "public"
+                   :published-at (local-time:now))
+                  t)))))
 
 (defun ensure-official-author (spec)
   "Ensure the author user for SPEC exists; return the USER DAO.
@@ -244,9 +231,12 @@
                          :role "user"))))))
 
 (defun ensure-official-course (spec author)
-  "Return the canonical course for SPEC, creating it if missing and
-   correcting its state if it already exists."
-  (let ((existing (get-course-by-slug (official-course-slug spec))))
+  "Return the canonical course for SPEC owned by AUTHOR, creating it if
+   missing (keyed by the official author handle + slug) and correcting
+   its state if it already exists."
+  (let ((existing (find-course-by-handle-and-slug
+                   (official-course-author-handle spec)
+                   (official-course-slug spec))))
     (if existing
         (%correct-course-state! existing author)
         (create-course! :title (official-course-title spec)
@@ -260,29 +250,39 @@
 (defun ensure-notebooks-attached (spec course author)
   "Ensure every markdown file under SPEC's content-dir is a published-
    public notebook owned by AUTHOR and attached to COURSE in order.
-   Returns a summary plist."
-  (let ((course-id-uuid (course-id course))
-        (imported nil) (corrected nil) (skipped nil)
-        (attached nil) (already nil))
+   Returns a summary plist. Linear in the number of files: course
+   membership is read once up front."
+  (let* ((course-id-uuid (course-id course))
+         (existing-rows (list-course-notebooks course-id-uuid))
+         (attached-ids (let ((h (make-hash-table :test 'equal)))
+                         (dolist (cn existing-rows h)
+                           (let ((nb (course-notebook-notebook cn)))
+                             (when nb
+                               (setf (gethash (princ-to-string (notebook-id nb)) h)
+                                     t))))))
+         (next-pos (if existing-rows
+                       (1+ (reduce #'max existing-rows
+                                   :key #'course-notebook-position))
+                       0))
+         (imported nil) (skipped nil) (attached nil) (already nil))
     (dolist (path (%content-markdown-files (official-course-content-dir spec)
                                            (official-course-order spec)))
       (let* ((slug (pathname-name path))
              (body-md (%read-file-string path))
              (title (funcall (official-course-notebook-title-fn spec) slug)))
-        (multiple-value-bind (nb created-p corrected-p)
+        (multiple-value-bind (nb created-p)
             (%ensure-notebook-row slug body-md title author)
-          (cond (created-p   (push slug imported))
-                (corrected-p (push slug corrected))
-                (t           (push slug skipped)))
-          (let ((nb-uuid (notebook-id nb)))
-            (if (%already-attached-p course-id-uuid nb-uuid)
+          (if created-p (push slug imported) (push slug skipped))
+          (let ((nb-key (princ-to-string (notebook-id nb))))
+            (if (gethash nb-key attached-ids)
                 (push slug already)
                 (progn
-                  (add-notebook-to-course! course-id-uuid nb-uuid
-                                           :position (%next-position course-id-uuid))
+                  (add-notebook-to-course! course-id-uuid (notebook-id nb)
+                                           :position next-pos)
+                  (setf (gethash nb-key attached-ids) t)
+                  (incf next-pos)
                   (push slug attached)))))))
     (list :imported (nreverse imported)
-          :corrected (nreverse corrected)
           :skipped (nreverse skipped)
           :attached (nreverse attached)
           :already-attached (nreverse already))))
