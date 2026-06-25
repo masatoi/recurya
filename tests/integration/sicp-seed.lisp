@@ -82,3 +82,72 @@
       (ok (string= +sicp-author-handle+ (official-course-author-handle spec))
           "spec author-handle must equal +sicp-author-handle+ so
            /c/@recurya/sicp resolves"))))
+
+(deftest seed-creates-recurya-author-and-published-public-course
+  (testing "seeding the SICP spec creates the canonical recurya user and
+            a published-public sicp course under it"
+    (with-test-db
+      (let ((spec (sicp-spec)))
+        (unwind-protect
+             (progn
+               (seed-course! spec :attach-notebooks nil)
+               (let ((u (get-user-by-handle +sicp-author-handle+)))
+                 (ok u "recurya user must exist after seeding")
+                 (ok (string= "Recurya" (users-display-name u)))
+                 (ok (search "@example.invalid" (users-email u))
+                     "seed user uses the .invalid TLD"))
+               (let ((c (get-course-by-slug "sicp")))
+                 (ok c "sicp course must exist")
+                 (ok (string= "published" (course-status c)))
+                 (ok (string= "public" (course-visibility c)))
+                 (ok (string= +sicp-author-handle+
+                              (users-handle (course-author c)))
+                     "course author must be recurya")))
+          (delete-user! (official-course-author-email spec)))))))
+
+(deftest seed-is-idempotent
+  (testing "running seed-course! twice resolves to the same user/course
+            rows (no duplicate inserts)"
+    (with-test-db
+      (let ((spec (sicp-spec)))
+        (unwind-protect
+             (let* ((r1 (seed-course! spec :attach-notebooks nil))
+                    (r2 (seed-course! spec :attach-notebooks nil)))
+               (ok (string= (getf r1 :user-id) (getf r2 :user-id))
+                   "user UUID stable across runs")
+               (ok (string= (getf r1 :course-id) (getf r2 :course-id))
+                   "course UUID stable across runs")
+               (ok (get-user-by-handle +sicp-author-handle+))
+               (ok (get-course-by-slug "sicp")))
+          (delete-user! (official-course-author-email spec)))))))
+
+(deftest generic-seed-attaches-notebooks-in-natural-order
+  (testing "a non-SICP spec seeds author+course+ordered notebooks from a
+            fixture dir, idempotently, with natural (numeric) ordering"
+    (with-test-db
+      ;; @example.com author is auto-cleaned by cleanup-all-test-data;
+      ;; with-test-db wipes course/notebook rows. No unwind-protect needed.
+      (let ((spec (make-official-course
+                   :author-handle "demo-official"
+                   :author-email "demo-official@example.com"
+                   :author-display-name "Demo Official"
+                   :slug "demo-course"
+                   :title "Demo Course"
+                   :summary "fixture"
+                   :content-dir #P"tests/fixtures/official-course/"
+                   :order :natural
+                   :notebook-title-fn (lambda (slug) (format nil "Demo ~A" slug)))))
+        (seed-course! spec)
+        (seed-course! spec)                ; second run must be a no-op
+        (let* ((c (get-course-by-slug "demo-course"))
+               (rows (list-course-notebooks (course-id c)))
+               (slugs (mapcar (lambda (cn)
+                                (notebook-slug (course-notebook-notebook cn)))
+                              rows)))
+          (ok c "demo course must exist")
+          (ok (= 2 (count-course-notebooks (course-id c)))
+              "exactly two notebooks attached (idempotent across two runs)")
+          (ok (equal '("demo-2" "demo-10") slugs)
+              "notebooks attached in natural order (demo-2 before demo-10)")
+          (ok (equal '(0 1) (mapcar #'course-notebook-position rows))
+              "positions assigned 0,1 in order"))))))
