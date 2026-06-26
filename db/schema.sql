@@ -34,6 +34,18 @@ CREATE TABLE "learn_progress" (
 CREATE UNIQUE INDEX "unique_learn_progress_user_id_notebook_id_cell_id" ON "learn_progress" ("user_id", "notebook_id", "cell_id");
 CREATE INDEX "key_learn_progress_user_id_notebook_id" ON "learn_progress" ("user_id", "notebook_id");
 
+CREATE TABLE "novel_state" (
+    "id" BIGSERIAL NOT NULL PRIMARY KEY,
+    "user_id" UUID NOT NULL,
+    "notebook_id" VARCHAR(64) NOT NULL,
+    "flags" TEXT NOT NULL,
+    "scene_index" INTEGER NOT NULL,
+    "created_at" TIMESTAMPTZ,
+    "updated_at" TIMESTAMPTZ
+);
+CREATE INDEX "key_novel_state_user_id_notebook_id" ON "novel_state" ("user_id", "notebook_id");
+CREATE UNIQUE INDEX "unique_novel_state_user_id_notebook_id" ON "novel_state" ("user_id", "notebook_id");
+
 CREATE TABLE "users" (
     "id" UUID NOT NULL PRIMARY KEY,
     "email" VARCHAR(255) NOT NULL,

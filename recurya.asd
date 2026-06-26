@@ -73,6 +73,7 @@
                "recurya/models/learn-progress"
                "recurya/models/learn-cell-code"
                "recurya/models/learn-submission"
+               "recurya/models/novel-state"
                ;; Web layer
                "recurya/web/app"
                "recurya/web/auth"
