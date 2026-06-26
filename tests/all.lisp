@@ -42,7 +42,8 @@
     ;; Integration tests
     :recurya/tests/integration/sicp-canonical-solutions
     :recurya/tests/integration/sicp-seed
-    :recurya/tests/integration/novel-sample)
+    :recurya/tests/integration/novel-sample
+    :recurya/tests/integration/novel-recursion-lesson)
   "List of all test packages to run.")
 
 (defun run-all-tests ()

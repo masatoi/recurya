@@ -157,6 +157,7 @@
                "recurya/tests/integration/sicp-canonical-solutions"
                "recurya/tests/integration/sicp-seed"
                "recurya/tests/integration/novel-sample"
+               "recurya/tests/integration/novel-recursion-lesson"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner
