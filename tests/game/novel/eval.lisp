@@ -26,3 +26,15 @@
   (let ((dirs (eval-scene "(list (greet \"アリス\"))"
                           :prelude "(define (greet name) (list 'say name \"やあ\"))")))
     (ok (equal (first dirs) '(:say "アリス" "やあ")))))
+
+(deftest split-cells-prelude-and-scenes
+  (multiple-value-bind (prelude scenes)
+      (recurya/game/novel/eval:split-novel-cells
+       '((:code-eval . "(define x 1)")
+         (:scene . "(list (list 'narrate \"a\"))")
+         (:code-eval . "(define y 2)")
+         (:scene . "(list (list 'narrate \"b\"))")))
+    (ok (search "(define x 1)" prelude))
+    (ok (search "(define y 2)" prelude))
+    (ok (= 2 (length scenes)))
+    (ok (search "\"a\"" (first scenes)))))

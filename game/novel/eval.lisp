@@ -4,7 +4,8 @@
   (:use #:cl)
   (:import-from #:wardlisp #:evaluate #:make-string-value)
   (:import-from #:recurya/game/novel/value #:ward->directives)
-  (:export #:eval-scene #:*novel-fuel* #:*novel-max-cons*
+  (:export #:eval-scene #:split-novel-cells
+           #:*novel-fuel* #:*novel-max-cons*
            #:*novel-max-depth* #:*novel-timeout*))
 
 (in-package #:recurya/game/novel/eval)
@@ -36,3 +37,16 @@
       (let ((err (getf metrics :error-message)))
         (when err (error "novel scene error: ~A" err)))
       (ward->directives result))))
+
+(defun split-novel-cells (cells)
+  "Given a list of (kind . body) pairs (kind keyword, body string),
+   return (values PRELUDE SCENE-BODIES) where PRELUDE is the concatenation
+   of all :code-eval bodies and SCENE-BODIES is the ordered list of :scene
+   bodies."
+  (let ((prelude '()) (scenes '()))
+    (dolist (c cells)
+      (case (car c)
+        (:code-eval (push (cdr c) prelude))
+        (:scene (push (cdr c) scenes))))
+    (values (format nil "~{~A~^~%~}" (nreverse prelude))
+            (nreverse scenes))))
