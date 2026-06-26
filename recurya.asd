@@ -64,6 +64,7 @@
                "recurya/utils/access-control"
                "recurya/db/course-notebooks"
                "recurya/db/learn"
+               "recurya/db/novel"
                "recurya/db"
                ;; Models
                "recurya/models/users"

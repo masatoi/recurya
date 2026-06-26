@@ -38,6 +38,7 @@ This is idempotent and safe to call multiple times."
   "Remove all test data to ensure clean state.
 Only deletes data matching test patterns to avoid affecting production data."
   (ignore-errors
+    (execute! "DELETE FROM novel_state")
     (execute! "DELETE FROM course_notebook")
     (execute! "DELETE FROM course")
     (execute! "DELETE FROM notebook")
