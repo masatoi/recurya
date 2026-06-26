@@ -104,6 +104,7 @@
                "recurya/web/ui/playground"
                "recurya/web/ui/reference"
                "recurya/web/routes-wardlisp"
+               "recurya/web/routes-novel"
                "recurya/web/server"
                ;; Seed / bootstrap
                "recurya/seed/official-content")

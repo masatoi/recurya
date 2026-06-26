@@ -7,6 +7,8 @@
   (:use #:cl)
   (:import-from #:recurya/web/routes-wardlisp
                 #:setup-wardlisp-routes)
+  (:import-from #:recurya/web/routes-novel
+                #:setup-novel-routes)
   (:export #:*app*
            #:make-recurya-app))
 
@@ -19,4 +21,5 @@
   "Create and return a new Ningle application."
   (setf *app* (make-instance 'ningle:app))
   (setup-wardlisp-routes *app*)
+  (setup-novel-routes *app*)
   *app*)
