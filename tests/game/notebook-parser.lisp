@@ -195,3 +195,16 @@ Intro.
 <script>x</script>")))
     (ok (search "<strong>bold</strong>" html))
     (ng (search "<script" html))))
+
+(deftest scene-cell-roundtrip
+  (let* ((body "===scene===
+(list (list 'say \"アリス\" \"やあ\"))")
+         (cells (parse-notebook-body body)))
+    (ok (= 1 (length cells)))
+    (ok (eq :scene (cell-kind (first cells))))
+    (ok (search "(list 'say" (cell-body (first cells))))
+    ;; render back and re-parse: kind/body stable
+    (let* ((md (cells->body-md cells))
+           (cells2 (parse-notebook-body md)))
+      (ok (eq :scene (cell-kind (first cells2))))
+      (ok (string= (cell-body (first cells)) (cell-body (first cells2)))))))

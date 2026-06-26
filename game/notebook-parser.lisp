@@ -79,6 +79,7 @@
   (cond
     ((string= line "===prose===") (values :prose nil))
     ((string= line "===eval===")  (values :code-eval nil))
+    ((string= line "===scene===") (values :scene nil))
     (t
      (multiple-value-bind (m groups)
          (cl-ppcre:scan-to-strings +exercise-header-regex+ line)
@@ -361,6 +362,7 @@
     (ecase kind
       (:prose         (write-string "===prose===" stream))
       (:code-eval     (write-string "===eval===" stream))
+      (:scene         (write-string "===scene===" stream))
       (:code-exercise (format stream "===exercise: ~A===" desc))
       (:code-solution (format stream "===solution: ~A===" desc)))
     (write-char #\Newline stream)
