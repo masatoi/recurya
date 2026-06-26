@@ -27,6 +27,9 @@
   (:import-from #:recurya/web/ui/layout #:header #:header-styles)
   (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea)
   (:import-from #:recurya/web/ui/csrf #:csrf-form-block #:csrf-input)
+  (:import-from #:recurya/game/novel/eval #:eval-scene)
+  (:import-from #:recurya/game/novel/interpreter #:interpret-directives)
+  (:import-from #:recurya/web/ui/novel #:render-player)
   (:export #:render #:render-cell-result))
 
 (in-package #:recurya/web/ui/notebook)
@@ -228,10 +231,26 @@ the matching entry as 'sb-link active'."
                      "リセット")
             (:div :class "result-panel" :id result-id)))))
 
+(defun render-scene-cell (cell index)
+  "Render a :scene cell as an inline novel player. Evaluates the (self-contained)
+scene with no flags and flattens it to beats. Any evaluation error is shown
+inline so a bad scene never breaks the page."
+  (handler-case
+      (let* ((dirs (eval-scene (or (cell-body cell) "") :flags nil))
+             (beats (interpret-directives dirs))
+             (player (render-player :title "" :beats beats
+                                    :id (format nil "cell-~D" index))))
+        (with-html (:div :class "cell" (:raw player))))
+    (error (e)
+      (with-html
+        (:div :class "cell cell--prose"
+          (:p "（このシーンを表示できません: " (princ-to-string e) "）"))))))
+
 (defun render-cell (cell index nb-id)
   (declare (ignorable cell index nb-id))
   (ecase (cell-kind cell)
     (:prose (render-prose-cell cell))
+    (:scene (render-scene-cell cell index))
     (:code-eval (render-code-cell cell index nb-id nil))
     (:code-exercise (render-code-cell cell index nb-id t))
     (:code-solution

@@ -17,3 +17,14 @@
     (ok (search "getElementById" a) "JS targets its own element by id")
     (ok (search "novel-player" a) "novel-player class preserved")
     (ok (search "AA" a) "beat text present")))
+
+(deftest scene-cell-renders-inline-player
+  "A :scene notebook cell renders as an inline, index-scoped novel player."
+  (let* ((cell (recurya/game/notebook:make-cell
+                :id "s1" :kind :scene
+                :body "(list (list 'say \"アリス\" \"やあ\"))"))
+         (html (spinneret:with-html-string
+                 (recurya/web/ui/notebook::render-cell cell 0 "nb"))))
+    (ok (search "novel-player" html) "scene renders as a player")
+    (ok (search "やあ" html) "scene dialogue present")
+    (ok (search "novel-bg-cell-0" html) "player scoped to the cell index")))
