@@ -93,6 +93,7 @@
                ;; WardLisp UI
                "recurya/web/ui/wardlisp-home"
                "recurya/web/ui/notebook"
+               "recurya/web/ui/novel"
                "recurya/web/ui/editor"
                "recurya/web/ui/puzzle"
                "recurya/web/ui/arena"
