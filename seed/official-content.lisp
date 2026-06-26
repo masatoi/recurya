@@ -85,16 +85,20 @@
 
 (defparameter *official-courses*
   (list
-   (make-official-course
-    :author-handle "recurya"
-    :author-email "recurya+sicp@example.invalid"
-    :author-display-name "Recurya"
-    :slug "sicp"
-    :title "SICP"
-    :summary "Structure and Interpretation of Computer Programs (Japanese, ported to WardLisp)"
-    :content-dir #P"docs/sicp/"
-    :order :natural
-    :notebook-title-fn (lambda (slug) (format nil "SICP ~A" slug))))
+   (make-official-course :author-handle "recurya" :author-email
+                         "recurya+sicp@example.invalid" :author-display-name
+                         "Recurya" :slug "sicp" :title "SICP" :summary
+                         "Structure and Interpretation of Computer Programs (Japanese, ported to WardLisp)"
+                         :content-dir #P"docs/sicp/" :order :natural
+                         :notebook-title-fn
+                         (lambda (slug) (format nil "SICP ~A" slug)))
+   (make-official-course :author-handle "recurya" :author-email
+                         "recurya+sicp@example.invalid" :author-display-name
+                         "Recurya" :slug "novel-lessons" :title "ノベルで学ぶ"
+                         :summary "物語仕立てで wardlisp / Lisp を学ぶミニ教材。"
+                         :content-dir #P"docs/novel-lessons/" :order :natural
+                         :notebook-title-fn
+                         (lambda (slug) (declare (ignore slug)) "アリスと階乗")))
   "Registry of official courses. SICP is the first entry. Add a new
    official course by appending an OFFICIAL-COURSE here and placing its
    markdown notebooks under its content-dir.
