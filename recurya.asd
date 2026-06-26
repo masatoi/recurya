@@ -46,6 +46,7 @@
                "recurya/game/notebook-parser"
                "recurya/game/novel/interpreter"
                "recurya/game/novel/value"
+               "recurya/game/novel/eval"
                "recurya/game/notebook-jsonb"
                ;; Arena
                "recurya/game/arena"
