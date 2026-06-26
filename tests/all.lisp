@@ -17,6 +17,7 @@
     :recurya/tests/db/courses
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
+    :recurya/tests/db/novel
     :recurya/tests/web/oauth
     :recurya/tests/web/onboarding
     :recurya/tests/web/routes
@@ -26,6 +27,7 @@
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
     :recurya/tests/web/dashboard-auth
+    :recurya/tests/web/novel-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests
@@ -33,9 +35,14 @@
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
     :recurya/tests/game/notebook-parser
+    ;; Novel engine tests
+    :recurya/tests/game/novel/interpreter
+    :recurya/tests/game/novel/value
+    :recurya/tests/game/novel/eval
     ;; Integration tests
     :recurya/tests/integration/sicp-canonical-solutions
-    :recurya/tests/integration/sicp-seed)
+    :recurya/tests/integration/sicp-seed
+    :recurya/tests/integration/novel-sample)
   "List of all test packages to run.")
 
 (defun run-all-tests ()

@@ -132,6 +132,7 @@
                "recurya/tests/db/courses"
                "recurya/tests/db/course-notebooks"
                "recurya/tests/db/learn"
+               "recurya/tests/db/novel"
                ;; Web tests
                "recurya/tests/web/oauth"
                "recurya/tests/web/onboarding"
@@ -142,14 +143,20 @@
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
                "recurya/tests/web/dashboard-auth"
+               "recurya/tests/web/novel-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
                "recurya/tests/game/notebook-parser"
+               ;; Novel engine tests
+               "recurya/tests/game/novel/interpreter"
+               "recurya/tests/game/novel/value"
+               "recurya/tests/game/novel/eval"
                ;; Integration tests
                "recurya/tests/integration/sicp-canonical-solutions"
                "recurya/tests/integration/sicp-seed"
+               "recurya/tests/integration/novel-sample"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Main test runner
