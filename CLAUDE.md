@@ -138,12 +138,12 @@ Use the `/mito-migrate` skill for migration operations. Quick reference:
 | `POSTGRES_DB` | Database name (default: recurya) |
 | `POSTGRES_USER` | Database user (default: postgres) |
 | `POSTGRES_PASSWORD` | Database password |
-| `PORT` | HTTP server port (default: 3000) |
+| `PORT` | HTTP server port (default: 13000) |
 
 ### Docker Compose Ports
 | Port | Service |
 |------|---------|
-| 3000 | Web server (Ningle/Hunchentoot) |
+| 13000 | Web server (Ningle/Hunchentoot) |
 | 15434 | PostgreSQL |
 | 14005 | Swank (Emacs SLIME) |
 | 12346 | cl-mcp HTTP (AI agent) |

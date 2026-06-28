@@ -29,7 +29,7 @@ A Lisp learning game web system built with Common Lisp. Includes wardlisp, a saf
                      -e '(recurya/web/server:start!)'
    ```
 
-4. **Open http://localhost:3000** in your browser.
+4. **Open http://localhost:13000** in your browser.
 
 5. **Stop PostgreSQL:**
    ```bash
@@ -105,7 +105,7 @@ recurya/
 | `POSTGRES_DB` | Database name (default: recurya) |
 | `POSTGRES_USER` | Database user (default: postgres) |
 | `POSTGRES_PASSWORD` | Database password |
-| `PORT` | HTTP server port (default: 3000) |
+| `PORT` | HTTP server port (default: 13000) |
 
 ### cl-mcp Development Server
 

@@ -9,7 +9,7 @@
 #   docker compose down -v                        # Stop and remove volumes (data loss!)
 #
 # Ports:
-#   - 3000:  Web server (Ningle/Hunchentoot)
+#   - 13000: Web server (Ningle/Hunchentoot)
 #   - 15434: PostgreSQL (user: postgres, password: postgres, db: recurya)
 #   - 14005: Swank server (Emacs SLIME connection)
 #   - 12346: cl-mcp HTTP server (AI agent connection)
@@ -47,7 +47,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "3000:3000"
+      - "13000:13000"
       - "14005:4005"
       - "12346:12346"
     environment:

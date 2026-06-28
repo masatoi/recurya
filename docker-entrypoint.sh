@@ -48,11 +48,11 @@ exec qlot exec ros run \
     --eval "(force-output)" \
     --eval "(handler-case (progn (recurya/seed/official-content:seed-official-content!) (format t \"Official content seeded~%\")) (error (e) (format t \"~&[seed] WARN: ~A~%\" e)))" \
     --eval "(force-output)" \
-    --eval "(recurya/web/server:start! :port 3000)" \
-    --eval "(format t \"Web server started on port 3000~%\")" \
+    --eval "(recurya/web/server:start! :port 13000)" \
+    --eval "(format t \"Web server started on port 13000~%\")" \
     --eval "(force-output)" \
     --eval "(format t \"~%=== recurya development environment ready ===\")" \
-    --eval "(format t \"~%  Web: http://localhost:3000\")" \
+    --eval "(format t \"~%  Web: http://localhost:13000\")" \
     --eval "(format t \"~%  Swank: localhost:4005 (M-x slime-connect)\")" \
     --eval "(format t \"~%  cl-mcp HTTP: http://localhost:12346/mcp~%\")" \
     --eval "(force-output)" \

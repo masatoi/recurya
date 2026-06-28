@@ -107,7 +107,7 @@
                    (redirect-uri (find-provider "github"))))))
   (testing "falls back to localhost when env is unset"
     (with-env ("OAUTH_REDIRECT_BASE" "")
-      (ok (search "http://localhost:3000/auth/google/callback"
+      (ok (search "http://localhost:13000/auth/google/callback"
                   (redirect-uri (find-provider "google")))))))
 
 (deftest oauth-exchange-code-stubbed

@@ -156,7 +156,7 @@ from minting admin sessions."
   (ironclad:byte-array-to-hex-string (ironclad:random-data 16)))
 
 (defun redirect-base ()
-  (or (env-or-nil "OAUTH_REDIRECT_BASE") "http://localhost:3000"))
+  (or (env-or-nil "OAUTH_REDIRECT_BASE") "http://localhost:13000"))
 
 (defun redirect-uri (provider)
   (format nil "~A/auth/~A/callback"

@@ -29,7 +29,7 @@
 (defvar *handler* nil
   "The Clack handler for the running server.")
 
-(defparameter *default-port* 3000
+(defparameter *default-port* 13000
   "Default port for the web server.")
 
 (defun get-port ()
@@ -111,7 +111,7 @@ inspection would interfere)."
   "Start the web server.
 
    Options:
-   - :port    - Port to listen on (default: 3000 or PORT env var)
+   - :port    - Port to listen on (default: 13000 or PORT env var)
    - :address - Address to bind to (default: 0.0.0.0 for all interfaces)"
   (when *handler*
     (log:info "Server already running, stopping first...")
