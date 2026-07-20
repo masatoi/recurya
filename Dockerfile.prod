@@ -1,0 +1,67 @@
+# syntax=docker/dockerfile:1
+# Production image for recurya: multi-stage save-lisp-and-die build.
+
+ARG SBCL_VERSION=2.5.10
+ARG QLOT_VERSION=1.7.5
+
+# ---------------------------------------------------------------------------
+# builder: qlot install + save-lisp-and-die -> /app/recurya (executable core)
+# ---------------------------------------------------------------------------
+FROM fukamachi/sbcl:${SBCL_VERSION}-debian AS builder
+ARG QLOT_VERSION
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      git libssl-dev libffi-dev gcc libc6-dev ca-certificates && \
+    rm -rf /var/lib/apt/lists/*
+
+RUN ros setup && \
+    ros -e '(ql:update-dist "quicklisp" :prompt nil)' && \
+    ros install "fukamachi/qlot/${QLOT_VERSION}"
+ENV PATH="/root/.roswell/bin:${PATH}"
+
+WORKDIR /app
+
+# Dependency layer first for caching.
+COPY qlfile qlfile.lock ./
+RUN qlot install
+
+# Project sources.
+COPY . .
+
+# Produce the executable core at /app/recurya.
+RUN qlot exec sbcl --non-interactive \
+      --eval '(setf sb-impl::*default-external-format* :utf-8)' \
+      --load build.lisp && \
+    test -x /app/recurya
+
+# ---------------------------------------------------------------------------
+# runtime: slim glibc image with only the shared libraries the core needs.
+# ---------------------------------------------------------------------------
+FROM debian:bookworm-slim AS runtime
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+      libssl3 libffi8 ca-certificates tzdata && \
+    rm -rf /var/lib/apt/lists/* && \
+    ln -snf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime
+
+RUN groupadd -g 1000 app && \
+    useradd -u 1000 -g app -m -s /usr/sbin/nologin app
+
+WORKDIR /app
+# Keep the same path the core baked in (system-relative-pathname :recurya).
+COPY --from=builder /app/recurya /app/recurya
+COPY --from=builder /app/resources /app/resources
+# Seeding reads official-course markdown at boot via
+# (asdf:system-relative-pathname :recurya "docs/<course>/") -> /app/docs/...
+# Without these the app boots but seeds no official courses.
+COPY --from=builder /app/docs/sicp /app/docs/sicp
+COPY --from=builder /app/docs/novel-lessons /app/docs/novel-lessons
+RUN chown -R app:app /app
+
+USER app
+ENV PORT=13000 \
+    TZ=Asia/Tokyo
+EXPOSE 13000
+
+# --dynamic-space-size caps the heap at 1 GiB at runtime (see design spec 3.5).
+CMD ["/app/recurya", "--dynamic-space-size", "1024"]

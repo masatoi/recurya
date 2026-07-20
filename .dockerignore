@@ -6,6 +6,9 @@
 # qlot local dependencies (will be installed in container)
 .qlot/
 
+# Scratch / temp working dir
+.tmp/
+
 # FASL cache
 .cache/
 **/*.fasl
@@ -18,6 +21,7 @@
 # Documentation (keep docs/<course>/ content dirs — the boot seeder reads docs/sicp/*.md)
 README.md
 docs/plans/
+docs/superpowers/
 docs/*.md
 prompts/
 
