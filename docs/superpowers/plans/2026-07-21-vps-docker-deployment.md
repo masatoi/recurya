@@ -10,6 +10,8 @@
 
 **Design spec:** `docs/superpowers/specs/2026-07-21-vps-docker-deployment-design.md`
 
+> **2026-07-21 実装時の変更(重要):** Task 6(E2E)で **save-lisp-and-die 実行コアが DB接続経路で SIGSEGV クラッシュ**することが判明。ユーザー承認のもと production を **「ソースから起動」方式**へ変更した。よって **Task 2(build.lisp)は破棄**(ファイル削除)、**Task 3(Dockerfile.prod)は単一ステージの run-from-source に書換**、`main.lisp` から save-core 用 FFI reload を除去、`web/server.lisp` に本番 debug 無効化を追加。運用の最新は `docs/DEPLOYMENT.md`。以下の Task 2/3 の記述は歴史的経緯として残す。
+
 ---
 
 ## 重要ルール(この計画の全タスク共通)

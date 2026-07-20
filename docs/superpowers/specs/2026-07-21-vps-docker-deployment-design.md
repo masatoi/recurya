@@ -2,7 +2,9 @@
 
 - 日付: 2026-07-21
 - 対象: Recurya を実クラウド(さくらのVPS 2GBプラン)へ本番デプロイする構成
-- ステータス: 設計確定(ユーザー承認済み)、実装計画待ち
+- ステータス: 実装完了(下記「2026-07-21 実装時の変更」参照)
+
+> **2026-07-21 実装時の変更(重要):** 本スペックは production イメージを **save-lisp-and-die 実行コア**で設計したが、実装検証でその実行コアが **DB接続経路で hard SIGSEGV クラッシュ**することが判明(env・`/etc/protocols`・ヒープサイズは実験で無関係と棄却済み。同一コードはソース実行では正常)。ユーザー承認のもと、production イメージを **「ソースから起動」方式**(SBCL+qlot、dev と同じ経路、swank/cl-mcp 抜き、tini で SIGTERM graceful、`ros dynamic-space-size=1024` でヒープ上限、SCRAM 用 uax-15 をビルド時に焼込み、`APP_ENV=production` で Hunchentoot debug 無効)へ変更した。以下 §3.1 の save-lisp-and-die 記述はこの方式に読み替えること。**運用手順は `docs/DEPLOYMENT.md` が最新**。他章(compose/Caddy/Postgres/バックアップ/メモリ収容/固定費)は不変(実測 idle RSS ~170MiB で §3.5 の見積り内)。
 
 ## 1. ゴールと非ゴール
 
