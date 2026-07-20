@@ -115,7 +115,9 @@
                "recurya/web/routes-novel"
                "recurya/web/server"
                ;; Seed / bootstrap
-               "recurya/seed/official-content")
+               "recurya/seed/official-content"
+               ;; Production executable entry point (recurya-main / boot!)
+               "recurya/main")
   :description "Recurya - Lisp learning game web system"
   :in-order-to ((test-op (test-op "recurya/tests"))))
 
