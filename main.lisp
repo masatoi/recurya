@@ -53,7 +53,9 @@ listening. Non-blocking: START! uses clackup with :use-thread t."
 (defun recurya-main ()
   "Executable toplevel for the production core. Boots the app, installs signal
 handlers, and blocks the main thread until SIGTERM/SIGINT; then stops the
-server gracefully and exits 0."
+server gracefully and exits 0. A failure during BOOT! (e.g. the database is
+unreachable) is intentionally left to propagate, so the process fails fast with
+a non-zero exit."
   (setf *shutdown-requested* nil)
   (boot!)
   (flet ((request-shutdown (signo info context)

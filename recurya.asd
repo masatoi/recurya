@@ -173,6 +173,8 @@
                "recurya/tests/integration/novel-recursion-lesson"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
+               ;; Production entry-point smoke test
+               "recurya/tests/main"
                ;; Main test runner
                "recurya/tests/all")
   :perform (test-op (o c)
