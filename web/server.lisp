@@ -149,9 +149,9 @@ application database, which is safe under Hunchentoot's worker threads."
 
   (let ((port (or port (get-port))))
     ;; Load timezone database for local-time
-    ;; In the saved-core production image the bundled zoneinfo path may be
-    ;; absent, so keep this non-fatal: UTC/ISO-8601 timestamps work regardless
-    ;; of the named-zone database.
+    ;; The bundled local-time zoneinfo may be absent in some deploy images, so
+    ;; keep this non-fatal: UTC/ISO-8601 timestamps work regardless of the
+    ;; named-zone database.
     (handler-case
         (progn
           (local-time:reread-timezone-repository)

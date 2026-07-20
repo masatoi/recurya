@@ -9,20 +9,22 @@ ENV_FILE="${ENV_FILE:-.env.prod}"
 BACKUP_DIR="${BACKUP_DIR:-./backups}"
 KEEP_DAYS="${KEEP_DAYS:-7}"
 
-# Pull DB/user from the env file if present (POSTGRES_DB / POSTGRES_USER).
-if [ -f "$ENV_FILE" ]; then
-  # shellcheck disable=SC1090
-  set -a; . "$ENV_FILE"; set +a
-fi
-DB="${POSTGRES_DB:-recurya}"
-USER="${POSTGRES_USER:-postgres}"
+# Pull DB/user from the env file if present. Extract only the keys we need
+# instead of sourcing the file, so a password containing shell metacharacters
+# cannot break parsing or execute code in this context.
+read_env() { [ -f "$ENV_FILE" ] && grep -E "^$1=" "$ENV_FILE" | tail -n1 | cut -d= -f2- || true; }
+DB="${POSTGRES_DB:-$(read_env POSTGRES_DB)}"; DB="${DB:-recurya}"
+USER="${POSTGRES_USER:-$(read_env POSTGRES_USER)}"; USER="${USER:-postgres}"
 
 mkdir -p "$BACKUP_DIR"
 STAMP="$(date +%Y%m%d-%H%M%S)"
 OUT="$BACKUP_DIR/recurya-$STAMP.sql.gz"
 
+# Dump to a temp file and rename on success, so a failed dump never leaves a
+# truncated file that looks like a valid backup (and survives rotation).
 docker compose --env-file "$ENV_FILE" -f "$COMPOSE_FILE" exec -T postgres \
-  pg_dump -U "$USER" -d "$DB" | gzip > "$OUT"
+  pg_dump -U "$USER" -d "$DB" | gzip > "$OUT.tmp"
+mv "$OUT.tmp" "$OUT"
 
 echo "backup written: $OUT"
 

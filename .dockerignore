@@ -1,3 +1,9 @@
+# Secrets — MUST be excluded: Dockerfile.prod does `COPY . .`, so any .env in
+# the build context would be baked into an image layer and pushed to GHCR.
+# (.dockerignore is independent of .gitignore.) The image needs no .env file.
+.env
+.env.*
+
 # Git
 .git
 .gitignore
