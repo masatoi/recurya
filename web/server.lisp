@@ -169,6 +169,12 @@ application database, which is safe under Hunchentoot's worker threads."
                                :address address
                                :server :hunchentoot
                                :use-thread t
+                               ;; In production (APP_ENV=production) disable the
+                               ;; debug error page so a handler error returns 500
+                               ;; instead of invoking the debugger (which hangs
+                               ;; without a TTY). Dev keeps debug on.
+                               :debug (not (equalp (uiop:getenv "APP_ENV")
+                                                   "production"))
                                :silent nil))
       (log:info "Web server started on http://~A:~A" address port)
       *handler*)))

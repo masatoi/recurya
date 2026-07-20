@@ -8,8 +8,6 @@
 
 (defpackage #:recurya/main
   (:use #:cl)
-  (:import-from #:cl+ssl
-                #:reload)
   (:import-from #:recurya/db/core
                 #:connect-to-database)
   (:import-from #:recurya/web/server
@@ -26,22 +24,9 @@
   "Set by the SIGTERM/SIGINT handler so the main loop can stop the server in a
 normal (non-signal) context.")
 
-(defun reload-foreign-libraries! ()
-  "Reload foreign libraries after a save-lisp-and-die restore.
-
-A saved core loses its live foreign-library handles, so cl+ssl (used by
-dexador for the OAuth HTTPS calls to Google/GitHub) must reopen libssl before
-the first request. Failures are logged, not fatal, so the operator can still
-reach the box even if the TLS stack is broken."
-  (handler-case (cl+ssl:reload)
-    (error (e)
-      (format *error-output* "~&[boot] WARN: cl+ssl reload failed: ~A~%" e)
-      (force-output *error-output*))))
-
 (defun boot! ()
   "Run the production startup sequence and return once the web server thread is
 listening. Non-blocking: START! uses clackup with :use-thread t."
-  (reload-foreign-libraries!)
   (recurya/db/core:start!)
   (handler-case (seed-official-content!)
     (error (e)
@@ -57,7 +42,18 @@ server gracefully and exits 0. A failure during BOOT! (e.g. the database is
 unreachable) is intentionally left to propagate, so the process fails fast with
 a non-zero exit."
   (setf *shutdown-requested* nil)
-  (boot!)
+  ;; Surface a boot failure instead of exiting silently: log the condition and
+  ;; a backtrace (captured in the signalling context via handler-bind) before
+  ;; failing fast. Essential for diagnosing production boot failures.
+  (handler-bind
+      ((serious-condition
+         (lambda (c)
+           (format *error-output* "~&[boot] FATAL ~A: ~A~%" (type-of c) c)
+           (ignore-errors
+            (uiop:print-backtrace :stream *error-output* :count 50))
+           (finish-output *error-output*)
+           (sb-ext:exit :code 1 :abort t))))
+    (boot!))
   (flet ((request-shutdown (signo info context)
            (declare (ignore signo info context))
            (setf *shutdown-requested* t)))
