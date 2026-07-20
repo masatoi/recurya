@@ -46,8 +46,12 @@ Internet ─80/443─▶ Caddy ─HTTP:13000─▶ recurya(実行コア) ─TCP:
 - ランタイム共有ライブラリのみ導入: `libssl3` `libffi8` `ca-certificates` `tzdata`。
   - **libpq は不要**(cl-dbi + postmodern/cl-postgres は純Lisp TCP接続)。
   - **libev は不要**(サーバは hunchentoot。現開発Dockerfileの `libev-dev`/`libpq-dev` はランタイム不要)。
-- 非rootユーザで実行。実行コア `recurya` と `resources/`(静的アセット)をコピー。タイムゾーン Asia/Tokyo、外部フォーマット UTF-8。
-- `CMD ["/app/recurya"]`(コアが直接webサーバを起動)。
+- 非rootユーザで実行。実行コア `recurya` と、以下の**実行時ファイル依存**をコピー:
+  - `resources/`(静的アセット、build-app が `system-relative-pathname :recurya "resources/static/"` で参照)
+  - `docs/sicp/` と `docs/novel-lessons/`(seed が boot 毎に `system-relative-pathname :recurya` 経由で Markdown を読む。欠けると公式コースが seed されない)
+  - builder / runtime の `WORKDIR` を `/app` に揃え、コアが記憶するパスを runtime でも一致させる。
+- タイムゾーン Asia/Tokyo、外部フォーマット UTF-8。
+- `CMD ["/app/recurya", "--dynamic-space-size", "1024"]`(コアが直接webサーバを起動、ヒープ上限1GiB)。
 
 **新 toplevel `recurya-main`**(`web/server.lisp` に追加、cl-mcp 経由で編集)
 1. **foreign library の再ロード**(`cl+ssl:reload` 等)。save-lisp-and-die 後は FFI ライブラリのハンドルが無効化されるため、OAuth の HTTPS 通信(dexador → cl+ssl)前に必須。
