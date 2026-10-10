@@ -116,8 +116,9 @@ called, or that the case report was unavailable."
 (defun function-spec-passes-p (name)
   "Check the function spec of NAME with *FUNCTION-SPEC-TRIALS* trials.
 Return (VALUES PASSED-P RESULT); PASSED-P needs :PASSED, at least one trial
-that :PRE admitted, and no declared case that was never called.  A trial or
-rejection count that is not an integer is unknown and fails the check."
+that :PRE admitted, and no declared case that was never called.  A trial count
+that is not an integer, or a rejection count that is neither NIL (none) nor an
+integer, is unknown and fails the check."
   (let* ((result (check-function name :trials *function-spec-trials*))
          (trials (property-result-trials result))
          (rejected (or (function-check-result-rejected result) 0)))

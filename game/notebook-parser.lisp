@@ -465,8 +465,9 @@
    `input:'; and each cell carries only the fields its kind's format
    below can express: DESCRIPTION is \"\" for :prose, :code-eval and
    :scene, TEST-CASES is empty for every kind but :code-exercise, and
-   GATED-P is NIL for every kind but :code-solution.  Cells that differ from canonical only by leading or
-   trailing whitespace in bodies become canonical after one round trip.
+   GATED-P is NIL for every kind but :code-solution.  Cells that differ
+   from canonical only by leading or trailing whitespace in bodies become
+   canonical after one round trip.
    Cells are separated by exactly one blank line; no trailing newline is
    emitted.
 
