@@ -2,9 +2,11 @@
 ;;;;
 ;;;; Canonical cells are the fixed points of a render/parse round trip
 ;;;; (design doc F-A1/F-A2): bodies are 1-4 non-blank lines with no outer
-;;;; whitespace, optionally separated by single blank lines, and no line
-;;;; starts with ===; test-case fields are single trimmed lines without
-;;;; "input:" or "output:".  Loose cells add outer whitespace to the body.
+;;;; whitespace (lines after the first may be indented), optionally separated
+;;;; by one or two blank lines, and no line starts with ===; exercise
+;;;; descriptions are 1-3 trimmed lines; solution descriptions and test-case
+;;;; fields are single trimmed lines without "input:" or "output:".  Loose
+;;;; cells add outer whitespace to the body.
 
 (defpackage #:recurya/specs/game/notebook
   (:use #:cl)
@@ -26,7 +28,8 @@
                 #:test-case-description)
   (:export #:canonical-cells
            #:loose-cells
-           #:cell-view))
+           #:cell-view
+           #:trimmed-cell-view))
 (in-package #:recurya/specs/game/notebook)
 
 (defparameter *body-words*
@@ -53,14 +56,30 @@ and an input: line that only matters inside an expect block.")
                            (loop repeat (1+ (random 3))
                                  collect (random-element words)))))
 
+(defun random-indent ()
+  "Leading spaces for a non-first body line: none about half the time."
+  (random-element #("" "" "" " " "  " "    ")))
+
 (defun canonical-body ()
-  "1-4 non-blank lines, optionally separated by single blank lines."
+  "1-4 non-blank lines, the first unindented and the rest sometimes indented,
+optionally separated by one or two blank lines."
   (let ((lines '()))
     (dotimes (i (1+ (random 4)))
-      (when (and (plusp i) (zerop (random 4)))
-        (push "" lines))
-      (push (random-line *body-words*) lines))
+      (when (plusp i)
+        (case (random 6)
+          ((0 1) (push "" lines))
+          (2 (push "" lines) (push "" lines))))
+      (push (if (zerop i)
+                (random-line *body-words*)
+                (concatenate 'string (random-indent) (random-line *body-words*)))
+            lines))
     (format nil "~{~A~^~%~}" (nreverse lines))))
+
+(defun exercise-description ()
+  "1-3 trimmed lines: a bare ===exercise=== header takes a multi-line
+description up to its ===code=== line."
+  (format nil "~{~A~^~%~}"
+          (loop repeat (1+ (random 3)) collect (random-line *test-case-words*))))
 
 (defun random-test-case ()
   "A canonical test case."
@@ -74,9 +93,10 @@ and an input: line that only matters inside an expect block.")
   (let ((kind (random-element *cell-kinds*)))
     (make-cell :kind kind
                :body (canonical-body)
-               :description (if (member kind '(:code-exercise :code-solution))
-                                (random-line *test-case-words*)
-                                "")
+               :description (case kind
+                              (:code-exercise (exercise-description))
+                              (:code-solution (random-line *test-case-words*))
+                              (t ""))
                :test-cases (when (eq kind :code-exercise)
                              (loop repeat (random 4) collect (random-test-case)))
                :gated-p (and (eq kind :code-solution) (zerop (random 2))))))
@@ -117,3 +137,12 @@ EQUAL.  The id is left out: the parser assigns fresh ids."
         (cell-description cell)
         (mapcar #'test-case-view (cell-test-cases cell))
         (cell-gated-p cell)))
+
+(defun trimmed-cell-view (cell)
+  "CELL-VIEW of CELL with its body stripped of outer spaces, tabs and line
+breaks: the canonical cell a loose cell must become after one round trip.
+Computed from CELL alone, without the parser."
+  (let ((view (cell-view cell)))
+    (list* (first view)
+           (string-trim '(#\Space #\Tab #\Newline #\Return) (second view))
+           (cddr view))))

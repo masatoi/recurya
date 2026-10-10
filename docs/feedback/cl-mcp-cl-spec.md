@@ -82,3 +82,11 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: `notebook-roundtrip` は緑のまま。パーサは空行なしでも受理するため、docstring の「ちょうど 1 つの空行」は契約外 (出力形式の仕様であり往復性質ではない)。別変異 (expected の代わりに input を出力) は赤になった。
 - **期待**: 出力の正確な区切りまで縛りたいなら「render の出力が `\n\n===` で区切られる」旨の別 Property が必要 (サブプロジェクト B/C で検討)。
 - **回避策**: なし。
+
+## 2026-10-10 — トップレベルフォーム外のコメント (ファイルヘッダ) を編集する手段がない
+- **ツール/対象**: cl-mcp `lisp-edit-form` / `lisp-patch-form` / `fs-write-file`
+- **分類**: UX
+- **状況**: 契約の生成器を広げたので、`specs/game/notebook.lisp` 冒頭の `;;;;` ヘッダコメント (canonical 形の説明) を実態に合わせて直したかった。
+- **起きたこと**: `lisp-patch-form` はフォーム内だけが対象で `old_text not found in DEFPACKAGE ...`。`lisp-edit-form` はコメントのみの挿入はできるが既存コメントの置換・削除はできない。`fs-write-file` は `Cannot overwrite existing .lisp/.asd with fs-write-file; use lisp-edit-form.` で拒否 (ファイルはパース可能なので例外条件に当たらない)。
+- **期待**: ファイル先頭/フォーム間のコメントブロックを対象にできる編集手段 (例: `lisp-patch-form` に `form_type: "comment"` やファイル単位のテキストパッチモード、またはパース検証付きの全体上書き)。
+- **回避策**: スクラッチパッドにコメント行だけの unified diff を書き `git apply` で適用し、その後 `lisp-check-parens` と `load-system` で検証。

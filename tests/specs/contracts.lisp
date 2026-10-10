@@ -1,11 +1,13 @@
 ;;;; tests/specs/contracts.lisp --- Run every project cl-spec contract under Rove.
 ;;;;
 ;;;; Loads RECURYA/SPECS/ALL, checks that the expected specs, properties and
-;;;; function specs are registered, then runs each one: properties with the
-;;;; :SMOKE profile, function specs with *FUNCTION-SPEC-TRIALS* trials.  A run
-;;;; that never exercised its target (zero trials, or every input refused by
-;;;; :PRE) fails: :SKIPPED is not :PASSED.  A failure message carries the name,
-;;;; status, seed and counterexample so `spec-check' can replay it.
+;;;; function specs are registered and selected by the run filters, then runs
+;;;; each one: properties with the :SMOKE profile, function specs with
+;;;; *FUNCTION-SPEC-TRIALS* trials.  A run that never exercised its target
+;;;; (zero trials, or every input refused by :PRE) fails: :SKIPPED is not
+;;;; :PASSED.  A function spec also fails when a declared case was never
+;;;; called.  A failure message carries the name, status, seed and
+;;;; counterexample (and case coverage) so `spec-check' can replay it.
 
 (defpackage #:recurya/tests/specs/contracts
   (:use #:cl #:rove)
@@ -20,7 +22,10 @@
                 #:property-result-trials
                 #:property-result-seed
                 #:property-result-counterexample
-                #:function-check-result-rejected))
+                #:function-check-result-rejected
+                #:function-check-result-case-report)
+  (:import-from #:alexandria
+                #:starts-with-subseq))
 (in-package #:recurya/tests/specs/contracts)
 
 (defparameter *function-spec-trials* 50
@@ -56,7 +61,7 @@
   "True when SYMBOL's home package name starts with PREFIX."
   (let ((package (symbol-package symbol)))
     (and package
-         (alexandria:starts-with-subseq prefix (package-name package)))))
+         (starts-with-subseq prefix (package-name package)))))
 
 (defun project-properties ()
   "Registered properties defined in a RECURYA/SPECS/ package."
@@ -85,14 +90,38 @@ Return (VALUES PASSED-P RESULT); PASSED-P needs :PASSED and at least one trial."
                  (plusp (property-result-trials result)))
             result)))
 
+(defun never-called-cases (result)
+  "Declared cases of the function-check RESULT that were never called.
+Return (VALUES NAMES KNOWN-P).  KNOWN-P is NIL when cl-spec gave no usable
+case report (for example :NOT-COLLECTED); NAMES is then NIL too, so an
+unknown report alone does not fail a run, but FUNCTION-FAILURE-REPORT shows it."
+  (let ((report (function-check-result-case-report result)))
+    (if (and (consp report) (listp (getf report :cases)))
+        (values (loop for case in (getf report :cases)
+                      for called = (and (consp case) (getf case :called))
+                      when (and (integerp called) (zerop called))
+                        collect (getf case :name))
+                t)
+        (values nil nil))))
+
+(defun function-failure-report (name result)
+  "FAILURE-REPORT for a function spec, plus which declared cases were never
+called, or that the case report was unavailable."
+  (multiple-value-bind (uncalled known-p) (never-called-cases result)
+    (format nil "~A ~:[case-report=unknown (~S)~;never-called-cases=~S~]"
+            (failure-report name result)
+            known-p
+            (if known-p uncalled (function-check-result-case-report result)))))
+
 (defun function-spec-passes-p (name)
   "Check the function spec of NAME with *FUNCTION-SPEC-TRIALS* trials.
-Return (VALUES PASSED-P RESULT); PASSED-P needs :PASSED and at least one trial
-that :PRE admitted."
+Return (VALUES PASSED-P RESULT); PASSED-P needs :PASSED, at least one trial
+that :PRE admitted, and no declared case that was never called."
   (let* ((result (check-function name :trials *function-spec-trials*))
          (rejected (or (function-check-result-rejected result) 0)))
     (values (and (eq (property-result-status result) :passed)
-                 (plusp (- (property-result-trials result) rejected)))
+                 (plusp (- (property-result-trials result) rejected))
+                 (null (never-called-cases result)))
             result)))
 
 (defun registered-p (entry registered)
@@ -115,7 +144,18 @@ that :PRE admitted."
     (let ((registered (list-function-specs)))
       (dolist (entry *expected-function-specs*)
         (ok (registered-p entry registered)
-            (format nil "function spec ~A::~A is registered" (car entry) (cdr entry)))))))
+            (format nil "function spec ~A::~A is registered" (car entry) (cdr entry))))))
+  (testing "expected contracts are selected by the run filters"
+    (let ((properties (project-properties))
+          (function-specs (project-function-specs)))
+      (dolist (entry *expected-properties*)
+        (ok (registered-p entry properties)
+            (format nil "property ~A::~A is in PROJECT-PROPERTIES"
+                    (car entry) (cdr entry))))
+      (dolist (entry *expected-function-specs*)
+        (ok (registered-p entry function-specs)
+            (format nil "function spec ~A::~A is in PROJECT-FUNCTION-SPECS"
+                    (car entry) (cdr entry)))))))
 
 (deftest project-properties-pass
   (dolist (name (project-properties))
@@ -125,4 +165,4 @@ that :PRE admitted."
 (deftest project-function-specs-pass
   (dolist (name (project-function-specs))
     (multiple-value-bind (passed-p result) (function-spec-passes-p name)
-      (ok passed-p (failure-report name result)))))
+      (ok passed-p (function-failure-report name result)))))

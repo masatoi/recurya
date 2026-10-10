@@ -458,7 +458,9 @@
    in (KIND BODY DESCRIPTION TEST-CASES GATED-P) to the input when the
    input is canonical: bodies are non-empty, have no leading or trailing
    whitespace (the parser trims them) and no line starting with `===';
-   descriptions and test-case fields are single trimmed lines; each
+   exercise descriptions are one or more lines without outer whitespace
+   and no line starting with `==='; solution descriptions and test-case
+   fields are single trimmed lines; each
    expected value is non-empty and no one-line expected value starts with
    `input:'.  Cells that differ from canonical only by leading or
    trailing whitespace in bodies become canonical after one round trip.

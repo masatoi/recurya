@@ -18,7 +18,10 @@
   (:import-from #:recurya/specs/game/notebook
                 #:canonical-cells
                 #:loose-cells
-                #:cell-view)
+                #:cell-view
+                #:trimmed-cell-view)
+  (:import-from #:cl-ppcre
+                #:scan)
   (:import-from #:recurya/game/notebook-parser
                 #:parse-notebook-body
                 #:cells->body-md
@@ -31,7 +34,7 @@
 
 (defun fence-shaped-p (line)
   "True when LINE has the ===...=== shape of a fence header."
-  (and (cl-ppcre:scan *fence-shape* line) t))
+  (and (scan *fence-shape* line) t))
 
 (defparameter *exact-headers*
   '(("===prose===" . :prose)
@@ -120,15 +123,17 @@ non-empty description; anything else is not recognised."
          (equal (mapcar #'cell-view parsed) (mapcar #'cell-view cells)))))
 
 (defproperty notebook-roundtrip-idempotent ((cells loose-cells))
-  "One render/parse round normalizes cells whose bodies carry outer
-whitespace, without parse errors; a second round changes nothing, and every
-parsed cell has a notebook cell kind."
+  "One render/parse round turns cells whose bodies carry outer whitespace into
+their canonical form (the same cells with bodies trimmed), without parse
+errors; a second round changes nothing, and every parsed cell has a notebook
+cell kind."
   (:about cells->body-md)
   (:kind :idempotence)
   (:trials (:smoke 50 :normal 300))
   (multiple-value-bind (once errors) (round-trip cells)
     (let ((twice (round-trip once)))
       (and (null errors)
+           (equal (mapcar #'cell-view once) (mapcar #'trimmed-cell-view cells))
            (equal (mapcar #'cell-view once) (mapcar #'cell-view twice))
            (every (lambda (cell)
                     (validp 'notebook-cell-kind (first (cell-view cell))))

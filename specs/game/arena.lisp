@@ -24,7 +24,6 @@
                 #:parse-action
                 #:action->delta
                 #:apply-move
-                #:wall-p
                 #:manhattan-distance
                 #:copy-grid))
 (in-package #:recurya/specs/game/arena)
@@ -69,12 +68,18 @@ downward and column grows rightward, so :UP decreases the row.")
           (cond ((< roll 3) (grid-set! grid row col :wall))
                 ((< roll 5) (grid-set! grid row col :resource))))))))
 
+(defun oracle-blocked-cell-p (grid row col)
+  "True when (ROW, COL) cannot be entered per APPLY-MOVE's docstring: it is
+off the board or a :WALL.  Independent of the engine's WALL-P/IN-BOUNDS-P."
+  (or (not (array-in-bounds-p grid row col))
+      (eq (aref grid row col) :wall)))
+
 (defun open-positions (grid)
   "Every in-bounds, non-wall (ROW . COL) of GRID."
   (let ((positions '()))
     (dotimes (row (array-dimension grid 0) positions)
       (dotimes (col (array-dimension grid 1))
-        (unless (wall-p grid row col)
+        (unless (oracle-blocked-cell-p grid row col)
           (push (cons row col) positions))))))
 
 (defun step-target (pos action)
@@ -89,7 +94,7 @@ a non-movement action.  Independent of ACTION->DELTA."
 into a wall or off the board (APPLY-MOVE's docstring)."
   (let ((target (step-target pos action)))
     (or (null target)
-        (wall-p grid (car target) (cdr target)))))
+        (oracle-blocked-cell-p grid (car target) (cdr target)))))
 
 ;;; Generators
 
@@ -152,13 +157,13 @@ anything else becomes :WAIT."
 a blocked move or a non-movement action leaves the position unchanged."
   (:args (grid arena-grid) (pos grid-position) (action arena-action))
   (:args-generator apply-move-arguments)
-  (:pre (not (wall-p grid (car pos) (cdr pos))))
+  (:pre (not (oracle-blocked-cell-p grid (car pos) (cdr pos))))
   (:cases
     (:moves
       (:when (not (blocked-p grid pos action)))
       (:returns grid-position)
       (:post (and (equal result (step-target pos action))
-                  (not (wall-p grid (car result) (cdr result))))))
+                  (not (oracle-blocked-cell-p grid (car result) (cdr result))))))
     (:stays
       (:when (blocked-p grid pos action))
       (:returns grid-position)
