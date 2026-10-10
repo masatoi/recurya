@@ -43,11 +43,12 @@ tests/specs/contracts.lisp      ; 期待リストに追加
   kind ごとの欄の制約 (A の canonical) は課さない: JSONB は欄をそのまま保存するため。
 - **保存形ハッシュ** (`stored-hash`): JSON テキストを組み立てて `parse-json` で読む
   (jzon の実際の値表現を使うため)。各キーを独立に「正常値 / 欠損 / `null`」にする。
-  `kind` は既知 5 種 / `""` / 未知の文字列 / `null` / 欠損、`gated` は
-  `true` / `false` / `null` / `"false"` (既存のレガシー値) / 欠損、`test-cases` は
-  配列 / `null` / 欠損 (配列要素の各欄も同様に正常・欠損・`null`)。
+  `kind` は既知 5 種 / 大小を混ぜた既知名 / `""` / 未知の文字列 / `null` / 欠損、
+  `gated` は `true` / `false` / `null` / `"false"` (既存のレガシー値) / `"true"` / `1` /
+  欠損、`test-cases` は配列 / `false` / `null` / 欠損。配列要素はオブジェクト
+  (各欄も同様に正常・欠損・`null`) のほか、時々 `null` / `1` / `"x"` を混ぜる。
 - **編集シナリオ** (`id-edit-scenario`): `(CELLS NEW-CELL POSITION)` を返す。CELLS は
-  一意な id (`id-0`, `id-1`, ...) を付けた正規形セル 1〜6 件 (3 回に 1 回は 1 件を複製)、
+  一意な id (`id-0`, `id-1`, ...) を付けた正規形セル 1〜5 件と、3 回に 1 回はそのうち 1 件の複製 (最大 6 件)、
   NEW-CELL は照合キーが CELLS のどれとも異なる正規形セル (半分は近似重複)、
   POSITION は挿入位置。
 
@@ -58,12 +59,14 @@ tests/specs/contracts.lisp      ; 期待リストに追加
 - 入力: `stored-cell`。
 - 結果はハッシュテーブルで、キーはちょうど `cell-id kind body description gated test-cases`。
 - `kind` はリテラル表 (`:prose`→`"prose"` … `:code-solution`→`"code-solution"`) と一致。
+  本番は `*cell-kinds-by-name*` を読み書き両方で使い、表にない kind の書き込みはエラーにする
+  (新しい kind を表に足し忘れると、読み戻しで `:prose` になり ID 引き継ぎが黙って壊れるため)。
 - `cell-id` は id (NIL なら `""`)、`body` / `description` はセルの値と `string=`。
 - `gated` は T / NIL で `cell-gated-p` と一致。
 - `test-cases` はリストで、各要素はキーがちょうど `input expected description` の
   ハッシュ。値は元の test-case と一致し、順序も保つ。
 
-### Property `cell-jsonb-roundtrip` (`:about cell->jsonb-form`)
+### Property `cell-jsonb-roundtrip` (`:about cell->jsonb-form jsonb-hash->cell`)
 
 `stored-cell` について
 `(jsonb-hash->cell (parse-json (json->string (cell->jsonb-form cell))))` が
@@ -79,11 +82,12 @@ test-cases が空 (jzon は `false` を出す)、gated NIL の場合を含む。
   (id / body / description は `""`、test-cases は空リスト)。
 - kind: 5 種の名前に大小無視で一致すればその keyword (現行の string-upcase による受理を保つ)。`""`・未知・`null`・欠損は `:prose`
   (現状の「空なら :prose」を延長。描画側は `ecase` なので未知 keyword は描画で落ちる)。
-- gated-p: JSON `true` のときだけ T。`false`・`null`・`"false"`・欠損は NIL。
-- test-cases: 配列の各要素を順に test-case にし、欄の欠損・`null` は `""`。
+- gated-p: JSON `true` のときだけ T。`false`・`null`・`"false"`・`"true"`・数値・欠損は NIL。
+- test-cases: 配列のオブジェクト要素を順に test-case にし (オブジェクト以外の要素は飛ばす)、
+  欄の欠損・`null` は `""`。配列以外は test-case なし。
 - 期待値はすべて生成器が保持する「元の JSON の意図」から計算し、実装を呼ばない。
 
-### Property `edit-preserves-cell-ids` (`:about parse-notebook-body`)
+### Property `edit-preserves-cell-ids` (`:about parse-notebook-body jsonb-hash->cell`)
 
 `id-edit-scenario` の CELLS を JSONB 往復させたものを EXISTING-CELLS とし、
 ランダムな位置に新しい正規形セルを 1 つ挿入した本文を `parse-notebook-body` に渡すと:

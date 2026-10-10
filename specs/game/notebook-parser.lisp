@@ -145,7 +145,8 @@ cell kind."
 (defproperty body-md-cell-separator ((cells canonical-cells))
   "CELLS->BODY-MD separates cells by exactly one blank line and emits no
 leading or trailing newline: the whole rendering is the single-cell renderings
-joined by one blank line, and each of those starts and ends with a non-newline."
+joined by one blank line, and each of those starts and ends with a non-newline.
+This pins the join only; NOTEBOOK-ROUNDTRIP covers each cell's own content."
   (:about cells->body-md)
   (:kind :invariant)
   (:trials (:smoke 50 :normal 300))

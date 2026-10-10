@@ -25,13 +25,30 @@
 
 (in-package #:recurya/game/notebook-jsonb)
 
+(defparameter *cell-kinds-by-name*
+  '(("prose" . :prose) ("code-eval" . :code-eval) ("code-exercise" . :code-exercise)
+    ("code-solution" . :code-solution) ("scene" . :scene))
+  "Stored kind name <-> cell kind keyword, used by both `cell->jsonb-form'
+(which signals on a kind missing here) and `jsonb-hash->cell'. A new cell
+kind must be added here too: see the `cell' struct docstring in
+game/notebook.lisp and the ecase in web/ui/notebook.lisp `render-cell'.")
+
+(defun cell-kind-name (kind)
+  "The stored name of the cell KIND keyword. Signals an error for a kind
+missing from *CELL-KINDS-BY-NAME*, so a new kind cannot be written in a form
+that would read back as :prose and lose its id carry-over."
+  (or (car (rassoc kind *cell-kinds-by-name*))
+      (error "cell->jsonb-form: unknown cell kind ~S (add it to ~S)"
+             kind '*cell-kinds-by-name*)))
+
 (defun cell->jsonb-form (cell)
   "Convert a cell struct into a hash-table that jzon serializes as a JSON
 object. Pairs with `jsonb-hash->cell' to round-trip cells through the
-JSONB column while preserving stable cell ids across edits."
+JSONB column while preserving stable cell ids across edits. Signals an
+error for a cell kind missing from *CELL-KINDS-BY-NAME*."
   (let ((h (make-hash-table :test 'equal)))
     (setf (gethash "cell-id"     h) (or (cell-id cell) "")
-          (gethash "kind"        h) (string-downcase (symbol-name (cell-kind cell)))
+          (gethash "kind"        h) (cell-kind-name (cell-kind cell))
           (gethash "body"        h) (or (cell-body cell) "")
           (gethash "description" h) (cell-description cell)
           (gethash "gated"       h) (and (cell-gated-p cell) t)
@@ -44,14 +61,6 @@ JSONB column while preserving stable cell ids across edits."
                       th))
                   (cell-test-cases cell)))
     h))
-
-(defparameter *cell-kinds-by-name*
-  ;; A new cell kind must be added here too: see the `cell' struct docstring in
-  ;; game/notebook.lisp and the ecase in web/ui/notebook.lisp `render-cell'.
-  ;; Otherwise it reads back as :prose and loses its id carry-over.
-  '(("prose" . :prose) ("code-eval" . :code-eval) ("code-exercise" . :code-exercise)
-    ("code-solution" . :code-solution) ("scene" . :scene))
-  "Stored kind name -> cell kind keyword, the inverse of `cell->jsonb-form'.")
 
 (defun json-string (table key)
   "TABLE's value for KEY when it is a string; otherwise (missing, JSON null as

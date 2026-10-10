@@ -109,7 +109,7 @@ JSON->STRING, PARSE-JSON (production's wrappers), JSONB-HASH->CELL."
 (defproperty cell-jsonb-roundtrip ((input-cell stored-cell))
   "A cell written to the JSONB column and read back keeps its id, kind, body,
 description, test cases and gate, whatever strings its fields hold."
-  (:about cell->jsonb-form)
+  (:about cell->jsonb-form jsonb-hash->cell)
   (:kind :roundtrip)
   (:trials (:smoke 100 :normal 500))
   (equal (stored-view (jsonb-round-trip input-cell)) (stored-view input-cell)))
@@ -254,8 +254,9 @@ or the kind (between the description-less kinds)."
     copy))
 
 (defgenerator id-edit-scenario ()
-  "(CELLS NEW-CELL POSITION): 1-6 fresh canonical CELLS with ids id-0, id-1, ...
-(a third of the time one of them is duplicated), a canonical NEW-CELL whose
+  "(CELLS NEW-CELL POSITION): 1-5 fresh canonical CELLS plus, a third of the
+time, a copy of one of them (so up to 6), with ids id-0, id-1, ...; a canonical
+NEW-CELL whose
 match key differs from every cell in CELLS (half the time a near duplicate of
 one of them), and the POSITION at which an author inserts it."
   (let ((cells (loop repeat (1+ (random 5)) collect (random-canonical-cell))))
@@ -279,7 +280,7 @@ one of them), and the POSITION at which an author inserts it."
   "Inserting one new cell and re-parsing, with the stored cells read back from
 the JSONB column as EXISTING-CELLS, keeps every existing cell's id in order,
 gives the new cell a fresh non-empty id, and leaves all ids distinct."
-  (:about parse-notebook-body)
+  (:about parse-notebook-body jsonb-hash->cell)
   (:kind :invariant)
   (:trials (:smoke 200 :normal 1000))
   (destructuring-bind (cells new-cell position) scenario

@@ -122,3 +122,11 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: 生成器が「description だけ違う近似重複」を作る確率が低く、smoke 50 回では緑のまま。:normal 300 回で初めて赤になった。近似重複を意図的に作る生成器に直し、smoke を 200 回にして 5 回連続で赤を確認。
 - **期待**: ケースや「興味のある分布」の到達回数を Property でも報告する仕組み (Function Spec の case report に相当するもの)。
 - **回避策**: 生成器で境界的な入力を明示的に作り、ミューテーションで感度を確かめる。
+
+## 2026-10-11 — `defproperty` の `(:about ...)` に複数シンボルを書けることが docstring から読めない
+- **ツール/対象**: cl-spec `defproperty` (`code-describe` で読む docstring)
+- **分類**: docs
+- **状況**: 往復 Property を `cell->jsonb-form` と `jsonb-hash->cell` の両方に紐づけたかった (独立レビューの指摘: `spec-check symbol=jsonb-hash->cell` が NO PROPERTIES になり、編集前のベースラインから往復が漏れる)。
+- **起きたこと**: docstring は `(:ABOUT ...)` とだけ書き、例は 1 シンボル。`macroexpand-1` で `:TARGETS '(A B)` になることを確かめてから使った。
+- **期待**: docstring に「`(:about sym1 sym2 ...)` で複数の対象に紐づけられる」と明記する。
+- **回避策**: `macroexpand-1` で展開形の `:TARGETS` を確認する。
