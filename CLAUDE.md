@@ -27,6 +27,7 @@ recurya/
 
 @prompts/common-lisp-expert.md
 @prompts/repl-driven-development.md
+@prompts/cl-spec-driven-development.md
 
 ## Special precautions when working with Lisp files
 

@@ -71,6 +71,10 @@ services:
       MCP_WORKER_INIT_SYSTEM: "recurya"
       MCP_WORKER_INIT_ENTRY: "recurya/web/server:start-worker-app"
       MCP_WORKER_INIT_MODE: "singleton"
+      # Opt-in cl-mcp tool group: spec-list / spec-symbol / spec-describe /
+      # spec-check (cl-spec contracts). Read by the parent when cl-mcp loads.
+      # The tools need cl-spec in the worker: load-system "cl-spec/check-it".
+      MCP_ENABLE_TOOL_GROUPS: "cl-spec"
       # OAuth dev stub: short-circuits the Google/GitHub flow for local
       # development. Safety gate inside web/oauth.lisp restricts activation
       # to localhost / ngrok hosts. See .env.example for details.
