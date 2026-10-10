@@ -33,9 +33,37 @@
   "True when LINE has the ===...=== shape of a fence header."
   (and (cl-ppcre:scan *fence-shape* line) t))
 
-(defun locked-solution-line-p (line)
-  "True when LINE starts with the ===solution-locked: header prefix."
-  (eql 0 (search "===solution-locked: " line)))
+(defparameter *exact-headers*
+  '(("===prose===" . :prose)
+    ("===eval===" . :code-eval)
+    ("===scene===" . :scene)
+    ("===exercise===" . :code-exercise)
+    ("===code===" . :code-delim)
+    ("===expect===" . :expect))
+  "Headers with no description, and the kind PARSE-FENCE-HEADER documents.")
+
+(defparameter *described-headers*
+  '(("===exercise: " :code-exercise nil t)
+    ("===solution: " :code-solution nil nil)
+    ("===solution-locked: " :code-solution t nil)
+    ("===expect: " :expect nil t))
+  "Described headers as (PREFIX KIND GATED-P DESCRIPTION-REQUIRED-P).")
+
+(defun expected-header (line)
+  "The documented (KIND DESCRIPTION GATED-P) for the fence-shaped LINE.
+The description is everything between the prefix and the final ===."
+  (let ((exact (assoc line *exact-headers* :test #'string=)))
+    (if exact
+        (list (cdr exact) nil nil)
+        (dolist (entry *described-headers* (list nil nil nil))
+          (destructuring-bind (prefix kind gated required) entry
+            (when (and (eql 0 (search prefix line))
+                       (>= (length line) (+ (length prefix) 3)))
+              (let ((description (subseq line (length prefix) (- (length line) 3))))
+                (return
+                  (if (and required (zerop (length description)))
+                      (list nil nil nil)
+                      (list kind description gated))))))))))
 
 (defun random-element (sequence)
   "Return a uniformly chosen element of the non-empty SEQUENCE."
@@ -60,9 +88,11 @@ quarter each."
 (defspec fence-line string (:generator fence-line))
 
 (defspec-function parse-fence-header
-  "A line without the ===...=== shape is never a header.  A header's kind is a
-fence kind; only ===solution-locked: ...=== is gated, and a line that is not
-recognised carries no description or gate."
+  "A line without the ===...=== shape is never a header.  Exact headers map to
+their documented kind with no description; described headers carry the text
+between their prefix and the final === as description, with only
+===solution-locked: ...=== gated.  Exercise and expect headers need a
+non-empty description; anything else is not recognised."
   (:args (line fence-line))
   (:cases
     (:not-fence-shaped
@@ -72,9 +102,8 @@ recognised carries no description or gate."
       (:when (fence-shaped-p line))
       (:returns (values (or null fence-kind) (or null string) t))
       (:post-values (kind description gated-p)
-        (and (if gated-p (eq kind :code-solution) t)
-             (if (null kind) (and (null description) (null gated-p)) t)
-             (eq (and gated-p t) (locked-solution-line-p line)))))))
+        (equal (list kind description (and gated-p t))
+               (expected-header line))))))
 
 (defun round-trip (cells)
   "Render CELLS and parse the result.  Return (VALUES CELLS ERRORS)."
@@ -91,14 +120,16 @@ recognised carries no description or gate."
          (equal (mapcar #'cell-view parsed) (mapcar #'cell-view cells)))))
 
 (defproperty notebook-roundtrip-idempotent ((cells loose-cells))
-  "One render/parse round normalizes any cells; a second round changes
-nothing, and every parsed cell has a notebook cell kind."
+  "One render/parse round normalizes cells whose bodies carry outer
+whitespace, without parse errors; a second round changes nothing, and every
+parsed cell has a notebook cell kind."
   (:about cells->body-md)
   (:kind :idempotence)
   (:trials (:smoke 50 :normal 300))
-  (let* ((once (round-trip cells))
-         (twice (round-trip once)))
-    (and (equal (mapcar #'cell-view once) (mapcar #'cell-view twice))
-         (every (lambda (cell)
-                  (validp 'notebook-cell-kind (first (cell-view cell))))
-                once))))
+  (multiple-value-bind (once errors) (round-trip cells)
+    (let ((twice (round-trip once)))
+      (and (null errors)
+           (equal (mapcar #'cell-view once) (mapcar #'cell-view twice))
+           (every (lambda (cell)
+                    (validp 'notebook-cell-kind (first (cell-view cell))))
+                  once)))))

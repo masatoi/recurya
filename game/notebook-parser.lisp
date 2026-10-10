@@ -456,11 +456,14 @@
 
    The result, when re-parsed by PARSE-NOTEBOOK-BODY, yields cells equal
    in (KIND BODY DESCRIPTION TEST-CASES GATED-P) to the input when the
-   input is canonical: bodies and test-case fields carry no leading or
-   trailing whitespace (the parser trims them), and no one-line expected
-   value starts with `input:'.  Any cells become canonical after one
-   round trip.  Cells are separated by exactly one blank line; no
-   trailing newline is emitted.
+   input is canonical: bodies are non-empty, have no leading or trailing
+   whitespace (the parser trims them) and no line starting with `===';
+   descriptions and test-case fields are single trimmed lines; each
+   expected value is non-empty and no one-line expected value starts with
+   `input:'.  Cells that differ from canonical only by leading or
+   trailing whitespace in bodies become canonical after one round trip.
+   Cells are separated by exactly one blank line; no trailing newline is
+   emitted.
 
    Output format per cell kind:
      :prose          -> `===prose===\\n<body>'
