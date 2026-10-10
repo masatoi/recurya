@@ -21,7 +21,6 @@
                 #:make-grid
                 #:grid-set!
                 ;; Internal helpers under contract.
-                #:*valid-action-strings*
                 #:parse-action
                 #:action->delta
                 #:apply-move
@@ -31,6 +30,16 @@
 (in-package #:recurya/specs/game/arena)
 
 ;;; Helpers
+
+(defparameter *action-names* '("up" "down" "left" "right" "wait" "pickup")
+  "The action names parse-action must accept, from its requirement: WardLisp
+symbols arrive as strings naming the six arena actions.  Independent of the
+engine's own *VALID-ACTION-STRINGS*.")
+
+(defparameter *expected-deltas*
+  '((:up . (-1 . 0)) (:down . (1 . 0)) (:left . (0 . -1)) (:right . (0 . 1)))
+  "Expected (DROW . DCOL) per movement action.  Arena convention: row grows
+downward and column grows rightward, so :UP decreases the row.")
 
 (defun random-element (sequence)
   "Return a uniformly chosen element of the non-empty SEQUENCE."
@@ -46,18 +55,19 @@
 (defun valid-action-name-p (value)
   "True when VALUE is a string naming an action, ignoring case."
   (and (stringp value)
-       (find value *valid-action-strings* :test #'string-equal)
+       (find value *action-names* :test #'string-equal)
        t))
 
 (defun random-arena-grid ()
-  "A fresh grid of 1..6 x 1..6 cells, about 30% of them walls."
+  "A fresh grid of 1..6 x 1..6 cells: about 30% walls, 20% resources."
   (let* ((rows (1+ (random 6)))
          (cols (1+ (random 6)))
          (grid (make-grid rows cols)))
     (dotimes (row rows grid)
       (dotimes (col cols)
-        (when (< (random 10) 3)
-          (grid-set! grid row col :wall))))))
+        (let ((roll (random 10)))
+          (cond ((< roll 3) (grid-set! grid row col :wall))
+                ((< roll 5) (grid-set! grid row col :resource))))))))
 
 (defun open-positions (grid)
   "Every in-bounds, non-wall (ROW . COL) of GRID."
@@ -68,8 +78,9 @@
           (push (cons row col) positions))))))
 
 (defun step-target (pos action)
-  "The (ROW . COL) one ACTION step from POS, or NIL for a non-movement action."
-  (let ((delta (action->delta action)))
+  "The (ROW . COL) one ACTION step from POS per *EXPECTED-DELTAS*, or NIL for
+a non-movement action.  Independent of ACTION->DELTA."
+  (let ((delta (cdr (assoc action *expected-deltas*))))
     (and delta
          (cons (+ (car pos) (car delta)) (+ (cdr pos) (cdr delta))))))
 
@@ -86,7 +97,7 @@ into a wall or off the board (APPLY-MOVE's docstring)."
   "A value WardLisp could hand PARSE-ACTION: action names in any case (about
 40%), near-miss strings, and non-strings."
   (case (random 5)
-    ((0 1) (random-mixed-case (random-element *valid-action-strings*)))
+    ((0 1) (random-mixed-case (random-element *action-names*)))
     (2 (random-element '("" "jump" "UPP" "wai" " up" "pick-up")))
     (3 (random-element '(nil 0 42 :up up)))
     (t (random-element '(#\u 1.5 ("up"))))))
@@ -131,7 +142,7 @@ anything else becomes :WAIT."
     (:movement
       (:when (member action '(:up :down :left :right)))
       (:returns (satisfies consp))
-      (:post (= 1 (+ (abs (car result)) (abs (cdr result))))))
+      (:post (equal result (cdr (assoc action *expected-deltas*)))))
     (:non-movement
       (:when (member action '(:wait :pickup)))
       (:returns null))))
@@ -162,7 +173,9 @@ symmetric, and obeys the triangle inequality."
   (:about manhattan-distance)
   (:kind :invariant)
   (:trials (:smoke 50 :normal 300))
-  (and (>= (manhattan-distance a b) 0)
+  (and (= (manhattan-distance a b)
+          (+ (abs (- (car a) (car b))) (abs (- (cdr a) (cdr b)))))
+       (>= (manhattan-distance a b) 0)
        (zerop (manhattan-distance a a))
        (= (manhattan-distance a b) (manhattan-distance b a))
        (<= (manhattan-distance a c)
@@ -180,5 +193,5 @@ leaves the source untouched."
          (progn
            (dotimes (row (array-dimension copy 0))
              (dotimes (col (array-dimension copy 1))
-               (grid-set! copy row col :resource)))
+               (grid-set! copy row col :copy-sentinel)))
            (equalp grid snapshot)))))
