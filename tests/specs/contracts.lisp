@@ -35,13 +35,16 @@
 
 (defparameter *expected-properties*
   '(("RECURYA/SPECS/GAME/ARENA" . "MANHATTAN-DISTANCE-METRIC")
-    ("RECURYA/SPECS/GAME/ARENA" . "COPY-GRID-INDEPENDENT"))
+    ("RECURYA/SPECS/GAME/ARENA" . "COPY-GRID-INDEPENDENT")
+    ("RECURYA/SPECS/GAME/NOTEBOOK-PARSER" . "NOTEBOOK-ROUNDTRIP")
+    ("RECURYA/SPECS/GAME/NOTEBOOK-PARSER" . "NOTEBOOK-ROUNDTRIP-IDEMPOTENT"))
   "Properties that must be registered, as (PACKAGE . SYMBOL) names.")
 
 (defparameter *expected-function-specs*
   '(("RECURYA/GAME/ARENA" . "PARSE-ACTION")
     ("RECURYA/GAME/ARENA" . "ACTION->DELTA")
-    ("RECURYA/GAME/ARENA" . "APPLY-MOVE"))
+    ("RECURYA/GAME/ARENA" . "APPLY-MOVE")
+    ("RECURYA/GAME/NOTEBOOK-PARSER" . "PARSE-FENCE-HEADER"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)

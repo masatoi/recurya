@@ -7,6 +7,7 @@
 (defpackage #:recurya/specs/all
   (:use #:cl)
   (:import-from #:recurya/specs/domain)
-  (:import-from #:recurya/specs/game/arena))
+  (:import-from #:recurya/specs/game/arena)
+  (:import-from #:recurya/specs/game/notebook-parser))
 
 (in-package #:recurya/specs/all)

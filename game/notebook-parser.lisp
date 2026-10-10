@@ -455,12 +455,17 @@
   "Render CELLS list back into the canonical body-md string.
 
    The result, when re-parsed by PARSE-NOTEBOOK-BODY, yields cells equal
-   in (KIND BODY DESCRIPTION TEST-CASES) to the input. Cells are
-   separated by exactly one blank line; no trailing newline is emitted.
+   in (KIND BODY DESCRIPTION TEST-CASES GATED-P) to the input when the
+   input is canonical: bodies and test-case fields carry no leading or
+   trailing whitespace (the parser trims them), and no one-line expected
+   value starts with `input:'.  Any cells become canonical after one
+   round trip.  Cells are separated by exactly one blank line; no
+   trailing newline is emitted.
 
    Output format per cell kind:
      :prose          -> `===prose===\\n<body>'
      :code-eval      -> `===eval===\\n<body>'
+     :scene          -> `===scene===\\n<body>'
      :code-exercise  -> `===exercise===\\n<description>\\n===code===\\n<body>'
                         followed, for each test-case, by
                           `===expect[: <description>]===\\n<expect-body>'
