@@ -15,6 +15,7 @@
                 #:defgenerator)
   (:import-from #:cl-spec/src/backends/check-it)
   (:import-from #:recurya/game/notebook
+                #:cell
                 #:make-cell
                 #:cell-kind
                 #:cell-body
@@ -26,7 +27,10 @@
                 #:test-case-input
                 #:test-case-expected
                 #:test-case-description)
-  (:export #:canonical-cells
+  (:export #:random-canonical-cell
+           #:test-case-view
+           #:stored-cell
+           #:canonical-cells
            #:loose-cells
            #:cell-view
            #:trimmed-cell-view))
@@ -100,6 +104,44 @@ description up to its ===code=== line."
                :test-cases (when (eq kind :code-exercise)
                              (loop repeat (random 4) collect (random-test-case)))
                :gated-p (and (eq kind :code-solution) (zerop (random 2))))))
+
+(defparameter *stored-strings*
+  (vector "" "x" "foo bar" (format nil "line1~%line2") "say \"hi\"" "back\\slash"
+          (format nil "tab~Chere" #\Tab) "λ ラムダ" "===prose===" "  padded  " "null" "false")
+  "Pieces of strings a JSONB field must carry unchanged: empty, line breaks,
+quotes, backslash, tab, non-ASCII, fence-like text, outer spaces, and text
+that looks like a JSON keyword.")
+
+(defun random-stored-string ()
+  "1-3 *STORED-STRINGS* pieces concatenated."
+  (format nil "~{~A~}" (loop repeat (1+ (random 3))
+                             collect (random-element *stored-strings*))))
+
+(defun random-stored-test-case ()
+  "A test case whose fields are arbitrary stored strings."
+  (make-test-case :input (random-stored-string)
+                  :expected (random-stored-string)
+                  :description (random-stored-string)))
+
+(defun random-stored-cell ()
+  "A cell of any kind whose id is NIL, empty or an arbitrary string and whose
+fields hold arbitrary strings.  Not canonical: the JSONB column stores every
+field as is, so no per-kind restriction applies."
+  (make-cell :id (case (random 4)
+                   (0 nil)
+                   (1 "")
+                   (t (random-stored-string)))
+             :kind (random-element *cell-kinds*)
+             :body (random-stored-string)
+             :description (random-stored-string)
+             :test-cases (loop repeat (random 4) collect (random-stored-test-case))
+             :gated-p (zerop (random 2))))
+
+(defgenerator stored-cell ()
+  "A fresh cell from RANDOM-STORED-CELL."
+  (random-stored-cell))
+
+(defspec stored-cell (type cell) (:generator stored-cell))
 
 (defun loosen (cell)
   "Return CELL with outer whitespace added around its body."
