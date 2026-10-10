@@ -32,13 +32,16 @@
 
 (defparameter *action-names* '("up" "down" "left" "right" "wait" "pickup")
   "The action names parse-action must accept, from its requirement: WardLisp
-symbols arrive as strings naming the six arena actions.  Independent of the
-engine's own *VALID-ACTION-STRINGS*.")
+symbols arrive as strings naming the six arena actions the arena page tells the
+learner to return ('up, 'down, 'left, 'right, 'wait, 'pickup in
+web/ui/arena.lisp).  Independent of the engine's own *VALID-ACTION-STRINGS*.")
 
 (defparameter *expected-deltas*
   '((:up . (-1 . 0)) (:down . (1 . 0)) (:left . (0 . -1)) (:right . (0 . 1)))
-  "Expected (DROW . DCOL) per movement action.  Arena convention: row grows
-downward and column grows rightward, so :UP decreases the row.")
+  "Expected (DROW . DCOL) per movement action.  Arena convention, as the learner
+sees it: RENDER-GRID in web/ui/arena.lisp draws row 0 as the top table row and
+column 0 as the leftmost cell, so row grows downward and column grows
+rightward, and :UP decreases the row.")
 
 (defun random-element (sequence)
   "Return a uniformly chosen element of the non-empty SEQUENCE."

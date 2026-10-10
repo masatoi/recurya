@@ -38,6 +38,7 @@
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
     :recurya/tests/game/notebook-parser
+    ;; cl-spec contracts (specs/)
     :recurya/tests/specs/contracts
     ;; Novel engine tests
     :recurya/tests/game/novel/interpreter

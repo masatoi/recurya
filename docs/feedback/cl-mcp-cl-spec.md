@@ -90,3 +90,11 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: `lisp-patch-form` はフォーム内だけが対象で `old_text not found in DEFPACKAGE ...`。`lisp-edit-form` はコメントのみの挿入はできるが既存コメントの置換・削除はできない。`fs-write-file` は `Cannot overwrite existing .lisp/.asd with fs-write-file; use lisp-edit-form.` で拒否 (ファイルはパース可能なので例外条件に当たらない)。
 - **期待**: ファイル先頭/フォーム間のコメントブロックを対象にできる編集手段 (例: `lisp-patch-form` に `form_type: "comment"` やファイル単位のテキストパッチモード、またはパース検証付きの全体上書き)。
 - **回避策**: スクラッチパッドにコメント行だけの unified diff を書き `git apply` で適用し、その後 `lisp-check-parens` と `load-system` で検証。
+
+## 2026-10-11 — `load-system clear_fasls=true` がプロジェクト内 `.qlot/` の依存 FASL まで消し、ワーカーが壊れる
+- **ツール/対象**: cl-mcp `load-system` (`clear_fasls`)
+- **分類**: bug
+- **状況**: レビュー指摘の修正後、cl-spec-driven-development.md §6 の手順どおり `load-system {"system":"recurya","clear_fasls":true}` で受け入れ用の再読み込みをした。
+- **起きたこと**: qlot の依存は `<project>/.qlot/` にあるため「primary system のソースツリー配下の FASL」に依存ライブラリも含まれ、cl-dbi などが既にロード済みのワーカー内で再コンパイルされた。`The class <DBI-ERROR> is being redefined to be a DEFTYPE` などの full WARNING 16 件で `COMPILE-FILE-ERROR` になった。
+- **期待**: `clear_fasls` は他プロジェクト (qlot/quicklisp の dist 配下、別 `.asd` のツリー) の FASL を除外してほしい。または、ロード済みの依存を消すことになる旨を事前に警告してほしい。
+- **回避策**: `pool-kill-worker reset=true` → `load-system cl-spec/check-it` → `run-tests` (テストシステムは run-tests が強制再読込する)。このプロジェクトでは `clear_fasls` を使わない。

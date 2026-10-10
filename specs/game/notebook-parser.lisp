@@ -30,7 +30,9 @@
 (in-package #:recurya/specs/game/notebook-parser)
 
 (defparameter *fence-shape* "^===.+===$"
-  "Regex every fence header line matches (+GENERIC-HEADER-REGEX+'s pattern).")
+  "Regex for a line that looks like a fence header.  The requirement comes from
+PARSE-NOTEBOOK-BODY's docstring (\"Unknown fence header (anything that looks
+like `===...===')\"); +GENERIC-HEADER-REGEX+ implements the same definition.")
 
 (defun fence-shaped-p (line)
   "True when LINE has the ===...=== shape of a fence header."
@@ -103,9 +105,9 @@ non-empty description; anything else is not recognised."
       (:returns (values null null null)))
     (:fence-shaped
       (:when (fence-shaped-p line))
-      (:returns (values (or null fence-kind) (or null string) t))
+      (:returns (values (or null fence-kind) (or null string) boolean))
       (:post-values (kind description gated-p)
-        (equal (list kind description (and gated-p t))
+        (equal (list kind description gated-p)
                (expected-header line))))))
 
 (defun round-trip (cells)
@@ -131,8 +133,9 @@ cell kind."
   (:kind :idempotence)
   (:trials (:smoke 50 :normal 300))
   (multiple-value-bind (once errors) (round-trip cells)
-    (let ((twice (round-trip once)))
+    (multiple-value-bind (twice errors-2) (round-trip once)
       (and (null errors)
+           (null errors-2)
            (equal (mapcar #'cell-view once) (mapcar #'trimmed-cell-view cells))
            (equal (mapcar #'cell-view once) (mapcar #'cell-view twice))
            (every (lambda (cell)

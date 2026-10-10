@@ -82,7 +82,7 @@ tests/specs/contracts.lisp      ; recurya/tests/specs/contracts — Rove ハー�
 |---|---|
 | `recurya/game/arena:parse-action` | 任意の値 → `arena-action`。`*valid-action-strings*` に (大小無視で) 一致する文字列はその keyword、それ以外は `:wait` (`:cases` で分岐) |
 | `action->delta` | `:up/:down/:left/:right` → 対応する単位ベクトル `(dr . dc)` (\|dr\|+\|dc\|=1)、その他 → NIL |
-| `apply-move` | 生成器で毎試行新しい grid (壁ランダム配置) と盤内・非壁の pos を作る。結果は (a) 盤内かつ非壁、(b) 元位置と manhattan 距離 ≤ 1、(c) 移動先が壁/盤外 or 非移動アクションなら元位置と等しい |
+| `apply-move` | 生成器で毎試行新しい grid (壁ランダム配置) と盤内・非壁の pos を作る。`:cases` で分岐: `:moves` は `*expected-deltas*` で 1 歩進めた位置と厳密に等しく盤内・非壁 (独立 oracle で判定)、`:stays` (移動先が壁/盤外 or 非移動アクション) は元位置と等しい |
 | `recurya/game/notebook-parser:parse-fence-header` | 任意の行: `===…===` に一致しない行 → 第1値 NIL。一致する場合の第1値は NIL か `fence-kind`。GATED-P が T なら KIND は `:code-solution` |
 
 ### Property

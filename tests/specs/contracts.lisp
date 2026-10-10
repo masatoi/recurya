@@ -116,11 +116,15 @@ called, or that the case report was unavailable."
 (defun function-spec-passes-p (name)
   "Check the function spec of NAME with *FUNCTION-SPEC-TRIALS* trials.
 Return (VALUES PASSED-P RESULT); PASSED-P needs :PASSED, at least one trial
-that :PRE admitted, and no declared case that was never called."
+that :PRE admitted, and no declared case that was never called.  A trial or
+rejection count that is not an integer is unknown and fails the check."
   (let* ((result (check-function name :trials *function-spec-trials*))
+         (trials (property-result-trials result))
          (rejected (or (function-check-result-rejected result) 0)))
     (values (and (eq (property-result-status result) :passed)
-                 (plusp (- (property-result-trials result) rejected))
+                 (integerp trials)
+                 (integerp rejected)
+                 (plusp (- trials rejected))
                  (null (never-called-cases result)))
             result)))
 
@@ -158,11 +162,13 @@ that :PRE admitted, and no declared case that was never called."
                     (car entry) (cdr entry)))))))
 
 (deftest project-properties-pass
+  (ok (project-properties) "at least one project property is registered")
   (dolist (name (project-properties))
     (multiple-value-bind (passed-p result) (property-passes-p name)
       (ok passed-p (failure-report name result)))))
 
 (deftest project-function-specs-pass
+  (ok (project-function-specs) "at least one project function spec is registered")
   (dolist (name (project-function-specs))
     (multiple-value-bind (passed-p result) (function-spec-passes-p name)
       (ok passed-p (function-failure-report name result)))))
