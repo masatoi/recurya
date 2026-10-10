@@ -134,3 +134,17 @@ test-cases が空 (jzon は `false` を出す)、gated NIL の場合を含む。
   → `:prose` に倒す。
 - **F-B3** `parse-json` の docstring は「JSON null は NIL」としているが、実際は
   シンボル `NULL`。→ docstring を直す。
+
+## 検証結果
+
+- 契約: Function Spec 2 (`cell->jsonb-form`, `jsonb-hash->cell`)、Property 3
+  (`cell-jsonb-roundtrip`, `edit-preserves-cell-ids`, `body-md-cell-separator`)。
+- `jsonb-hash->cell` は変更前に赤 (failed、seed 1862242823346440668: `gated` が null のテーブルが T として読まれた)、変更後に緑。
+- ミューテーション (すべて failed、passed なし):
+  - `jsonb-hash->cell` を変更前の本体に戻す: check-function 200 trials → failed
+  - `cell->jsonb-form` から "gated" キーを除去: check-function 100 trials → failed
+  - `take-matching-cell-id` が description を無視: `edit-preserves-cell-ids` smoke 5 回 → failed x5
+  - `take-matching-cell-id` を last-fit に: smoke 3 回 → failed x3
+  - `cells->body-md` が単一改行で連結: `body-md-cell-separator` smoke → failed
+  - 復元後 `recurya/tests/specs/contracts` は 3/0 で通過。
+- 全スイート: 471 passed / 0 failed。

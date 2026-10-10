@@ -98,3 +98,27 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: qlot の依存は `<project>/.qlot/` にあるため「primary system のソースツリー配下の FASL」に依存ライブラリも含まれ、cl-dbi などが既にロード済みのワーカー内で再コンパイルされた。`The class <DBI-ERROR> is being redefined to be a DEFTYPE` などの full WARNING 16 件で `COMPILE-FILE-ERROR` になった。
 - **期待**: `clear_fasls` は他プロジェクト (qlot/quicklisp の dist 配下、別 `.asd` のツリー) の FASL を除外してほしい。または、ロード済みの依存を消すことになる旨を事前に警告してほしい。
 - **回避策**: `pool-kill-worker reset=true` → `load-system cl-spec/check-it` → `run-tests` (テストシステムは run-tests が強制再読込する)。このプロジェクトでは `clear_fasls` を使わない。
+
+## 2026-10-11 — `:args` の引数名に他パッケージのシンボルを使うと `:post` の RESULT が解決できない
+- **ツール/対象**: cl-spec `defspec-function`
+- **分類**: docs
+- **状況**: `(:args (cell stored-cell))` の `cell` が `recurya/game/notebook` から import したシンボルだった。
+- **起きたこと**: `INVALID-FUNCTION-SPEC-FORM`: "cannot tell which symbol names the return value: :post uses RESULT, and the contract's own package resolves RESULT to RECURYA/GAME/NOTEBOOK::RESULT"。契約のパッケージは引数シンボルのホームパッケージから推定されるらしい。
+- **期待**: 契約を書いたファイルの `*package*` で RESULT を解決する、またはエラー文で「引数名が別パッケージのシンボル」と直接指摘する。
+- **回避策**: 引数名をローカルなシンボルにする (`input-cell`)。
+
+## 2026-10-11 — ハッシュテーブルの反例が `#<hash-table ...>` としか表示されない
+- **ツール/対象**: cl-spec `check-function` / `spec-check` の counterexample
+- **分類**: UX
+- **状況**: `jsonb-hash->cell` の契約は jzon がパースしたハッシュテーブルを引数に取る。
+- **起きたこと**: 反例が `(table #<hash-table :TEST equal :COUNT 6 {...}>)` と表示され、中身が分からない。
+- **期待**: ハッシュテーブル (や構造体以外の不透明オブジェクト) の中身を反例表示で展開する、または生成器が「表示用の表現」を添えられる仕組み。
+- **回避策**: inspect-object で反例を辿る、または生成器の元 JSON テキストを別途再現する。
+
+## 2026-10-11 — smoke の試行回数ではミューテーションを見逃す Property があった
+- **ツール/対象**: cl-spec `defproperty` の `:trials` (recurya の契約設計の知見)
+- **分類**: idea
+- **状況**: `edit-preserves-cell-ids` を試作し、id 照合で description を無視する変異を入れた。
+- **起きたこと**: 生成器が「description だけ違う近似重複」を作る確率が低く、smoke 50 回では緑のまま。:normal 300 回で初めて赤になった。近似重複を意図的に作る生成器に直し、smoke を 200 回にして 5 回連続で赤を確認。
+- **期待**: ケースや「興味のある分布」の到達回数を Property でも報告する仕組み (Function Spec の case report に相当するもの)。
+- **回避策**: 生成器で境界的な入力を明示的に作り、ミューテーションで感度を確かめる。
