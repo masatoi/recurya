@@ -46,6 +46,9 @@ JSONB column while preserving stable cell ids across edits."
     h))
 
 (defparameter *cell-kinds-by-name*
+  ;; A new cell kind must be added here too: see the `cell' struct docstring in
+  ;; game/notebook.lisp and the ecase in web/ui/notebook.lisp `render-cell'.
+  ;; Otherwise it reads back as :prose and loses its id carry-over.
   '(("prose" . :prose) ("code-eval" . :code-eval) ("code-exercise" . :code-exercise)
     ("code-solution" . :code-solution) ("scene" . :scene))
   "Stored kind name -> cell kind keyword, the inverse of `cell->jsonb-form'.")
@@ -81,8 +84,8 @@ symbol NULL) or any non-string value reads as \"\" for cell-id, body,
 description and each test-case field; kind matches the five cell kind names
 ignoring case and anything else reads as :prose; gated-p is T only for JSON
 true (false, null, the legacy string \"false\" and a missing key read as NIL);
-test-cases reads each object of an array in order, and anything else reads as
-no test cases."
+test-cases reads each object of an array in order, skipping other elements,
+and anything else reads as no test cases."
   (make-cell
    :id (json-string h "cell-id")
    :kind (json-cell-kind (gethash "kind" h))

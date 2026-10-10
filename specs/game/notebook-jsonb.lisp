@@ -37,9 +37,11 @@
   (:import-from #:recurya/game/notebook-parser
                 #:parse-notebook-body
                 #:cells->body-md)
+  (:import-from #:recurya/utils/common
+                #:json->string
+                #:parse-json)
   (:import-from #:com.inuoe.jzon
-                #:stringify
-                #:parse)
+                #:stringify)
   (:import-from #:alexandria
                 #:hash-table-keys))
 (in-package #:recurya/specs/game/notebook-jsonb)
@@ -101,8 +103,8 @@ EQUAL; a NIL id reads as \"\", as the JSONB column stores it."
 
 (defun jsonb-round-trip (cell)
   "CELL written as the JSONB column stores it and read back: CELL->JSONB-FORM,
-jzon stringify, jzon parse, JSONB-HASH->CELL."
-  (jsonb-hash->cell (parse (stringify (cell->jsonb-form cell)))))
+JSON->STRING, PARSE-JSON (production's wrappers), JSONB-HASH->CELL."
+  (jsonb-hash->cell (parse-json (json->string (cell->jsonb-form cell)))))
 
 (defproperty cell-jsonb-roundtrip ((input-cell stored-cell))
   "A cell written to the JSONB column and read back keeps its id, kind, body,
@@ -126,16 +128,18 @@ description, test cases and gate, whatever strings its fields hold."
 (defun kind-slot ()
   "JSON text for the kind field: a known name, a known name in other case, an
 empty or unknown string, null, or :MISSING."
-  (case (random 6)
+  (case (random 7)
     (0 :missing)
     (1 "null")
     (2 "\"\"")
-    (3 (stringify (pick #("bogus" "PROSE" "Code-Eval" "solution"))))
+    (3 (stringify (pick #("bogus" "solution" ""))))
+    (4 (stringify (pick #("Code-Eval" "SCENE" "Code-Exercise" "code-SOLUTION" "PROSE"))))
     (t (stringify (cdr (pick *kind-names*))))))
 
 (defun gated-slot ()
-  "JSON text for the gated field, including the legacy string \"false\"."
-  (pick #(:missing "null" "true" "false" "\"false\"")))
+  "JSON text for the gated field, including truthy non-true values (the
+strings \"false\" and \"true\", the number 1); only JSON true gates."
+  (pick #(:missing "null" "true" "false" "\"false\"" "\"true\"" "1")))
 
 (defun json-object (members)
   "JSON object text from MEMBERS, a list of (KEY . VALUE-TEXT); a VALUE-TEXT
@@ -152,18 +156,23 @@ of :MISSING leaves the key out."
                      (cons "description" (string-slot)))))
 
 (defun test-cases-slot ()
-  "JSON text for the test-cases field: an array of 0-3 objects, null, false
-(what jzon writes for an empty list), or :MISSING."
+  "JSON text for the test-cases field: an array of 0-3 elements (objects, now
+and then null, a number or a string), null, false (what jzon writes for an empty
+list), or :MISSING."
   (case (random 5)
     (0 :missing)
     (1 "null")
     (2 "false")
-    (t (format nil "[~{~A~^,~}]" (loop repeat (random 4) collect (test-case-text))))))
+    (t (format nil "[~{~A~^,~}]"
+               (loop repeat (random 4)
+                     collect (if (zerop (random 4))
+                                 (pick #("null" "1" "\"x\""))
+                                 (test-case-text)))))))
 
 (defgenerator stored-hash ()
   "A fresh stored cell object as jzon parses it, each field independently
 valid, null or missing."
-  (parse (json-object (list (cons "cell-id" (string-slot))
+  (parse-json (json-object (list (cons "cell-id" (string-slot))
                             (cons "kind" (kind-slot))
                             (cons "body" (string-slot))
                             (cons "description" (string-slot))
@@ -172,6 +181,8 @@ valid, null or missing."
 
 (defspec stored-hash (type hash-table) (:generator stored-hash))
 
+;; Intentionally mirrors JSON-STRING (design doc section 3) so the oracle stays
+;; independent of the implementation; do not deduplicate.
 (defun expected-string (table key)
   "The design doc's reading of a string field: its value when a string, else \"\"."
   (let ((value (gethash key table)))
@@ -186,14 +197,14 @@ ignoring case gives that kind; anything else gives :PROSE."
 
 (defun expected-test-cases (table)
   "The design doc's reading of test-cases, as test-case views: each object of
-an array in order, else none."
+an array in order (non-object elements are skipped), else none."
   (let ((value (gethash "test-cases" table)))
     (if (and (vectorp value) (not (stringp value)))
-        (map 'list (lambda (element)
-                     (list (expected-string element "input")
-                           (expected-string element "expected")
-                           (expected-string element "description")))
-             value)
+        (loop for element across value
+              when (hash-table-p element)
+                collect (list (expected-string element "input")
+                              (expected-string element "expected")
+                              (expected-string element "description")))
         '())))
 
 (defun expected-view (table)
@@ -209,7 +220,8 @@ an array in order, else none."
   "Any stored cell object reads back as a cell of a notebook cell kind: string
 fields keep their value and read as \"\" when missing or null; kind matches the
 five names ignoring case and is :PROSE otherwise; gated is T only for JSON true;
-test-cases reads each object of an array in order and nothing otherwise."
+test-cases reads each object of an array in order, skipping other elements,
+and nothing otherwise."
   (:args (table stored-hash))
   (:returns (type recurya/game/notebook:cell))
   (:post (and (validp 'notebook-cell-kind (cell-kind result))

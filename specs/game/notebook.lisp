@@ -108,9 +108,12 @@ description up to its ===code=== line."
 
 (defparameter *stored-strings*
   (vector "" "x" "foo bar" (format nil "line1~%line2") "say \"hi\"" "back\\slash"
-          (format nil "tab~Chere" #\Tab) "λ ラムダ" "===prose===" "  padded  " "null" "false")
+          (format nil "tab~Chere" #\Tab) "λ ラムダ" "===prose===" "  padded  " "null" "false"
+          (format nil "cr~Chere" #\Return) (string (code-char 1))
+          (string (code-char #x1F600)))
   "Pieces of strings a JSONB field must carry unchanged: empty, line breaks,
-quotes, backslash, tab, non-ASCII, fence-like text, outer spaces, and text
+quotes, backslash, tab, carriage return, a C0 control character, non-ASCII
+(including an astral-plane character), fence-like text, outer spaces, and text
 that looks like a JSON keyword.")
 
 (defun random-stored-string ()

@@ -28,8 +28,8 @@ cell-id は学習者の進捗・保存コードのキーなので、編集で ID
 ## 1. 配置
 
 ```
-specs/game/notebook.lisp        ; 生成器を追加 (整形済みセル・保存形ハッシュ)
-specs/game/notebook-jsonb.lisp  ; 新設 recurya/specs/game/notebook-jsonb
+specs/game/notebook.lisp        ; 生成器を追加 (整形済みセル・保存形の文字列片)
+specs/game/notebook-jsonb.lisp  ; 新設 recurya/specs/game/notebook-jsonb (`stored-hash`・`id-edit-scenario` もここ)
 specs/all.lisp                  ; 上記を追加
 tests/specs/contracts.lisp      ; 期待リストに追加
 ```
@@ -46,8 +46,10 @@ tests/specs/contracts.lisp      ; 期待リストに追加
   `kind` は既知 5 種 / `""` / 未知の文字列 / `null` / 欠損、`gated` は
   `true` / `false` / `null` / `"false"` (既存のレガシー値) / 欠損、`test-cases` は
   配列 / `null` / 欠損 (配列要素の各欄も同様に正常・欠損・`null`)。
-- **正規形セル列 + 一意 ID** (`identified-canonical-cells`): A の `canonical-cells` に
-  一意な id を付け、時々同一内容のセルを複製する。
+- **編集シナリオ** (`id-edit-scenario`): `(CELLS NEW-CELL POSITION)` を返す。CELLS は
+  一意な id (`id-0`, `id-1`, ...) を付けた正規形セル 1〜6 件 (3 回に 1 回は 1 件を複製)、
+  NEW-CELL は照合キーが CELLS のどれとも異なる正規形セル (半分は近似重複)、
+  POSITION は挿入位置。
 
 ## 3. 契約
 
@@ -83,7 +85,7 @@ test-cases が空 (jzon は `false` を出す)、gated NIL の場合を含む。
 
 ### Property `edit-preserves-cell-ids` (`:about parse-notebook-body`)
 
-`identified-canonical-cells` を JSONB 往復させたものを EXISTING-CELLS とし、
+`id-edit-scenario` の CELLS を JSONB 往復させたものを EXISTING-CELLS とし、
 ランダムな位置に新しい正規形セルを 1 つ挿入した本文を `parse-notebook-body` に渡すと:
 
 1. ERRORS が空。
@@ -132,6 +134,9 @@ test-cases が空 (jzon は `false` を出す)、gated NIL の場合を含む。
   (ユーザー決定: 欠損/null に強い契約)。
 - **F-B2** 未知の kind 文字列は実行時 `intern` でそのまま keyword になる (`:bogus`)。
   → `:prose` に倒す。
+- **gated の真値**: 変更前は `"true"` や数値など JSON `true` 以外の真値も gated (非表示) と
+  読まれたが、今は JSON `true` のみ T、他は NIL (fail-open)。`gated` キーは 43f40e8 で
+  導入され T/NIL しか書かれなかったため、実データへの影響はない。
 - **F-B3** `parse-json` の docstring は「JSON null は NIL」としているが、実際は
   シンボル `NULL`。→ docstring を直す。
 
