@@ -256,9 +256,8 @@ or the kind (between the description-less kinds)."
 (defgenerator id-edit-scenario ()
   "(CELLS NEW-CELL POSITION): 1-5 fresh canonical CELLS plus, a third of the
 time, a copy of one of them (so up to 6), with ids id-0, id-1, ...; a canonical
-NEW-CELL whose
-match key differs from every cell in CELLS (half the time a near duplicate of
-one of them), and the POSITION at which an author inserts it."
+NEW-CELL whose match key differs from every cell in CELLS (half the time a near
+duplicate of one of them); and the POSITION at which an author inserts it."
   (let ((cells (loop repeat (1+ (random 5)) collect (random-canonical-cell))))
     (when (zerop (random 3))
       (let ((copy (copy-structure (pick cells))))
