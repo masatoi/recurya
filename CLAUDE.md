@@ -186,6 +186,6 @@ Use the `/mito-migrate` skill for migration operations. Quick reference:
 - **Timestamps**: Use `local-time:now` for creation, format with ISO-8601 for database
 - **Testing**: Rove framework with `:style :spec`
 
-## cl-mcp Feedback
+## cl-mcp / cl-spec Feedback
 
-When you encounter issues, friction, or improvement ideas while using cl-mcp (Common Lisp MCP server), append them to `~/.claude/memory/cl-mcp-feedback.md`. Each entry should include date, context, and specific details. If the file already exists, always append to the end rather than overwriting.
+When you encounter issues, friction, or improvement ideas while using cl-mcp (Common Lisp MCP server) or cl-spec (contracts / property testing), append an entry to `docs/feedback/cl-mcp-cl-spec.md` (git-managed; follow the entry format at the top of that file). Always append to the end; never rewrite existing entries. Commit the entry together with the work that surfaced it. The older cross-project log `~/.claude/memory/cl-mcp-feedback.md` is an archive and is no longer appended to from this project.
