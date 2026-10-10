@@ -15,6 +15,7 @@ ql log4cl :latest
 ql uuid :latest
 git cl-mcp https://github.com/cl-ai-project/cl-mcp
 git cl-spec https://github.com/masatoi/cl-spec
+ql check-it :latest
 
 git wardlisp https://github.com/masatoi/wardlisp
 

@@ -127,6 +127,7 @@
   :depends-on ("recurya"
                "rove"
                "clack-test"
+               "cl-spec/check-it"
                ;; Test support modules
                "recurya/tests/support/db"
                ;; Utils tests
@@ -171,6 +172,8 @@
                "recurya/tests/integration/sicp-seed"
                "recurya/tests/integration/novel-sample"
                "recurya/tests/integration/novel-recursion-lesson"
+               ;; cl-spec contracts (specs/)
+               "recurya/tests/specs/contracts"
                ;; WardLisp integration tests
                "recurya/tests/wardlisp-integration"
                ;; Production entry-point smoke test

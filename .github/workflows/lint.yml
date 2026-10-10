@@ -32,6 +32,7 @@ jobs:
             models/*.lisp \
             utils/*.lisp \
             web/*.lisp web/*/*.lisp \
+            specs/*.lisp specs/*/*.lisp \
             tests/*/*.lisp tests/*/*/*.lisp \
             2>&1) || true
           echo "$OUTPUT"
