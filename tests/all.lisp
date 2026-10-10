@@ -38,6 +38,7 @@
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
     :recurya/tests/game/notebook-parser
+    :recurya/tests/specs/contracts
     ;; Novel engine tests
     :recurya/tests/game/novel/interpreter
     :recurya/tests/game/novel/value
