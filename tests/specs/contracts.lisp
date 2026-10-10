@@ -33,10 +33,15 @@
     ("RECURYA/SPECS/DOMAIN" . "FENCE-KIND"))
   "Named data specs that must be registered, as (PACKAGE . SYMBOL) names.")
 
-(defparameter *expected-properties* '()
+(defparameter *expected-properties*
+  '(("RECURYA/SPECS/GAME/ARENA" . "MANHATTAN-DISTANCE-METRIC")
+    ("RECURYA/SPECS/GAME/ARENA" . "COPY-GRID-INDEPENDENT"))
   "Properties that must be registered, as (PACKAGE . SYMBOL) names.")
 
-(defparameter *expected-function-specs* '()
+(defparameter *expected-function-specs*
+  '(("RECURYA/GAME/ARENA" . "PARSE-ACTION")
+    ("RECURYA/GAME/ARENA" . "ACTION->DELTA")
+    ("RECURYA/GAME/ARENA" . "APPLY-MOVE"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)

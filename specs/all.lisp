@@ -6,6 +6,7 @@
 
 (defpackage #:recurya/specs/all
   (:use #:cl)
-  (:import-from #:recurya/specs/domain))
+  (:import-from #:recurya/specs/domain)
+  (:import-from #:recurya/specs/game/arena))
 
 (in-package #:recurya/specs/all)
