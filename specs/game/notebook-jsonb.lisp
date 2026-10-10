@@ -21,6 +21,7 @@
   (:import-from #:recurya/specs/game/notebook
                 #:stored-cell
                 #:random-stored-string
+                #:random-canonical-cell
                 #:cell-view
                 #:test-case-view)
   (:import-from #:recurya/game/notebook
@@ -33,6 +34,9 @@
   (:import-from #:recurya/game/notebook-jsonb
                 #:cell->jsonb-form
                 #:jsonb-hash->cell)
+  (:import-from #:recurya/game/notebook-parser
+                #:parse-notebook-body
+                #:cells->body-md)
   (:import-from #:com.inuoe.jzon
                 #:stringify
                 #:parse)
@@ -210,3 +214,75 @@ test-cases reads each object of an array in order and nothing otherwise."
   (:returns (type recurya/game/notebook:cell))
   (:post (and (validp 'notebook-cell-kind (cell-kind result))
               (equal (stored-view result) (expected-view table)))))
+
+(defun same-match-key-p (a b)
+  "True when cells A and B agree on (KIND BODY DESCRIPTION), the triple
+PARSE-NOTEBOOK-BODY's docstring says carries a cell id over."
+  (and (eq (cell-kind a) (cell-kind b))
+       (string= (cell-body a) (cell-body b))
+       (string= (cell-description a) (cell-description b))))
+
+(defun append-word (string)
+  "STRING with \" z\" appended: still canonical, but a different value."
+  (concatenate 'string string " z"))
+
+(defun near-duplicate (cell)
+  "A fresh id-less copy of the canonical CELL differing in exactly one field
+of its match key: the body, or the description (exercise and solution cells),
+or the kind (between the description-less kinds)."
+  (let ((copy (copy-structure cell))
+        (kind (cell-kind cell)))
+    (setf (cell-id copy) nil)
+    (cond ((zerop (random 2))
+           (setf (cell-body copy) (append-word (cell-body copy))))
+          ((member kind '(:code-exercise :code-solution))
+           (setf (cell-description copy) (append-word (cell-description copy))))
+          (t
+           (setf (cell-kind copy) (pick (remove kind #(:prose :code-eval :scene))))))
+    copy))
+
+(defgenerator id-edit-scenario ()
+  "(CELLS NEW-CELL POSITION): 1-6 fresh canonical CELLS with ids id-0, id-1, ...
+(a third of the time one of them is duplicated), a canonical NEW-CELL whose
+match key differs from every cell in CELLS (half the time a near duplicate of
+one of them), and the POSITION at which an author inserts it."
+  (let ((cells (loop repeat (1+ (random 5)) collect (random-canonical-cell))))
+    (when (zerop (random 3))
+      (let ((copy (copy-structure (pick cells))))
+        (push copy (cdr (nthcdr (random (length cells)) cells)))))
+    (loop for cell in cells
+          for i from 0
+          do (setf (cell-id cell) (format nil "id-~D" i)))
+    (list cells
+          (loop for new = (if (zerop (random 2))
+                              (random-canonical-cell)
+                              (near-duplicate (pick cells)))
+                unless (find new cells :test #'same-match-key-p)
+                  return new)
+          (random (1+ (length cells))))))
+
+(defspec id-edit-scenario list (:generator id-edit-scenario))
+
+(defproperty edit-preserves-cell-ids ((scenario id-edit-scenario))
+  "Inserting one new cell and re-parsing, with the stored cells read back from
+the JSONB column as EXISTING-CELLS, keeps every existing cell's id in order,
+gives the new cell a fresh non-empty id, and leaves all ids distinct."
+  (:about parse-notebook-body)
+  (:kind :invariant)
+  (:trials (:smoke 200 :normal 1000))
+  (destructuring-bind (cells new-cell position) scenario
+    (let ((existing (mapcar #'jsonb-round-trip cells))
+          (edited (append (subseq cells 0 position) (list new-cell) (nthcdr position cells)))
+          (old-ids (mapcar #'cell-id cells)))
+      (multiple-value-bind (parsed errors)
+          (parse-notebook-body (cells->body-md edited) existing)
+        (let ((ids (mapcar #'cell-id parsed)))
+          (and (null errors)
+               (= (length ids) (length edited))
+               (equal (append (subseq ids 0 position) (nthcdr (1+ position) ids))
+                      old-ids)
+               (let ((new-id (nth position ids)))
+                 (and (stringp new-id)
+                      (plusp (length new-id))
+                      (not (member new-id old-ids :test #'equal))))
+               (= (length ids) (length (remove-duplicates ids :test #'equal)))))))))

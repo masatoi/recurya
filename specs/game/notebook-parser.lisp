@@ -141,3 +141,18 @@ cell kind."
            (every (lambda (cell)
                     (validp 'notebook-cell-kind (first (cell-view cell))))
                   once)))))
+
+(defproperty body-md-cell-separator ((cells canonical-cells))
+  "CELLS->BODY-MD separates cells by exactly one blank line and emits no
+leading or trailing newline: the whole rendering is the single-cell renderings
+joined by one blank line, and each of those starts and ends with a non-newline."
+  (:about cells->body-md)
+  (:kind :invariant)
+  (:trials (:smoke 50 :normal 300))
+  (let ((singles (mapcar (lambda (cell) (cells->body-md (list cell))) cells)))
+    (and (equal (cells->body-md cells) (format nil "~{~A~^~%~%~}" singles))
+         (every (lambda (single)
+                  (and (plusp (length single))
+                       (char/= (char single 0) #\Newline)
+                       (char/= (char single (1- (length single))) #\Newline)))
+                singles))))
