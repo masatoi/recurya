@@ -152,3 +152,31 @@
              (back (recurya/game/notebook-jsonb:jsonb-hash->cell parsed)))
         (ok (eq (and g t) (cell-gated-p back))
             (format nil "gated-p ~A round-trips" g))))))
+
+(deftest jsonb-hash->cell-reads-null-and-unknown-as-defaults
+  (testing "JSON null, missing keys and an unknown kind read as defaults, not errors"
+    (let ((cell (recurya/game/notebook-jsonb:jsonb-hash->cell
+                 (recurya/utils/common:parse-json
+                  "{\"cell-id\":null,\"kind\":\"bogus\",\"body\":null,
+                    \"description\":null,\"gated\":null,\"test-cases\":null}"))))
+      (ok (equal "" (cell-id cell)))
+      (ok (eq :prose (cell-kind cell)))
+      (ok (equal "" (cell-body cell)))
+      (ok (equal "" (recurya/game/notebook:cell-description cell)))
+      (ok (null (cell-gated-p cell)) "JSON null gate is NIL, not T")
+      (ok (null (cell-test-cases cell)))))
+  (testing "missing keys read as defaults and non-object test-case elements are skipped"
+    (let* ((cell (recurya/game/notebook-jsonb:jsonb-hash->cell
+                  (recurya/utils/common:parse-json
+                   "{\"kind\":\"Code-Exercise\",\"test-cases\":[null,{\"input\":\"a\"},1]}")))
+           (test-cases (cell-test-cases cell)))
+      (ok (eq :code-exercise (cell-kind cell)) "kind matches ignoring case")
+      (ok (equal "" (cell-id cell)))
+      (ok (= 1 (length test-cases)))
+      (ok (equal "a" (recurya/game/puzzle:test-case-input (first test-cases))))
+      (ok (equal "" (recurya/game/puzzle:test-case-expected (first test-cases)))))))
+
+(deftest cell->jsonb-form-rejects-unknown-kind
+  (testing "a kind missing from the stored-name table is refused, not written"
+    (ok (signals (recurya/game/notebook-jsonb:cell->jsonb-form
+                  (make-cell :kind :quiz :body "x"))))))

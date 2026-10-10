@@ -12,6 +12,7 @@
   ;; harness never loads it, or cannot tell that it went missing.
   (:import-from #:recurya/specs/domain)
   (:import-from #:recurya/specs/game/arena)
-  (:import-from #:recurya/specs/game/notebook-parser))
+  (:import-from #:recurya/specs/game/notebook-parser)
+  (:import-from #:recurya/specs/game/notebook-jsonb))
 
 (in-package #:recurya/specs/all)

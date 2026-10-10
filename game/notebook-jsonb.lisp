@@ -25,13 +25,30 @@
 
 (in-package #:recurya/game/notebook-jsonb)
 
+(defparameter *cell-kinds-by-name*
+  '(("prose" . :prose) ("code-eval" . :code-eval) ("code-exercise" . :code-exercise)
+    ("code-solution" . :code-solution) ("scene" . :scene))
+  "Stored kind name <-> cell kind keyword, used by both `cell->jsonb-form'
+(which signals on a kind missing here) and `jsonb-hash->cell'. A new cell
+kind must be added here too: see the `cell' struct docstring in
+game/notebook.lisp and the ecase in web/ui/notebook.lisp `render-cell'.")
+
+(defun cell-kind-name (kind)
+  "The stored name of the cell KIND keyword. Signals an error for a kind
+missing from *CELL-KINDS-BY-NAME*, so a new kind cannot be written in a form
+that would read back as :prose and lose its id carry-over."
+  (or (car (rassoc kind *cell-kinds-by-name*))
+      (error "cell->jsonb-form: unknown cell kind ~S (add it to ~S)"
+             kind '*cell-kinds-by-name*)))
+
 (defun cell->jsonb-form (cell)
   "Convert a cell struct into a hash-table that jzon serializes as a JSON
 object. Pairs with `jsonb-hash->cell' to round-trip cells through the
-JSONB column while preserving stable cell ids across edits."
+JSONB column while preserving stable cell ids across edits. Signals an
+error for a cell kind missing from *CELL-KINDS-BY-NAME*."
   (let ((h (make-hash-table :test 'equal)))
     (setf (gethash "cell-id"     h) (or (cell-id cell) "")
-          (gethash "kind"        h) (string-downcase (symbol-name (cell-kind cell)))
+          (gethash "kind"        h) (cell-kind-name (cell-kind cell))
           (gethash "body"        h) (or (cell-body cell) "")
           (gethash "description" h) (cell-description cell)
           (gethash "gated"       h) (and (cell-gated-p cell) t)
@@ -45,29 +62,48 @@ JSONB column while preserving stable cell ids across edits."
                   (cell-test-cases cell)))
     h))
 
+(defun json-string (table key)
+  "TABLE's value for KEY when it is a string; otherwise (missing, JSON null as
+jzon's symbol NULL, or any other value) the empty string."
+  (let ((value (gethash key table)))
+    (if (stringp value) value "")))
+
+(defun json-cell-kind (name)
+  "The cell kind whose stored NAME matches ignoring case, or :prose for an
+empty, unknown or non-string NAME."
+  (or (and (stringp name)
+           (cdr (assoc name *cell-kinds-by-name* :test #'string-equal)))
+      :prose))
+
+(defun json-list (value)
+  "VALUE as a list when it is an array (a vector, as jzon parses it) or a list;
+otherwise (JSON null, false, a string, a missing key) the empty list."
+  (typecase value
+    (string '())
+    (sequence (coerce value 'list))
+    (t '())))
+
 (defun jsonb-hash->cell (h)
-  "Reconstruct a cell struct from a JSONB hash-table produced by
-`cell->jsonb-form'. Used to seed parse-notebook-body's existing-cells
-so cell ids stay stable across edits."
-  (let ((kind-str (gethash "kind" h ""))
-        (raw-tcs  (gethash "test-cases" h #())))
-    (make-cell
-     :id (or (gethash "cell-id" h) "")
-     :kind (if (and kind-str (plusp (length kind-str)))
-               (intern (string-upcase kind-str) :keyword)
-               :prose)
-     :body (or (gethash "body" h) "")
-     :description (or (gethash "description" h) "")
-     :gated-p (let ((g (gethash "gated" h)))
-                (cond ((null g) nil)
-                      ((eq g t) t)
-                      ((equal g "false") nil)
-                      ((eq g :false) nil)
-                      (t (and g t))))
-     :test-cases (mapcar
-                  (lambda (th)
-                    (make-test-case
-                     :input       (or (gethash "input" th) "")
-                     :expected    (or (gethash "expected" th) "")
-                     :description (or (gethash "description" th) "")))
-                  (coerce raw-tcs 'list)))))
+  "Reconstruct a cell struct from H, one object of the notebook.cells JSONB
+column as jzon parses it, normally written by `cell->jsonb-form'. Used to seed
+parse-notebook-body's existing-cells so cell ids stay stable across edits.
+
+Legacy and hand-written rows are tolerated: a missing key, a JSON null (jzon's
+symbol NULL) or any non-string value reads as \"\" for cell-id, body,
+description and each test-case field; kind matches the five cell kind names
+ignoring case and anything else reads as :prose; gated-p is T only for JSON
+true (false, null, the legacy string \"false\" and a missing key read as NIL);
+test-cases reads each object of an array in order, skipping other elements,
+and anything else reads as no test cases."
+  (make-cell
+   :id (json-string h "cell-id")
+   :kind (json-cell-kind (gethash "kind" h))
+   :body (json-string h "body")
+   :description (json-string h "description")
+   :gated-p (eq (gethash "gated" h) t)
+   :test-cases (loop for th in (json-list (gethash "test-cases" h))
+                     when (hash-table-p th)
+                       collect (make-test-case
+                                :input (json-string th "input")
+                                :expected (json-string th "expected")
+                                :description (json-string th "description")))))

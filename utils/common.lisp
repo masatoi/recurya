@@ -144,8 +144,9 @@ Returns:
   - JSON arrays become vectors
   - JSON strings become strings
   - JSON numbers become numbers
-  - JSON booleans become T/NIL
-  - JSON null becomes NIL
+  - JSON true becomes T and false becomes NIL
+  - JSON null becomes the symbol NULL (CL:NULL), which is true: test
+    fields with STRINGP and the like, not for NIL
 
 Note:
   jzon v1.1.4 returns hash-tables for JSON objects by default.
