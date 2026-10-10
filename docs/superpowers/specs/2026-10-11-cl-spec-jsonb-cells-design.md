@@ -75,7 +75,7 @@ test-cases が空 (jzon は `false` を出す)、gated NIL の場合を含む。
 - 結果は `cell`。kind は必ず `notebook-cell-kind`。
 - 各欄: 有効な値 (文字列) があればその値、欠損・`null` なら既定値
   (id / body / description は `""`、test-cases は空リスト)。
-- kind: 既知 5 種の小文字名ならその keyword。`""`・未知・`null`・欠損は `:prose`
+- kind: 5 種の名前に大小無視で一致すればその keyword (現行の string-upcase による受理を保つ)。`""`・未知・`null`・欠損は `:prose`
   (現状の「空なら :prose」を延長。描画側は `ecase` なので未知 keyword は描画で落ちる)。
 - gated-p: JSON `true` のときだけ T。`false`・`null`・`"false"`・欠損は NIL。
 - test-cases: 配列の各要素を順に test-case にし、欄の欠損・`null` は `""`。

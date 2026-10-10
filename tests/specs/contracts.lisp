@@ -51,7 +51,8 @@
     ("RECURYA/GAME/ARENA" . "ACTION->DELTA")
     ("RECURYA/GAME/ARENA" . "APPLY-MOVE")
     ("RECURYA/GAME/NOTEBOOK-PARSER" . "PARSE-FENCE-HEADER")
-    ("RECURYA/GAME/NOTEBOOK-JSONB" . "CELL->JSONB-FORM"))
+    ("RECURYA/GAME/NOTEBOOK-JSONB" . "CELL->JSONB-FORM")
+    ("RECURYA/GAME/NOTEBOOK-JSONB" . "JSONB-HASH->CELL"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)

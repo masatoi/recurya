@@ -28,6 +28,7 @@
                 #:test-case-expected
                 #:test-case-description)
   (:export #:random-canonical-cell
+           #:random-stored-string
            #:test-case-view
            #:stored-cell
            #:canonical-cells

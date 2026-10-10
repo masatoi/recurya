@@ -152,3 +152,15 @@
              (back (recurya/game/notebook-jsonb:jsonb-hash->cell parsed)))
         (ok (eq (and g t) (cell-gated-p back))
             (format nil "gated-p ~A round-trips" g))))))
+
+(deftest jsonb-hash->cell-reads-null-and-unknown-as-defaults
+  (testing "JSON null, missing keys and an unknown kind read as defaults, not errors"
+    (let ((cell (recurya/game/notebook-jsonb:jsonb-hash->cell
+                 (recurya/utils/common:parse-json
+                  "{\"cell-id\":null,\"kind\":\"bogus\",\"body\":null,
+                    \"description\":null,\"gated\":null,\"test-cases\":null}"))))
+      (ok (equal "" (cell-id cell)))
+      (ok (eq :prose (cell-kind cell)))
+      (ok (equal "" (cell-body cell)))
+      (ok (null (cell-gated-p cell)) "JSON null gate is NIL, not T")
+      (ok (null (cell-test-cases cell))))))

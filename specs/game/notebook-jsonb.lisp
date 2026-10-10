@@ -13,10 +13,14 @@
                 #:defspec
                 #:defspec-function
                 #:defproperty
-                #:defgenerator)
+                #:defgenerator
+                #:validp)
   (:import-from #:cl-spec/src/backends/check-it)
+  (:import-from #:recurya/specs/domain
+                #:notebook-cell-kind)
   (:import-from #:recurya/specs/game/notebook
                 #:stored-cell
+                #:random-stored-string
                 #:cell-view
                 #:test-case-view)
   (:import-from #:recurya/game/notebook
@@ -103,3 +107,106 @@ description, test cases and gate, whatever strings its fields hold."
   (:kind :roundtrip)
   (:trials (:smoke 100 :normal 500))
   (equal (stored-view (jsonb-round-trip input-cell)) (stored-view input-cell)))
+
+(defun pick (sequence)
+  "Return a uniformly chosen element of the non-empty SEQUENCE."
+  (elt sequence (random (length sequence))))
+
+(defun string-slot ()
+  "JSON text for a string field: a string, null, or :MISSING (key left out)."
+  (case (random 4)
+    (0 :missing)
+    (1 "null")
+    (t (stringify (random-stored-string)))))
+
+(defun kind-slot ()
+  "JSON text for the kind field: a known name, a known name in other case, an
+empty or unknown string, null, or :MISSING."
+  (case (random 6)
+    (0 :missing)
+    (1 "null")
+    (2 "\"\"")
+    (3 (stringify (pick #("bogus" "PROSE" "Code-Eval" "solution"))))
+    (t (stringify (cdr (pick *kind-names*))))))
+
+(defun gated-slot ()
+  "JSON text for the gated field, including the legacy string \"false\"."
+  (pick #(:missing "null" "true" "false" "\"false\"")))
+
+(defun json-object (members)
+  "JSON object text from MEMBERS, a list of (KEY . VALUE-TEXT); a VALUE-TEXT
+of :MISSING leaves the key out."
+  (format nil "{~{~A~^,~}}"
+          (loop for (key . text) in members
+                unless (eq text :missing)
+                  collect (format nil "~A:~A" (stringify key) text))))
+
+(defun test-case-text ()
+  "JSON text for one stored test-case object with string/null/missing fields."
+  (json-object (list (cons "input" (string-slot))
+                     (cons "expected" (string-slot))
+                     (cons "description" (string-slot)))))
+
+(defun test-cases-slot ()
+  "JSON text for the test-cases field: an array of 0-3 objects, null, false
+(what jzon writes for an empty list), or :MISSING."
+  (case (random 5)
+    (0 :missing)
+    (1 "null")
+    (2 "false")
+    (t (format nil "[~{~A~^,~}]" (loop repeat (random 4) collect (test-case-text))))))
+
+(defgenerator stored-hash ()
+  "A fresh stored cell object as jzon parses it, each field independently
+valid, null or missing."
+  (parse (json-object (list (cons "cell-id" (string-slot))
+                            (cons "kind" (kind-slot))
+                            (cons "body" (string-slot))
+                            (cons "description" (string-slot))
+                            (cons "gated" (gated-slot))
+                            (cons "test-cases" (test-cases-slot))))))
+
+(defspec stored-hash (type hash-table) (:generator stored-hash))
+
+(defun expected-string (table key)
+  "The design doc's reading of a string field: its value when a string, else \"\"."
+  (let ((value (gethash key table)))
+    (if (stringp value) value "")))
+
+(defun expected-kind (table)
+  "The design doc's reading of kind: a name matching one of *KIND-NAMES*
+ignoring case gives that kind; anything else gives :PROSE."
+  (let ((value (gethash "kind" table)))
+    (or (and (stringp value) (car (rassoc value *kind-names* :test #'string-equal)))
+        :prose)))
+
+(defun expected-test-cases (table)
+  "The design doc's reading of test-cases, as test-case views: each object of
+an array in order, else none."
+  (let ((value (gethash "test-cases" table)))
+    (if (and (vectorp value) (not (stringp value)))
+        (map 'list (lambda (element)
+                     (list (expected-string element "input")
+                           (expected-string element "expected")
+                           (expected-string element "description")))
+             value)
+        '())))
+
+(defun expected-view (table)
+  "The STORED-VIEW the design doc requires JSONB-HASH->CELL to return for TABLE."
+  (list (expected-string table "cell-id")
+        (expected-kind table)
+        (expected-string table "body")
+        (expected-string table "description")
+        (expected-test-cases table)
+        (eq (gethash "gated" table) t)))
+
+(defspec-function jsonb-hash->cell
+  "Any stored cell object reads back as a cell of a notebook cell kind: string
+fields keep their value and read as \"\" when missing or null; kind matches the
+five names ignoring case and is :PROSE otherwise; gated is T only for JSON true;
+test-cases reads each object of an array in order and nothing otherwise."
+  (:args (table stored-hash))
+  (:returns (type recurya/game/notebook:cell))
+  (:post (and (validp 'notebook-cell-kind (cell-kind result))
+              (equal (stored-view result) (expected-view table)))))
