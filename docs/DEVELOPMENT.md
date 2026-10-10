@@ -84,6 +84,20 @@ against anything other than the test DB.
   Courses/notebooks you created by hand in the UI are not part of the seed and
   cannot be auto-restored.
 
+## cl-spec contracts (`specs/`)
+
+Contracts live under `specs/` (umbrella `recurya/specs/all`) and are never
+loaded by the production system. `run-tests {system:
+"recurya/tests/specs/contracts"}` runs them all under Rove; `spec-check` runs
+one at a time.
+
+On a fresh checkout, cl-mcp's `load-system` is ASDF-only and does not fetch
+missing dependencies, so cl-spec/check-it's transitive deps (`check-it`,
+`optima`) may be missing (`Component "check-it" not found`). Run
+`(ql:quickload "cl-spec/check-it")` once via `repl-eval` to pull them into
+`.qlot`; after that `load-system` works. CI is unaffected (it loads the
+test system with `ql:quickload`, which fetches them).
+
 ## Verifying UI changes without a browser
 
 This is an MPA + HTMX app: the server renders both full pages and the HTML

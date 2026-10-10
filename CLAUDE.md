@@ -19,6 +19,7 @@ recurya/
 │   ├── routes.lisp   # Route handlers (auth, blog, account)
 │   └── ui/           # Spinneret HTML templates
 ├── utils/      # Shared utilities
+├── specs/      # cl-spec contracts (not loaded by production); run via tests/specs/contracts
 ├── tests/      # Test suites (Rove)
 └── prompts/    # AI agent guidelines
 ```
