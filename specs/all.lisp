@@ -14,6 +14,7 @@
   (:import-from #:recurya/specs/game/arena)
   (:import-from #:recurya/specs/game/notebook-parser)
   (:import-from #:recurya/specs/game/notebook-jsonb)
+  (:import-from #:recurya/specs/game/novel)
   (:import-from #:recurya/specs/db/domain)
   (:import-from #:recurya/specs/db/core)
   (:import-from #:recurya/specs/db/course-notebooks)

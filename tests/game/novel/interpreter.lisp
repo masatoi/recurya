@@ -1,7 +1,9 @@
 ;;;; tests/game/novel/interpreter.lisp
 (defpackage #:recurya/tests/game/novel/interpreter
   (:use #:cl #:rove)
-  (:import-from #:recurya/game/novel/interpreter #:interpret-directives))
+  (:import-from #:recurya/game/novel/interpreter
+                #:interpret-directives
+                #:invalid-flag-error))
 
 (in-package #:recurya/tests/game/novel/interpreter)
 
@@ -37,3 +39,13 @@
     (declare (ignore set-flags))
     (ok (= 1 (length beats)))
     (ok (string= "ok" (getf (first beats) :text)))))
+
+(deftest set-flag-rejects-unstorable-flags
+  (testing "a symbol value is collected"
+    (multiple-value-bind (beats set-flags)
+        (interpret-directives '((:set-flag :mood :happy)))
+      (declare (ignore beats))
+      (ok (equal set-flags '((:mood . :happy))))))
+  (testing "a list value or a non-symbol name signals invalid-flag-error"
+    (ok (signals (interpret-directives '((:set-flag :xs (1 2)))) 'invalid-flag-error))
+    (ok (signals (interpret-directives '((:set-flag "mood" 1))) 'invalid-flag-error))))

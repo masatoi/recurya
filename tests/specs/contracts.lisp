@@ -39,7 +39,8 @@
     ("RECURYA/SPECS/DB/DOMAIN" . "PUBLICATION-STATUS")
     ("RECURYA/SPECS/DB/DOMAIN" . "VISIBILITY")
     ("RECURYA/SPECS/DB/DOMAIN" . "VARCHAR-255")
-    ("RECURYA/SPECS/DB/DOMAIN" . "SUMMARY-TEXT"))
+    ("RECURYA/SPECS/DB/DOMAIN" . "SUMMARY-TEXT")
+    ("RECURYA/SPECS/GAME/NOVEL" . "FLAG-VALUE"))
   "Named data specs that must be registered, as (PACKAGE . SYMBOL) names.")
 
 (defparameter *expected-properties*
@@ -81,7 +82,8 @@
     ("RECURYA/DB/CORE" . "ENSURE-UUID")
     ("RECURYA/DB/CORE" . "UUID-STRING-P")
     ("RECURYA/UTILS/HANDLE" . "PLACEHOLDER-HANDLE-P")
-    ("RECURYA/UTILS/HANDLE" . "RESERVED-HANDLE-P"))
+    ("RECURYA/UTILS/HANDLE" . "RESERVED-HANDLE-P")
+    ("RECURYA/GAME/NOVEL/INTERPRETER" . "INTERPRET-DIRECTIVES"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)
