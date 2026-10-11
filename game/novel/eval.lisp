@@ -17,11 +17,14 @@
 
 (defun %flag->binding (pair)
   "Convert a flag (keyword . value) to a wardlisp :bindings entry (name . value).
-   The keyword becomes a downcased symbol name; a CL string value is boxed into
-   a wardlisp string."
+The keyword becomes a downcased symbol name.  A CL string value is boxed into a
+wardlisp string and a keyword value becomes a wardlisp symbol (its downcased
+name); T, NIL and integers pass through."
   (let ((name (string-downcase (symbol-name (car pair))))
         (value (cdr pair)))
-    (cons name (if (stringp value) (make-string-value value) value))))
+    (cons name (cond ((stringp value) (make-string-value value))
+                     ((keywordp value) (string-downcase (symbol-name value)))
+                     (t value)))))
 
 (defun eval-scene (scene-source &key prelude flags)
   "Evaluate SCENE-SOURCE (wardlisp text) with PRELUDE (shared defs, text)

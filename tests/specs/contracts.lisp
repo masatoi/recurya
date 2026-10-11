@@ -39,7 +39,9 @@
     ("RECURYA/SPECS/DB/DOMAIN" . "PUBLICATION-STATUS")
     ("RECURYA/SPECS/DB/DOMAIN" . "VISIBILITY")
     ("RECURYA/SPECS/DB/DOMAIN" . "VARCHAR-255")
-    ("RECURYA/SPECS/DB/DOMAIN" . "SUMMARY-TEXT"))
+    ("RECURYA/SPECS/DB/DOMAIN" . "SUMMARY-TEXT")
+    ("RECURYA/SPECS/DB/DOMAIN" . "SUBMISSION-STATUS")
+    ("RECURYA/SPECS/GAME/NOVEL" . "FLAG-VALUE"))
   "Named data specs that must be registered, as (PACKAGE . SYMBOL) names.")
 
 (defparameter *expected-properties*
@@ -55,12 +57,20 @@
     ("RECURYA/SPECS/DB/LEARN" . "LEARN-PROGRESS-IS-A-SET")
     ("RECURYA/SPECS/DB/LEARN" . "CELL-CODE-LAST-WRITE-WINS")
     ("RECURYA/SPECS/DB/LEARN" . "MERGE-LOCALSTORAGE-RULES")
+    ("RECURYA/SPECS/DB/LEARN" . "SUBMISSION-HISTORY")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-CREATE-GET-ROUNDTRIP")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "COURSE-CREATE-GET-ROUNDTRIP")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-SLUG-UNIQUE-PER-AUTHOR")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-LIST-FILTERS")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "COURSE-LIST-FILTERS")
-    ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-UPDATE-PARTIAL"))
+    ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-UPDATE-PARTIAL")
+    ("RECURYA/SPECS/DB/USERS" . "PLACEHOLDER-HANDLE-NEVER-REAL")
+    ("RECURYA/SPECS/DB/USERS" . "USER-CREATE-GET-ROUNDTRIP")
+    ("RECURYA/SPECS/DB/USERS" . "OAUTH-LOGIN-RESOLUTION")
+    ("RECURYA/SPECS/DB/USERS" . "USER-UPDATE-PARTIAL")
+    ("RECURYA/SPECS/DB/NOVEL" . "PERSISTED-FLAGS-DRIVE-NEXT-SCENE")
+    ("RECURYA/SPECS/DB/NOVEL" . "NOVEL-STATE-ROUNDTRIP")
+    ("RECURYA/SPECS/DB/NOVEL" . "NOVEL-STATE-UPSERT-SEQUENCE"))
   "Properties that must be registered, as (PACKAGE . SYMBOL) names.")
 
 (defparameter *expected-function-specs*
@@ -76,13 +86,20 @@
     ("RECURYA/DB/CORE" . "FORMAT-TIMESTAMP-FOR-DB")
     ("RECURYA/DB/CORE" . "ENSURE-UUID")
     ("RECURYA/DB/CORE" . "UUID-STRING-P")
-    ("RECURYA/DB/USERS" . "PLACEHOLDER-HANDLE-P"))
+    ("RECURYA/UTILS/HANDLE" . "PLACEHOLDER-HANDLE-P")
+    ("RECURYA/UTILS/HANDLE" . "RESERVED-HANDLE-P")
+    ("RECURYA/GAME/NOVEL/INTERPRETER" . "INTERPRET-DIRECTIVES"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)
-  "Return the symbol named by ENTRY, a (PACKAGE-NAME . SYMBOL-NAME) pair, or NIL."
-  (let ((package (find-package (car entry))))
-    (and package (find-symbol (cdr entry) package))))
+  "Return the symbol named by ENTRY, a (PACKAGE-NAME . SYMBOL-NAME) pair, or NIL.
+The symbol must be found in the package and that package must be its home
+package, so an entry naming a package that merely re-exports it is stale."
+  (let* ((package (find-package (car entry)))
+         (symbol (and package (find-symbol (cdr entry) package))))
+    (and symbol
+         (eq (symbol-package symbol) package)
+         symbol)))
 
 (defun home-package-prefix-p (symbol prefix)
   "True when SYMBOL's home package name starts with PREFIX."

@@ -38,3 +38,8 @@
     (ok (search "(define y 2)" prelude))
     (ok (= 2 (length scenes)))
     (ok (search "\"a\"" (first scenes)))))
+
+(deftest keyword-flag-value-binds-as-symbol
+  (let ((dirs (eval-scene "(list (list 'say \"a\" (if (equal? mood 'happy) \"yes\" \"no\")))"
+                          :flags '((:mood . :happy)))))
+    (ok (equal dirs '((:say "a" "yes"))))))

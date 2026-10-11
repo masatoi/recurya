@@ -169,6 +169,22 @@
             (ok (string= "u-deadbeef" (users-handle fresh))
                 "reserved handle must NOT be saved")))))))
 
+(deftest onboarding-create-rejects-placeholder-shape
+  (testing "POST /onboarding/handle rejects a handle shaped like a placeholder"
+    (with-test-db
+      (let* ((dao (create-test-user :handle "u-deadbeef"))
+             (user (mk-user-plist dao)))
+        (with-mock-session (make-session :user user)
+          (let ((res (onboarding-handle-create-handler
+                      '(("handle" . "u-12345678")))))
+            (ok (= 400 (response-status res))
+                "placeholder-shaped handle must be rejected")
+            (ok (search "reserved" (first (response-body res)))
+                "error must mention reserved"))
+          (let ((fresh (get-user-by-id (getf user :id))))
+            (ok (string= "u-deadbeef" (users-handle fresh))
+                "placeholder-shaped handle must NOT be saved")))))))
+
 (deftest onboarding-create-rejects-taken
   (testing "POST /onboarding/handle rejects an already-taken handle with 409"
     (with-test-db

@@ -162,3 +162,19 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: `describe` が `function-check-result` で TYPE-ERROR (NIL is not NUMBER) になった。`property-result-status` / `property-result-seed` が関数結果にもそのまま使えたが、docs に書かれていない。
 - **期待**: 関数結果用のアクセサ (または共通アクセサである旨) を docs に明記し、`describe` が落ちないこと。
 - **回避策**: `property-result-status` / `property-result-seed` を使う。
+
+## 2026-10-11 — `lisp-edit-form` の `insert_after` は基準となる deftest 名を知らないと使えない
+- **ツール/対象**: cl-mcp `lisp-edit-form` (`operation: insert_after`)
+- **分類**: UX
+- **状況**: 既存テストファイルに Rove の `deftest` を 1 つ追加したかった (Task 1 の回帰テスト)。
+- **起きたこと**: `insert_after` は基準にする既存フォームの名前 (`form_name`) が必須で、ファイル内の deftest 名を事前に知らなかったため、まず `clgrep-search` で名前を探す必要があった。
+- **期待**: 「ファイル末尾に追加」を表せること (`form_name` 省略または末尾指定)。あるいはエラーに候補の名前を添える。
+- **回避策**: `clgrep-search` で既存 deftest 名を調べ、その後ろに挿入した。
+
+## 2026-10-11 — `cl-spec/check-it` のロード時に duplicate-system の警告が出る
+- **ツール/対象**: cl-spec `cl-spec/check-it` (asd) / cl-mcp `load-system`
+- **分類**: UX
+- **状況**: Task 1 の準備で `load-system cl-spec/check-it` を実行した。
+- **起きたこと**: ロード自体は成功するが、asd が重複システム定義の警告を出す (Task 1 実装者の報告では "harmless duplicate-system warning"、警告の原文は記録していない)。実害はないが、結果に警告が混ざり本物の警告と見分けにくい。
+- **期待**: 警告が出ないように asd の定義の重複を解消する。
+- **回避策**: 無害として無視した。

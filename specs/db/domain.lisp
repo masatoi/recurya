@@ -14,6 +14,9 @@
                 #:make-v4-uuid)
   (:export #:*publication-statuses*
            #:*visibilities*
+           #:*submission-statuses*
+           #:submission-status
+           #:submission-status-p
            #:publication-status
            #:publication-status-p
            #:visibility
@@ -123,3 +126,18 @@ foreign key, so no user row is needed."
 and multiplicity."
   (and (subsetp a b :test #'equal)
        (subsetp b a :test #'equal)))
+
+(defparameter *submission-statuses* '("pass" "fail" "error")
+  "Exercise submission statuses: RUN-EXERCISE-CELL's :pass, :fail and :error,
+lower-cased by %MAYBE-PERSIST-NOTEBOOK-CELL-RUN (web/routes.lisp).")
+
+(defun submission-status-p (value)
+  "True when VALUE is one of *SUBMISSION-STATUSES*."
+  (and (stringp value) (member value *submission-statuses* :test #'string=) t))
+
+(defgenerator submission-status ()
+  "One of *SUBMISSION-STATUSES*."
+  (random-element *submission-statuses*))
+
+(defspec submission-status (satisfies submission-status-p)
+  (:generator submission-status))
