@@ -161,3 +161,27 @@ visibility (と notebook の body-md、cells) がすべて等しく、作者 id 
 - **F-C2** `update-notebook!` の docstring は「CELLS の空リストは "[]" に直列化される」と
   するが、`(when cells ...)` のため空リストは無視される。ルートは空のセル列を
   パースエラーにするので実害はない。→ docstring を修正。
+- **F-C3** `uuid-string-p` は `digit-char-p` で 16 進数字を判定していたため、
+  アラビア・インド数字や全角数字 (例 U+0661, U+FF11) も受理し、PostgreSQL の UUID 型が
+  拒否する値 (22P02) を DB まで通していた。契約の試作で発見。→ ASCII の 16 進数字だけを
+  受理するよう修正。
+- **F-C4 (テスト基盤)** cl-dbi は prepared statement 名を `(random (expt 36 8))` で作るため、
+  cl-spec の seed 再実行 (固定 `*random-state*`) ではキャッシュ済みの `with-test-db` 接続で
+  同じ名前が再生成され DBI 42P05 で衝突した。→ `with-test-db` が新しい
+  `*random-state*` を束縛するよう修正 (9dbd914)。ジェネレータは本体の外で動くため seed の
+  再現性は保たれる。
+
+## 検証結果
+
+- 契約: Function Spec 7 (db/core 6、db/users 1)、Property 11
+  (仮ハンドル 1、course-notebooks 1、learn 3、notebooks/courses 6)、値域 defspec 4。
+- 変更前に赤: uuid-string-p (failed、seed 3827825384193791716、300 trials)、
+  course-notebook-order (failed、seed 3860745284530836394)。変更後に緑
+  (uuid-string-p 300 trials、course-notebook-order normal 100 trials)。
+- ミューテーション (ワーカー上で再定義し unwind-protect で復元、ファイルは無変更。すべて `:passed` にならず検出):
+  - `upsert-cell-code` を先勝ちに → cell-code-last-write-wins `:smoke` failed (seed 4047042964791612174)
+  - `merge-localstorage` が payload で上書き → merge-localstorage-rules `:smoke` failed (seed 219554440621438051)
+  - `list-notebooks` が `:visibility` を無視 → notebook-list-filters `:normal` failed (seed 1607129162709553047)
+  - `move-notebook-up!` を修正前の本体に → course-notebook-order `:normal` failed (seed 2991735439098915774)
+  - `uuid-string-p` を `digit-char-p` 版に → Function Spec 300 trials failed (seed 1129218155036047944)
+- 全スイート: 472 passed / 0 failed (`recurya/tests`、9167ms)、契約ハーネス 3 passed / 0 failed、所要 2917ms。

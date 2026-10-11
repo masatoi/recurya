@@ -138,3 +138,27 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: 1 回目と同じ seed の再実行が `DB Error: prepared statement "prepared_stmt_5UONP3D3" already exists (Code: 42P05)` で `error`。cl-dbi は文名を `(random (expt 36 8))` で作るため、seed 固定の `*random-state*` では前回と同じ名前が再生成され、キャッシュ済みの同一接続 (サーバ側に前回の文が残る) と衝突する。`seed-random-state 42` を束縛して `with-test-db` を 3 回回すだけで 3 回目に決定的に再現した。
 - **期待**: 再現性のための `*random-state*` 束縛が、cl-dbi など副作用のある外部名生成に漏れないこと。cl-spec の docs に「seed 再実行中は CL:RANDOM が決定的になるので、名前の一意性に使うコードに注意」と明記。
 - **回避策**: `tests/support/db.lisp` の `with-test-db` が `*random-state*` を `(make-random-state t)` で束縛し直す (修正済み)。生成器は本体の外で実行されるため seed の再現性は損なわれない。
+
+## 2026-10-11 — Function Spec に試行前後の setup/teardown がなく、DB 関数は Property で書くしかない
+- **ツール/対象**: cl-spec `defspec-function` / cl-mcp `spec-check`
+- **分類**: idea
+- **状況**: db/* の CRUD 関数に契約を付けたかった。テストは `with-test-db` で recurya_test に接続し前後でデータを消す。
+- **起きたこと**: Function Spec には試行ごとの準備・後始末を書く節がなく、`spec-check` は別スレッドで実行されるため外側の動的束縛も効かない。そのまま `spec-check function=` すると開発 DB (Web サーバと共有の接続) に書き込む。
+- **期待**: `:around` (または `:setup`/`:teardown`) 節で各試行を囲めること。あるいは `spec-check` に「この契約は外部状態を要する」宣言を読ませて実行を拒否させる仕組み。
+- **回避策**: DB に触る契約は Property にし、本体の中で `with-test-db` を張る。純粋関数だけ Function Spec にする。
+
+## 2026-10-11 — `member` spec で文字列の値域を書けない (eql 比較)
+- **ツール/対象**: cl-spec `defspec` (値域)
+- **分類**: docs
+- **状況**: `"draft"` / `"published"` のような文字列の列値域を定義したかった。
+- **起きたこと**: `(defspec probe (member "draft" "published"))` に対し `(validp 'probe (copy-seq "draft"))` が NIL (同じ内容でも別オブジェクトの文字列を受理しない: `eql` 比較)。`(satisfies pred)` と `:generator` を自分で書く必要があった。
+- **期待**: `member` の比較関数を指定できる (`(member-equal ...)` など)、または docstring に比較が `eql` であることを明記。
+- **回避策**: `(satisfies publication-status-p)` + `defgenerator`。
+
+## 2026-10-11 — `check-function` の結果に `describe` が使えず、seed の読み出しが手探りになる
+- **ツール/対象**: cl-spec `function-check-result` / `cl-spec/main`
+- **分類**: docs
+- **状況**: ミューテーション検証で `check-function` の結果から status と seed を取りたかった。
+- **起きたこと**: `describe` が `function-check-result` で TYPE-ERROR (NIL is not NUMBER) になった。`property-result-status` / `property-result-seed` が関数結果にもそのまま使えたが、docs に書かれていない。
+- **期待**: 関数結果用のアクセサ (または共通アクセサである旨) を docs に明記し、`describe` が落ちないこと。
+- **回避策**: `property-result-status` / `property-result-seed` を使う。
