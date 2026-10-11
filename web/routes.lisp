@@ -1075,7 +1075,7 @@ missing row."
 one position up.
 
 Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
-fragment. No-op when already at position 0."
+fragment. No-op when already first (in sort order; its position value need not be 0)."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response (tr :server.errors.unauthorized) :status 401)
@@ -1101,7 +1101,7 @@ fragment. No-op when already at position 0."
 one position down.
 
 Owner only. Re-renders #course-notebooks-list as an HTMX outerHTML
-fragment. No-op when already at the last position."
+fragment. No-op when already last (in sort order)."
   (let ((user (get-current-user)))
     (if (null user)
         (html-response (tr :server.errors.unauthorized) :status 401)

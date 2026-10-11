@@ -295,14 +295,16 @@ to ensure consistent comparisons and storage."
 Used to guard DB id lookups so a malformed id (e.g. the literal \"nil\" a
 broken form action can send to a /.../:id route) resolves to \"not found\"
 instead of reaching PostgreSQL and signalling an \"invalid input syntax for
-type uuid\" error (SQLSTATE 22P02) that would otherwise crash the request."
+type uuid\" error (SQLSTATE 22P02) that would otherwise crash the request.
+Only ASCII hex digits count: DIGIT-CHAR-P would also accept other Unicode
+digits (e.g. Arabic-Indic or fullwidth), which PostgreSQL rejects."
   (and (stringp value)
        (= (length value) 36)
        (loop for ch across value
              for i from 0
              always (if (member i '(8 13 18 23))
                         (char= ch #\-)
-                        (digit-char-p ch 16)))))
+                        (find ch "0123456789abcdefABCDEF")))))
 
 (declaim (ftype (function (t) (or string null)) clj->json-str))
 (defun clj->json-str (value)

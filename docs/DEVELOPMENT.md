@@ -89,7 +89,8 @@ against anything other than the test DB.
 Contracts live under `specs/` (umbrella `recurya/specs/all`) and are never
 loaded by the production system. `run-tests {system:
 "recurya/tests/specs/contracts"}` runs them all under Rove; `spec-check` runs
-one at a time.
+one at a time. The harness (and the DB-backed properties) need PostgreSQL:
+they run inside `with-test-db` against `recurya_test`.
 
 On a fresh checkout, cl-mcp's `load-system` is ASDF-only and does not fetch
 missing dependencies, so cl-spec/check-it's transitive deps (`check-it`,

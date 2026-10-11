@@ -139,7 +139,13 @@ Usage:
   (with-test-db
     (let ((user (create-test-user)))
       (ok (users-id user))))"
-  `(let ((conn (setup-test-db)))
+  `(let ((conn (setup-test-db))
+         ;; cl-dbi names server-side prepared statements with CL:RANDOM, and the
+         ;; cached connection outlives each call.  A seeded *RANDOM-STATE* (as
+         ;; cl-spec binds when replaying a seed) would regenerate the names of
+         ;; an earlier run and fail with 42P05 "prepared statement already
+         ;; exists", so draw statement names from a fresh, unseeded state.
+         (*random-state* (make-random-state t)))
      (with-connection (conn)
        (cleanup-all-test-data)
        (unwind-protect

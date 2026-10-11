@@ -79,8 +79,9 @@ Signals:
 (defun remove-notebook-from-course! (course-id notebook-id)
   "Delete the join row linking COURSE-ID to NOTEBOOK-ID.
 
-Does NOT renumber remaining positions; gaps are tolerated and resolved
-by subsequent moves.
+Does NOT renumber remaining positions; the gap is harmless because
+MOVE-NOTEBOOK-UP! / MOVE-NOTEBOOK-DOWN! swap with the neighbour in listed
+order, not with position +/- 1.
 
 Returns:
   T if a row was deleted, NIL otherwise."
@@ -92,67 +93,61 @@ Returns:
       (delete-dao row)
       t)))
 
+(defun %adjacent-course-notebook (row direction)
+  "The join row next to ROW in its course's listed (position) order: the one
+just above it for DIRECTION :UP, just below it for :DOWN, or NIL at that end.
+Positions may have gaps (REMOVE-NOTEBOOK-FROM-COURSE! does not renumber), so
+the neighbour is found by order, not by position +/- 1."
+  (let ((pos (course-notebook-position row))
+        (rows (list-course-notebooks (course-notebook-course-id row))))
+    (ecase direction
+      (:up (car (last (remove-if-not (lambda (r) (< (course-notebook-position r) pos))
+                                     rows))))
+      (:down (find-if (lambda (r) (> (course-notebook-position r) pos)) rows)))))
+
+(defun %swap-positions! (row neighbour)
+  "Exchange the positions of ROW and NEIGHBOUR in one transaction, parking ROW
+at the out-of-range position -1 in between so a future UNIQUE constraint on
+(course_id, position) is never violated."
+  (let ((pos (course-notebook-position row))
+        (other (course-notebook-position neighbour)))
+    (with-transaction
+      (setf (course-notebook-position row) -1)
+      (save-dao row)
+      (setf (course-notebook-position neighbour) pos)
+      (save-dao neighbour)
+      (setf (course-notebook-position row) other)
+      (save-dao row))))
+
 (defun move-notebook-up! (course-notebook-id)
-  "Swap the row's POSITION with the row immediately above it
-(POSITION = self.position - 1) within the same course.
+  "Swap the row's POSITION with the row just above it in its course's listed
+order (the largest smaller position), so a gap left by a removal does not
+block the move.
 
-No-op when the row is already at POSITION 0 or the row does not exist.
-
-Performed inside a single transaction. A temporary out-of-range
-position (-1) is used during the swap to remain safe even if a UNIQUE
-constraint on (course_id, position) is added in the future.
+No-op when the row is already first or the row does not exist.
 
 Returns:
   T when a swap occurred, NIL on no-op."
-  (let ((row (get-course-notebook course-notebook-id)))
-    (when (and row (> (course-notebook-position row) 0))
-      (let* ((cid (course-notebook-course-id row))
-             (pos (course-notebook-position row))
-             (neighbour
-              (first
-               (select-dao 'course-notebook
-                 (where (:and (:= :course_id (ensure-uuid cid))
-                              (:= :position (1- pos))))))))
-        (when neighbour
-          (with-transaction
-            (setf (course-notebook-position row) -1)
-            (save-dao row)
-            (setf (course-notebook-position neighbour) pos)
-            (save-dao neighbour)
-            (setf (course-notebook-position row) (1- pos))
-            (save-dao row))
-          t)))))
+  (let* ((row (get-course-notebook course-notebook-id))
+         (neighbour (and row (%adjacent-course-notebook row :up))))
+    (when neighbour
+      (%swap-positions! row neighbour)
+      t)))
 
 (defun move-notebook-down! (course-notebook-id)
-  "Swap the row's POSITION with the row immediately below it
-(POSITION = self.position + 1) within the same course.
+  "Swap the row's POSITION with the row just below it in its course's listed
+order (the smallest larger position), so a gap left by a removal does not
+block the move.
 
-No-op when the row is already at the last position or the row does not
-exist.
-
-Performed inside a single transaction with a temporary out-of-range
-position (-1) for safety against future UNIQUE constraints.
+No-op when the row is already last or the row does not exist.
 
 Returns:
   T when a swap occurred, NIL on no-op."
-  (let ((row (get-course-notebook course-notebook-id)))
-    (when row
-      (let* ((cid (course-notebook-course-id row))
-             (pos (course-notebook-position row))
-             (neighbour
-              (first
-               (select-dao 'course-notebook
-                 (where (:and (:= :course_id (ensure-uuid cid))
-                              (:= :position (1+ pos))))))))
-        (when neighbour
-          (with-transaction
-            (setf (course-notebook-position row) -1)
-            (save-dao row)
-            (setf (course-notebook-position neighbour) pos)
-            (save-dao neighbour)
-            (setf (course-notebook-position row) (1+ pos))
-            (save-dao row))
-          t)))))
+  (let* ((row (get-course-notebook course-notebook-id))
+         (neighbour (and row (%adjacent-course-notebook row :down))))
+    (when neighbour
+      (%swap-positions! row neighbour)
+      t)))
 
 (defun list-course-notebooks (course-id)
   "Return all join rows attached to COURSE-ID, ordered by POSITION ascending."
