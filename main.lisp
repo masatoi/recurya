@@ -8,8 +8,9 @@
 
 (defpackage #:recurya/main
   (:use #:cl)
-  (:import-from #:recurya/db/core
-                #:connect-to-database)
+  ;; Declares the dependency for RECURYA/DB/CORE:START! (called qualified,
+  ;; since the web server's START! is imported below).
+  (:import-from #:recurya/db/core)
   (:import-from #:recurya/web/server
                 #:start!
                 #:stop!)
@@ -49,8 +50,9 @@ unreachable) is logged with a backtrace and the process exits non-zero
       ((serious-condition
          (lambda (c)
            (format *error-output* "~&[boot] FATAL ~A: ~A~%" (type-of c) c)
-           (ignore-errors
-            (uiop:print-backtrace :stream *error-output* :count 50))
+           ;; A failure while printing the backtrace must not stop the exit.
+           (handler-case (uiop:print-backtrace :stream *error-output* :count 50)
+             (error () nil))
            (finish-output *error-output*)
            (sb-ext:exit :code 1 :abort t))))
     (boot!))
@@ -65,5 +67,8 @@ unreachable) is logged with a backtrace and the process exits non-zero
   (loop until *shutdown-requested* do (sleep 1))
   (format t "~&[boot] shutdown requested; stopping server~%")
   (force-output)
-  (ignore-errors (stop!))
+  (handler-case (stop!)
+    (error (e)
+      (format *error-output* "~&[boot] WARN: stop failed: ~A~%" e)
+      (force-output *error-output*)))
   (sb-ext:exit :code 0))
