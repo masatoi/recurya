@@ -84,6 +84,9 @@ jobs:
           POSTGRES_HOST: localhost
           POSTGRES_PORT: 5432
           POSTGRES_DB: recurya_test
+          # The test helpers default to "<POSTGRES_DB>_test"; point them at the
+          # database the step above already loaded the schema into.
+          POSTGRES_TEST_DB: recurya_test
           POSTGRES_USER: postgres
           POSTGRES_PASSWORD: postgres
         run: |

@@ -51,11 +51,23 @@ image, so setup work runs at most once per session.")
   "Cached cl-dbi connection to the dedicated test database, reused across
 tests. Separate from the application's top-level connection.")
 
+(defun %strip-sql-comment-lines (sql)
+  "SQL without its `--' comment lines (lines whose first non-blank characters
+are `--'), so a `;' inside a comment cannot split a statement."
+  (format nil "~{~A~%~}"
+          (remove-if (lambda (line)
+                       (let ((trimmed (string-left-trim '(#\Space #\Tab) line)))
+                         (and (>= (length trimmed) 2)
+                              (string= "--" trimmed :end2 2))))
+                     (uiop:split-string sql :separator '(#\Newline)))))
+
 (defun %apply-schema-file (conn)
   "Apply db/schema.sql to CONN, one statement at a time. The schema is plain
-DDL (no PL/pgSQL bodies), so splitting on `;' is safe."
-  (let ((sql (uiop:read-file-string
-              (asdf:system-relative-pathname :recurya "db/schema.sql"))))
+DDL (no PL/pgSQL bodies or `;' inside string literals), so after dropping its
+comment lines, splitting on `;' is safe."
+  (let ((sql (%strip-sql-comment-lines
+              (uiop:read-file-string
+               (asdf:system-relative-pathname :recurya "db/schema.sql")))))
     (dolist (stmt (uiop:split-string sql :separator ";"))
       (let ((trimmed (string-trim '(#\Space #\Tab #\Newline #\Return) stmt)))
         (when (plusp (length trimmed))
