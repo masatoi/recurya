@@ -13,6 +13,8 @@
   (:import-from #:recurya/specs/domain)
   (:import-from #:recurya/specs/game/arena)
   (:import-from #:recurya/specs/game/notebook-parser)
-  (:import-from #:recurya/specs/game/notebook-jsonb))
+  (:import-from #:recurya/specs/game/notebook-jsonb)
+  (:import-from #:recurya/specs/db/domain)
+  (:import-from #:recurya/specs/db/core))
 
 (in-package #:recurya/specs/all)
