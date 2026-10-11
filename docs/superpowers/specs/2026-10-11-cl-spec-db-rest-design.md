@@ -62,6 +62,8 @@
   または値が `flag-value` でないとき、新しい condition `invalid-flag-error` (同パッケージで定義・
   export、`error` のサブクラス、名前と値を保持) を signal する。値を省略した set-flag は従来どおり T。
 - `recurya/db/novel`:
+  - 保存形式の書き出しを内部関数 `%flags->json` (FLAGS alist → JSON 文字列) に切り出す
+    (DB なしの Property が同じ書き出しを使うため)。
   - 保存: キーワード値は JSON オブジェクト `{"symbol": "<小文字の名前>"}`、それ以外は従来どおり
     (T → `true`、NIL → `false`、整数、文字列)。
   - 読み戻し (`novel-state-flags-alist`): `true` → T、`false` → NIL、整数、文字列、
@@ -77,8 +79,8 @@
 ```
 specs/db/domain.lisp     ; submission-status を追加
 specs/db/users.lisp      ; recurya/specs/db/users (新設)
-specs/db/novel.lisp      ; recurya/specs/db/novel (新設、DB の往復と upsert)
-specs/game/novel.lisp    ; recurya/specs/game/novel (新設、純粋: set-flag 検査・注入)
+specs/db/novel.lisp      ; recurya/specs/db/novel (新設、DB の往復と upsert、保存形式→注入の往復)
+specs/game/novel.lisp    ; recurya/specs/game/novel (新設、純粋: flag-value 値域と set-flag 検査)
 specs/db/learn.lisp      ; 提出履歴の Property を追加
 specs/all.lisp           ; 上記を追加
 tests/specs/contracts.lisp ; 期待リストに追加
@@ -108,7 +110,7 @@ display-name が NIL なら email。存在しない email / handle、空のハ�
 
 **Property `oauth-login-resolution`** (`:about find-or-create-oauth-user`)
 生成器: プロバイダ 2 種 × ユーザー ID 3 個の ID 表 (各 ID のメールは 3 個のメールから固定で
-選ぶ)、前もって `create-user!` で作る既存ユーザー 0〜2 人 (メールは同じ 3 個から、display-name は
+選ぶ)、前もって `create-user!` で作る既存ユーザー 0〜2 人 (メールは最初の 2 個から、display-name は
 `""` または空でない文字列)、ログイン列 1〜8 件 (各ログインは ID 表の 1 件と display-name)。
 各ログインの後:
 1. 返るユーザーの provider / provider-uid はそのログインのもの。
@@ -116,8 +118,10 @@ display-name が NIL なら email。存在しない email / handle、空のハ�
 3. users の行数 = 既存ユーザー数 + 既存ユーザーにないメールの種類数 (それまでに出たもの)。
 4. 新しく作られたユーザーのハンドルは `placeholder-handle-p` を満たし、display-name は
    ログインの display-name (NIL ならメール)。
-5. 既存ユーザーの display-name は、`""` だったときだけログインの display-name (NIL でなければ)
-   に変わり、空でなければ変わらない。
+5. 既存ユーザーの display-name は、ログインがメール統合で新しい ID を結び付けたとき
+   (すでに結び付いている ID の再ログインではないとき) に、`""` だった場合だけログインの
+   display-name (NIL でなければ) に変わる。それ以外では変わらない (`find-or-create-oauth-user`
+   の docstring の手順 2 だけが display-name を埋める)。
 
 **Property `user-update-partial`** (`:about update-user!`)
 ユーザーを 1〜2 人作り、6 個のキー (password-hash、password-salt、display-name、role、language、
