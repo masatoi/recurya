@@ -24,7 +24,7 @@ Design: `docs/superpowers/specs/2026-10-11-cl-spec-db-rest-design.md`.
 - Never weaken a contract to make it pass. If a contract fails unexpectedly, stop and report the counterexample.
 - In a `defspec-function`, never name an `:args` parameter with a symbol imported from another package (cl-spec then cannot resolve `result`). Use local names (`value`, `directives`).
 - cl-spec `member` specs compare with `eql`: never write a string domain as `(member "a" "b")`; use `(satisfies pred)` with a `defgenerator`.
-- Style: 2-space indent, ≤100 columns, docstrings on every defun/defparameter/generator/condition, no `::` in files (use `:import-from`, including for internal symbols), no new runtime `eval`/`intern` (the existing keyword interning in `db/novel` stays).
+- Style: 2-space indent, ≤100 columns, docstrings on every defun/defparameter/generator/condition, no `::` in files (use `:import-from`, including for internal symbols), no new runtime `eval`/`intern` except in `db/novel`, where reading flags back interns keywords for flag names (existing) and for symbol values (Task 4) — the design requires keywords there, and the scene evaluator already interns every wardlisp symbol it sees.
 - Lint: `mallet <files>` must print `No problems found.` for every Lisp file you touch.
 - Commit messages end with: `Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>`
 - Branch: `feat/cl-spec-db-rest` (already checked out). Do not push.
