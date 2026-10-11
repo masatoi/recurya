@@ -20,6 +20,7 @@
   (:import-from #:recurya/specs/db/course-notebooks)
   (:import-from #:recurya/specs/db/learn)
   (:import-from #:recurya/specs/db/notebooks)
-  (:import-from #:recurya/specs/db/users))
+  (:import-from #:recurya/specs/db/users)
+  (:import-from #:recurya/specs/db/novel))
 
 (in-package #:recurya/specs/all)
