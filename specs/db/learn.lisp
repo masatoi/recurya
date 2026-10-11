@@ -15,7 +15,9 @@
   (:import-from #:cl-spec/src/backends/check-it)
   (:import-from #:recurya/specs/db/domain
                 #:fresh-user-id
-                #:set-equal-p)
+                #:set-equal-p
+                #:random-element
+                #:*submission-statuses*)
   (:import-from #:recurya/tests/support/db
                 #:with-test-db)
   (:import-from #:recurya/db/learn
@@ -23,9 +25,14 @@
                 #:user-passed-cells
                 #:upsert-cell-code
                 #:user-cell-codes
-                #:merge-localstorage)
+                #:merge-localstorage
+                #:record-submission
+                #:cell-submissions)
   (:import-from #:recurya/models/learn-progress
-                #:learn-progress))
+                #:learn-progress)
+  (:import-from #:recurya/models/learn-submission
+                #:learn-submission-code
+                #:learn-submission-status))
 (in-package #:recurya/specs/db/learn)
 
 (defparameter *notebook-keys* #("nb-0" "nb-1")
@@ -189,3 +196,53 @@ for a new cell; the returned counts are those of this rule applied in order."
                                       when (nth-value 1 (gethash (cons n c) codes))
                                         collect (cons (aref *cell-keys* c)
                                                       (gethash (cons n c) codes)))))))))))
+
+(defgenerator submission-plan ()
+  "(SUBMISSIONS LIMIT): 1-10 submissions (USER NOTEBOOK CELL CODE STATUS) as
+indices into two users, *NOTEBOOK-KEYS*, the first two *CELL-KEYS* and
+*CODES*, with STATUS from *SUBMISSION-STATUSES*; LIMIT is :DEFAULT (argument
+omitted) or 1-12."
+  (list (loop repeat (1+ (random 10))
+              collect (list (random 2) (random 2) (random 2)
+                            (random (length *codes*))
+                            (random-element *submission-statuses*)))
+        (if (zerop (random 3)) :default (1+ (random 12)))))
+
+(defspec submission-plan list (:generator submission-plan))
+
+(defproperty submission-history ((plan submission-plan))
+  "Every submission is kept: for each (user, notebook, cell),
+CELL-SUBMISSIONS returns that cell's submissions newest first, at most LIMIT
+of them (50 by default), and none of another cell's."
+  (:about record-submission cell-submissions)
+  (:kind :invariant)
+  (:trials (:smoke 20 :normal 100))
+  (destructuring-bind (submissions limit) plan
+    (with-test-db
+      (let ((users (two-users)))
+        (loop for (u n c k status) in submissions
+              do (record-submission (aref users u) (aref *notebook-keys* n)
+                                    (aref *cell-keys* c) (aref *codes* k) status))
+        (loop for u below 2
+              always
+              (loop for n below 2
+                    always
+                    (loop for c below 2
+                          always
+                          (let* ((args (list (aref users u) (aref *notebook-keys* n)
+                                             (aref *cell-keys* c)))
+                                 (rows (if (eq limit :default)
+                                           (apply #'cell-submissions args)
+                                           (apply #'cell-submissions
+                                                  (append args (list :limit limit)))))
+                                 (newest-first
+                                   (reverse (loop for (su sn sc k status) in submissions
+                                                  when (and (= su u) (= sn n) (= sc c))
+                                                    collect (list (aref *codes* k) status)))))
+                            (equal (mapcar (lambda (row)
+                                             (list (learn-submission-code row)
+                                                   (learn-submission-status row)))
+                                           rows)
+                                   (subseq newest-first 0
+                                           (min (length newest-first)
+                                                (if (eq limit :default) 50 limit))))))))))))
