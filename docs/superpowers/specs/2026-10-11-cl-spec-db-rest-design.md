@@ -215,3 +215,4 @@ scene-index は NIL または整数)。列の後、(ユーザー, ノートブ�
   - 復元後 `recurya` / `recurya/specs/all` を再ロードし、契約ハーネス 3 passed / 0 failed。
 - 全スイート: 478 passed / 0 failed (`recurya/tests`、10976ms)、契約ハーネス 3 passed / 0 failed、所要 4107ms。
   mallet: 変更した Lisp ファイル 17 本で `No problems found.`
+- 契約ハーネスの注記: Task 1 で `placeholder-handle-p` を移動した際、`tests/specs/contracts.lisp` の expected-function-specs が旧パッケージ名 `RECURYA/DB/USERS` のままでも通った (再エクスポートされた同一シンボルに解決されるため)。名前の古さは検出されないが、契約の登録自体は正しい。
