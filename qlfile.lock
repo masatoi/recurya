@@ -71,9 +71,9 @@
   :initargs (:remote-url "https://github.com/masatoi/cl-spec")
   :version "git-2538477fb35a877e7e6c92945370801ee78ed13f"))
 ("check-it" .
- (:class qlot/source/ql:source-ql
-  :initargs (:%version :latest)
-  :version "ql-2015-07-09"))
+ (:class qlot/source/git:source-git
+  :initargs (:remote-url "https://github.com/DalekBaldwin/check-it")
+  :version "git-b79c9103665be3976915b56b570038f03486e62f"))
 ("wardlisp" .
  (:class qlot/source/git:source-git
   :initargs (:remote-url "https://github.com/masatoi/wardlisp")
