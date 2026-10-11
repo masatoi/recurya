@@ -92,9 +92,14 @@
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)
-  "Return the symbol named by ENTRY, a (PACKAGE-NAME . SYMBOL-NAME) pair, or NIL."
-  (let ((package (find-package (car entry))))
-    (and package (find-symbol (cdr entry) package))))
+  "Return the symbol named by ENTRY, a (PACKAGE-NAME . SYMBOL-NAME) pair, or NIL.
+The symbol must be found in the package and that package must be its home
+package, so an entry naming a package that merely re-exports it is stale."
+  (let* ((package (find-package (car entry)))
+         (symbol (and package (find-symbol (cdr entry) package))))
+    (and symbol
+         (eq (symbol-package symbol) package)
+         symbol)))
 
 (defun home-package-prefix-p (symbol prefix)
   "True when SYMBOL's home package name starts with PREFIX."

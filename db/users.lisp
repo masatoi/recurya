@@ -180,6 +180,8 @@ Returns the USER instance."
 (defun update-user! (user-id &key password-hash password-salt display-name role
                               language timezone)
   "Update user attributes. Only provided fields are updated.
+A NIL (or omitted) argument leaves that field unchanged, so a field cannot
+be cleared to NULL through this function.
 
 Arguments:
   USER-ID       - UUID of the user to update

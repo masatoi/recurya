@@ -91,10 +91,9 @@
                          (:= :notebook-id notebook-id))))))
 
 (defun record-submission (user-id notebook-id cell-id code status)
-  "Append an exercise submission to the history. STATUS is a short string
-   like \"pass\" / \"fail\" / \"error\" / \"limit-exceeded\" — anything the
-   notebook-cell-result status keyword serializes to via STRING-DOWNCASE
-   that fits the VARCHAR(16) column."
+  "Append an exercise submission to the history. STATUS is the string \"pass\",
+   \"fail\" or \"error\": the lower-cased status keyword of the notebook cell
+   run, which fits the VARCHAR(16) column."
   (insert-dao
    (make-instance 'learn-submission
                   :user-id user-id
