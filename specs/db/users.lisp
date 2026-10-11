@@ -174,7 +174,7 @@ Unknown emails and handles, and an empty or NIL handle, find nothing."
 
 ;;; OAuth login resolution
 
-;; Identities are (provider, uid) pairs drawn from the vectors below.
+;; An identity is a (provider, uid) pair, numbered 0-5 (see *OAUTH-PROVIDERS*).
 (defparameter *oauth-providers* #("google" "github")
   "The OAuth providers; identity I is provider (floor I 3), uid (mod I 3).")
 
@@ -254,7 +254,7 @@ identity already linked logs in again), and only while it is empty."
 
 ;;; Partial update
 
-;; Fields are updated one at a time; unset fields must stay unchanged.
+;; One UPDATE-USER! call gets a random subset of the fields; the rest must stay unchanged.
 (defparameter *user-update-fields*
   '(:password-hash :password-salt :display-name :role :language :timezone)
   "UPDATE-USER! keyword arguments covered by USER-UPDATE-PARTIAL.")
