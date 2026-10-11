@@ -130,3 +130,11 @@ Recurya で cl-mcp (Common Lisp MCP サーバ) と cl-spec (契約/プロパテ�
 - **起きたこと**: docstring は `(:ABOUT ...)` とだけ書き、例は 1 シンボル。`macroexpand-1` で `:TARGETS '(A B)` になることを確かめてから使った。
 - **期待**: docstring に「`(:about sym1 sym2 ...)` で複数の対象に紐づけられる」と明記する。
 - **回避策**: `macroexpand-1` で展開形の `:TARGETS` を確認する。
+
+## 2026-10-11 — シード付き再実行で DB 接続を使うと 42P05 "prepared statement already exists"
+- **ツール/対象**: cl-spec (seed 再実行が `*random-state*` を束縛) × cl-dbi postgres (`random-string` でプリペアド文名を生成)
+- **分類**: docs
+- **状況**: DB を使う Property (`course-notebook-order`) を、同じ seed で `spec-check` 再実行した (赤シードの再現確認)。
+- **起きたこと**: 1 回目と同じ seed の再実行が `DB Error: prepared statement "prepared_stmt_5UONP3D3" already exists (Code: 42P05)` で `error`。cl-dbi は文名を `(random (expt 36 8))` で作るため、seed 固定の `*random-state*` では前回と同じ名前が再生成され、キャッシュ済みの同一接続 (サーバ側に前回の文が残る) と衝突する。`seed-random-state 42` を束縛して `with-test-db` を 3 回回すだけで 3 回目に決定的に再現した。
+- **期待**: 再現性のための `*random-state*` 束縛が、cl-dbi など副作用のある外部名生成に漏れないこと。cl-spec の docs に「seed 再実行中は CL:RANDOM が決定的になるので、名前の一意性に使うコードに注意」と明記。
+- **回避策**: `tests/support/db.lisp` の `with-test-db` が `*random-state*` を `(make-random-state t)` で束縛し直す (修正済み)。生成器は本体の外で実行されるため seed の再現性は損なわれない。
