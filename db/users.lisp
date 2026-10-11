@@ -14,6 +14,7 @@
                 #:delete-dao)
   (:import-from #:sxql #:order-by)
   (:import-from #:recurya/db/core #:generate-uuid)
+  (:import-from #:recurya/utils/handle #:placeholder-handle-p)
   (:import-from #:recurya/models/users
                 #:users
                 #:users-id
@@ -72,23 +73,6 @@ Returns:
   A string of the form 'u-XXXXXXXX' where X is a lowercase hex digit."
   (let ((uuid (generate-uuid)))
     (format nil "u-~A" (subseq uuid 0 8))))
-
-(defun placeholder-handle-p (handle)
-  "True if HANDLE is a Phase-5-style placeholder (u-<hex>) requiring onboarding.
-
-The placeholder format is 'u-XXXXXXXX' where X is exactly 8 lowercase hex
-digits, as produced by %GENERATE-PLACEHOLDER-HANDLE. Real handles must
-satisfy RECURYA/UTILS/HANDLE:VALID-HANDLE-P (different shape) and never
-match this pattern.
-
-Arguments:
-  HANDLE - The handle string to test.
-
-Returns:
-  T if HANDLE matches the placeholder pattern; NIL otherwise."
-  (and (stringp handle)
-       (cl-ppcre:scan "\\Au-[a-f0-9]{8}\\z" handle)
-       t))
 
 (defun create-user! (&key email password-hash password-salt display-name handle (role "user"))
   "Create a new user and return the created user instance.

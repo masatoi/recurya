@@ -2,6 +2,7 @@
   (:use #:cl)
   (:export #:valid-handle-p
            #:reserved-handle-p
+           #:placeholder-handle-p
            #:+handle-min-length+
            #:+handle-max-length+))
 
@@ -27,8 +28,31 @@
        (cl-ppcre:scan *handle-regex* s)
        t))
 
+(defun placeholder-handle-p (handle)
+  "True if HANDLE is a Phase-5-style placeholder (u-<hex>) requiring onboarding.
+
+RESERVED-HANDLE-P refuses this shape, so a real handle never matches it.
+
+The placeholder format is 'u-XXXXXXXX' where X is exactly 8 lowercase hex
+digits, as produced by RECURYA/DB/USERS::%GENERATE-PLACEHOLDER-HANDLE.
+
+Arguments:
+  HANDLE - The handle string to test.
+
+Returns:
+  T if HANDLE matches the placeholder pattern; NIL otherwise."
+  (and (stringp handle)
+       (cl-ppcre:scan "\\Au-[a-f0-9]{8}\\z" handle)
+       t))
+
 (defun reserved-handle-p (s)
-  "True if S is in the reserved-handles list (case-insensitive)."
+  "True if S may not be chosen as a handle: its lower-cased form is in the
+reserved-handles list, or has the placeholder shape (PLACEHOLDER-HANDLE-P)
+that marks a user who has not picked a handle yet.  The placeholder shape also
+satisfies VALID-HANDLE-P, so without this a user could choose it and be sent
+back to onboarding on every request."
   (and (stringp s)
-       (member (string-downcase s) *reserved-handles* :test #'string=)
+       (let ((lower (string-downcase s)))
+         (or (member lower *reserved-handles* :test #'string=)
+             (placeholder-handle-p lower)))
        t))

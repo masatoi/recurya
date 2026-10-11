@@ -47,3 +47,10 @@
     (ng (recurya/utils/handle:reserved-handle-p nil))
     (ng (recurya/utils/handle:reserved-handle-p 42))
     (ng (recurya/utils/handle:reserved-handle-p :alice))))
+
+(deftest placeholder-shapes-are-reserved
+  (testing "the onboarding placeholder shape cannot be chosen as a handle"
+    (ok (recurya/utils/handle:reserved-handle-p "u-deadbeef"))
+    (ok (recurya/utils/handle:reserved-handle-p "U-DEADBEEF"))
+    (ng (recurya/utils/handle:reserved-handle-p "u-deadbee"))
+    (ng (recurya/utils/handle:reserved-handle-p "u-deadbeef0"))))

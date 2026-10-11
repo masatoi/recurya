@@ -60,7 +60,8 @@
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-SLUG-UNIQUE-PER-AUTHOR")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-LIST-FILTERS")
     ("RECURYA/SPECS/DB/NOTEBOOKS" . "COURSE-LIST-FILTERS")
-    ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-UPDATE-PARTIAL"))
+    ("RECURYA/SPECS/DB/NOTEBOOKS" . "NOTEBOOK-UPDATE-PARTIAL")
+    ("RECURYA/SPECS/DB/USERS" . "PLACEHOLDER-HANDLE-NEVER-REAL"))
   "Properties that must be registered, as (PACKAGE . SYMBOL) names.")
 
 (defparameter *expected-function-specs*
@@ -76,7 +77,8 @@
     ("RECURYA/DB/CORE" . "FORMAT-TIMESTAMP-FOR-DB")
     ("RECURYA/DB/CORE" . "ENSURE-UUID")
     ("RECURYA/DB/CORE" . "UUID-STRING-P")
-    ("RECURYA/DB/USERS" . "PLACEHOLDER-HANDLE-P"))
+    ("RECURYA/UTILS/HANDLE" . "PLACEHOLDER-HANDLE-P")
+    ("RECURYA/UTILS/HANDLE" . "RESERVED-HANDLE-P"))
   "Function specs that must be registered, named by their target function.")
 
 (defun resolve-name (entry)
