@@ -40,7 +40,9 @@
 
 (defgenerator course-notebook-ops ()
   "8-20 operations (KIND N): KIND is :ADD (twice as likely), :REMOVE, :UP or
-:DOWN, and N picks the target among the candidates modulo their count."
+:DOWN, and N picks the target among the candidates modulo their count.  An
+:ADD when every notebook is already attached, and any other operation on an
+empty course, is a no-op on both the model and the database."
   (loop repeat (+ 8 (random 13))
         collect (list (random-element #(:add :add :remove :up :down))
                       (random *notebook-count*))))

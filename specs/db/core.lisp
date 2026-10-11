@@ -75,6 +75,10 @@ is refused with a TYPE-ERROR (the docstring's pre-condition)."
 
 (defspec db-timestamp (type local-time:timestamp) (:generator db-timestamp))
 
+(defparameter *db-timestamp-shape*
+  "\\A\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{6}\\z"
+  "The shape FORMAT-TIMESTAMP-FOR-DB's docstring promises.")
+
 (defun expected-db-timestamp (ts)
   "TS as the docstring's 'YYYY-MM-DD HH:MM:SS.UUUUUU' in the default time zone,
 built from DECODE-TIMESTAMP's fields rather than a format string."
@@ -86,7 +90,8 @@ built from DECODE-TIMESTAMP's fields rather than a format string."
   "A timestamp is written as 'YYYY-MM-DD HH:MM:SS.UUUUUU' with microseconds."
   (:args (ts db-timestamp))
   (:returns string)
-  (:post (string= result (expected-db-timestamp ts))))
+  (:post (and (scan *db-timestamp-shape* result)
+              (string= result (expected-db-timestamp ts)))))
 
 (defun random-uuid-string ()
   "A fresh lower-case UUID string (of CHARACTERs, so it can be mutated)."

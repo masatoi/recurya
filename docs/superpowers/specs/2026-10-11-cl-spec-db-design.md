@@ -60,7 +60,7 @@ tests/specs/contracts.lisp      ; 期待リストに追加
 | `recurya/db/core:nil->null` | NIL → `:null`、それ以外はそのまま (`eq`) |
 | `null->nil` | `:null` → NIL、それ以外はそのまま |
 | `keyword->db-string` | `:cases`: NIL → NIL / keyword → 名前の小文字 / それ以外 → `type-error` を signal |
-| `format-timestamp-for-db` | 結果は `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$` に一致し、UTC で読み戻すとマイクロ秒単位で同じ時刻 |
+| `format-timestamp-for-db` | 結果は `^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{6}$` に一致し、local-time の既定タイムゾーンで読み戻すとマイクロ秒単位で入力と同じ時刻 |
 | `ensure-uuid` | 文字列は前後の空白 (#\Space) を除き小文字化、それ以外は `princ` 表記の小文字 |
 | `uuid-string-p` | 8-4-4-4-12 の 16 進 (大小とも可) の 36 文字の文字列だけ T。生成器は正しい UUID と、1 文字変異・長さ違い・区切り位置違い・非文字列を出す |
 | `recurya/db/users:placeholder-handle-p` | `u-` + 小文字 16 進 8 桁だけ T |
@@ -170,6 +170,9 @@ visibility (と notebook の body-md、cells) がすべて等しく、作者 id 
   同じ名前が再生成され DBI 42P05 で衝突した。→ `with-test-db` が新しい
   `*random-state*` を束縛するよう修正 (9dbd914)。ジェネレータは本体の外で動くため seed の
   再現性は保たれる。
+- **F-C5** `format-timestamp-for-db` の結果は UTC オフセットを持たず、local-time の
+  既定タイムゾーン (この環境では +09:00) で整形される。TIMESTAMPTZ 列へそのまま渡すと
+  セッションのタイムゾーンで解釈される。現状は本番の呼び出し元が無いので変更しない。
 
 ## 検証結果
 
@@ -183,5 +186,6 @@ visibility (と notebook の body-md、cells) がすべて等しく、作者 id 
   - `merge-localstorage` が payload で上書き → merge-localstorage-rules `:smoke` failed (seed 219554440621438051)
   - `list-notebooks` が `:visibility` を無視 → notebook-list-filters `:normal` failed (seed 1607129162709553047)
   - `move-notebook-up!` を修正前の本体に → course-notebook-order `:normal` failed (seed 2991735439098915774)
+  - `list-notebooks` / `list-courses` を古い順 (結果を reverse) に → notebook-list-filters `:normal` failed (seed 4551448593134454888)、course-list-filters `:normal` failed (seed 3069837373526902215)。各行に created_at を明示して順序をちょうど検証する (最終レビュー Important 1)
   - `uuid-string-p` を `digit-char-p` 版に → Function Spec 300 trials failed (seed 1129218155036047944)
 - 全スイート: 472 passed / 0 failed (`recurya/tests`、9167ms)、契約ハーネス 3 passed / 0 failed、所要 2917ms。
