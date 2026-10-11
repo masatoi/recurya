@@ -129,8 +129,10 @@ Returns:
                                           status visibility published-at)
   "Update notebook attributes. Only provided fields are updated.
 
-CELLS, when provided, is JSON-serialized via lisp->jsonb before write
-(an empty list serializes to \"[]\").
+CELLS, when provided, is JSON-serialized via lisp->jsonb before write.
+An empty list is NIL and therefore counts as not provided: the stored
+cells are left unchanged (callers never need to clear them, because an
+empty notebook body is a parse error).
 
 Returns:
   The updated NOTEBOOK instance, or NIL if not found."

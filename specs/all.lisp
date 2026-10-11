@@ -17,6 +17,7 @@
   (:import-from #:recurya/specs/db/domain)
   (:import-from #:recurya/specs/db/core)
   (:import-from #:recurya/specs/db/course-notebooks)
-  (:import-from #:recurya/specs/db/learn))
+  (:import-from #:recurya/specs/db/learn)
+  (:import-from #:recurya/specs/db/notebooks))
 
 (in-package #:recurya/specs/all)
