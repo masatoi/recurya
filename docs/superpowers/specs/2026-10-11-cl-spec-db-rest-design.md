@@ -189,3 +189,29 @@ scene-index は NIL または整数)。列の後、(ユーザー, ノートブ�
    - `cell-submissions` の並び順を昇順にする / limit を無視する
    - `update-user!` が渡されなかったキーも NIL で上書きする
    - `find-or-create-oauth-user` がメール統合をしない (常に新規作成)
+
+## 検証結果
+
+- 契約: Function Spec 2 (`reserved-handle-p`、`interpret-directives`)、Property 8
+  (users 4、novel 3、learn 1)、値域 defspec 2 (`flag-value`、`submission-status`)。
+- 変更前に赤: reserved-handle-p (failed、`"u-2f5dc2a4"`、seed 2753988324592681474)、
+  placeholder-handle-never-real (failed、`"u-3ecc264c"`、seed 138502751629525869)、
+  interpret-directives (failed、missing-condition: `#(1 2)` の set-flag が正常に戻った、
+  seed 2323234822219805033)、persisted-flags-drive-next-scene (failed、seed 4425964474268112090)、
+  novel-state-roundtrip (failed、seed 2018854177587134707)、
+  novel-state-upsert-sequence (failed、seed 1023599225378170862)。変更後に緑
+  (seed 付き再実行で digest 一致、続けて seed なしでも pass)。
+  なお persisted-flags-drive-next-scene は計画では `eval-scene` に `:flags` を渡しておらず
+  (そのままだと別の error になる)、実装側で docstring どおり `:flags read-back` を足した。
+- ミューテーション (ワーカー上で再定義し unwind-protect で復元、ファイルは無変更。すべて `:passed` にならず検出):
+  - `reserved-handle-p` を予約語リストのみに → Function Spec 300 trials failed、placeholder-handle-never-real `:normal` failed
+  - `%flag-value->json` を恒等に → persisted-flags-drive-next-scene `:normal` failed、novel-state-roundtrip `:smoke` failed
+  - `%flag->binding` が keyword をそのまま渡す → persisted-flags-drive-next-scene `:normal` error (wardlisp が keyword 束縛を拒否)
+  - `interpret-directives` を Task 3 以前の本体に → Function Spec 300 trials failed
+  - `cell-submissions` が `(reverse ...)` → submission-history `:normal` failed
+  - `cell-submissions` が `:limit` を無視 (常に 50) → submission-history `:normal` failed
+  - `update-user!` が常に `:language "ja"` も渡す → user-update-partial `:normal` failed
+  - `find-or-create-oauth-user` から email 分岐を除去 → oauth-login-resolution `:normal` error (email 重複の DB 制約違反)
+  - 復元後 `recurya` / `recurya/specs/all` を再ロードし、契約ハーネス 3 passed / 0 failed。
+- 全スイート: 478 passed / 0 failed (`recurya/tests`、10976ms)、契約ハーネス 3 passed / 0 failed、所要 4107ms。
+  mallet: 変更した Lisp ファイル 17 本で `No problems found.`
