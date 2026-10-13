@@ -172,6 +172,7 @@
                ;; CLI tests
                "recurya/tests/cli/workspace"
                "recurya/tests/cli/report"
+                "recurya/tests/cli/main"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
