@@ -5,12 +5,21 @@
   ;; Bare imports: declare the packages used through qualified names.
   (:import-from #:com.inuoe.jzon)
   (:import-from #:uiop)
-  (:export #:config-dir
+  (:import-from #:sb-posix)
+  (:export #:config-write-failed
+           #:config-write-failed-message
+           #:config-dir
            #:load-config
            #:save-config
            #:resolve-server))
 
 (in-package #:recurya/cli/config)
+
+(define-condition config-write-failed (error)
+  ((message :initarg :message :reader config-write-failed-message))
+  (:report (lambda (c stream)
+             (format stream "Could not save the config privately: ~A"
+                     (config-write-failed-message c)))))
 
 (defun config-dir ()
   "$RECURYA_CONFIG_DIR, else $XDG_CONFIG_HOME/recurya/, else ~/.config/recurya/."
@@ -33,17 +42,33 @@
         (and (hash-table-p data) data)))))
 
 (defun save-config (server token)
-  "Save SERVER and TOKEN, readable by the user only (mode 600)."
+  "Save SERVER and TOKEN, readable by the user only.  The config directory is
+created with mode 700 and the file is made mode 600 while still empty, before
+the token is written.  On any failure the file is deleted and
+CONFIG-WRITE-FAILED is signalled."
   (let ((file (config-file))
         (data (make-hash-table :test 'equal)))
     (setf (gethash "server" data) server
           (gethash "token" data) token)
-    (ensure-directories-exist file)
-    (with-open-file (out file :direction :output :if-exists :supersede
-                              :external-format :utf-8)
-      (write-string (com.inuoe.jzon:stringify data :pretty t) out))
-    (uiop:run-program (list "chmod" "600" (uiop:native-namestring file)))
-    file))
+    (handler-case
+        (progn
+          (unless (probe-file (config-dir))
+            (ensure-directories-exist file)
+            (sb-posix:chmod (uiop:native-namestring (config-dir)) #o700))
+          ;; Create empty, restrict, then write: the token never sits in a
+          ;; group- or world-readable file.
+          (with-open-file (out file :direction :output :if-exists :supersede
+                                    :external-format :utf-8)
+            (declare (ignorable out)))
+          (sb-posix:chmod (uiop:native-namestring file) #o600)
+          (with-open-file (out file :direction :output :if-exists :overwrite
+                                    :external-format :utf-8)
+            (write-string (com.inuoe.jzon:stringify data :pretty t) out))
+          file)
+      (error (e)
+        (handler-case (when (probe-file file) (delete-file file))
+          (error () nil))
+        (error 'config-write-failed :message (princ-to-string e))))))
 
 (defun resolve-server (explicit config)
   "The server to talk to, without a trailing slash: EXPLICIT (--server), else

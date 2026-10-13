@@ -7,7 +7,9 @@
   (:import-from #:recurya/cli/config
                 #:load-config
                 #:save-config
-                #:resolve-server)
+                #:resolve-server
+                #:config-write-failed
+                #:config-write-failed-message)
   (:import-from #:recurya/cli/client
                 #:api-error
                 #:api-error-status
@@ -182,9 +184,16 @@ not logged in."
          (width (gethash "width" manifest))
          (codes (collect-codes manifest index
                                (lambda (file) (read-text (workspace-file file))))))
-    (multiple-value-bind (default-server token) (credentials options)
-      (let* ((server (or (getf options :server) (gethash "server" manifest) default-server))
-             (result (post-cell-run server token (gethash "handle" manifest)
+    (multiple-value-bind (server token) (credentials options)
+      (let ((pulled-from (gethash "server" manifest)))
+        ;; Never send the token to a host other than the one it was issued for.
+        (when (and (stringp pulled-from)
+                   (string/= (string-right-trim "/" pulled-from) server))
+          (usage-error "This notebook was pulled from ~A but the configured server is ~A; ~
+                        not sending your token there.  Pull it again from ~A, or run with ~
+                        --server ~A."
+                       pulled-from server server pulled-from)))
+      (let ((result (post-cell-run server token (gethash "handle" manifest)
                                     (gethash "slug" manifest) index codes)))
         (format-run-result result width *standard-output*)
         (when (string= (gethash "status" result) "pass")
@@ -229,4 +238,5 @@ not logged in."
           (format *error-output* "Not authorized: ~A~%Run: recurya login~%" (api-error-message e))
           (format *error-output* "Server said: ~A~%" (api-error-message e)))
       2)
+    (config-write-failed (e) (format *error-output* "~A~%" (config-write-failed-message e)) 2)
     (request-failed (e) (format *error-output* "~A~%" (request-failed-message e)) 2)))
