@@ -135,8 +135,18 @@ human glance. Everything else is server-side.
 
 The learner CLI (`docs/CLI.md`) talks to `/api/v1/*`.
 
-- `/api/*` is Bearer-token only (`Authorization: Bearer rcy_...`); it is exempt
-  from CSRF and the onboarding redirect. Tokens are issued on `/account`.
+- `/api/*` is Bearer-token only (`Authorization: Bearer rcy_...`). `build-app`
+  (`web/server.lisp`) dispatches `/api/` paths to their own Lack stack without
+  `:session` (bind-locale → api-token-auth → backtrace → app): no cookie is read
+  or set and no `sessions` row is written, and CSRF / the onboarding redirect do
+  not apply. Every other path keeps the browser stack. Tokens are issued on
+  `/account`.
+- Error codes: 401 `unauthorized`, 404 `not_found`, 400 `bad_json`, 413
+  `payload_too_large` (body over 1 MiB), 422 `invalid_request` (also: more codes
+  than cells, or one code over 64 KiB), 500 `internal` (logged with path and
+  user id, never the token), 503 `unavailable` (the token check itself failed,
+  e.g. the DB is down). Every handler also answers 401 if it is ever reached
+  without an authenticated user. Scene cells are returned with `body: null`.
 - Handler tests for the API use the `with-api-request` macro in
   `tests/web/api-routes.lisp`, which puts the user in the request env under
   `:recurya.api-user` and calls the handler directly.
