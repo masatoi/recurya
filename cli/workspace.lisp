@@ -14,6 +14,8 @@
                 #:byte-array-to-hex-string)
   (:import-from #:babel
                 #:string-to-octets)
+  ;; Bare import: declares the jzon dependency for package-inferred loading.
+  (:import-from #:com.inuoe.jzon)
   (:export #:index-width
            #:cell-file-name
            #:initial-code
