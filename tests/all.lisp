@@ -18,19 +18,23 @@
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
     :recurya/tests/db/novel
+    :recurya/tests/db/api-tokens
     :recurya/tests/web/i18n-core
     :recurya/tests/web/i18n-catalog
     :recurya/tests/web/i18n-render
     :recurya/tests/web/oauth
     :recurya/tests/web/onboarding
     :recurya/tests/web/routes
+    :recurya/tests/web/account-tokens
     :recurya/tests/web/notebook-routes
     :recurya/tests/web/course-routes
     :recurya/tests/web/profile
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
     :recurya/tests/web/dashboard-auth
+    :recurya/tests/web/api-auth
     :recurya/tests/web/novel-routes
+    :recurya/tests/web/api-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests
@@ -38,6 +42,7 @@
     :recurya/tests/game/arena
     :recurya/tests/game/notebook
     :recurya/tests/game/notebook-parser
+    :recurya/tests/game/notebook-gating
     ;; cl-spec contracts (specs/)
     :recurya/tests/specs/contracts
     ;; Novel engine tests

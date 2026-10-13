@@ -52,6 +52,7 @@
                "recurya/game/novel/value"
                "recurya/game/novel/eval"
                "recurya/game/notebook-jsonb"
+               "recurya/game/notebook-gating"
                ;; Arena
                "recurya/game/arena"
                "recurya/game/scenario"
@@ -69,6 +70,7 @@
                "recurya/db/course-notebooks"
                "recurya/db/learn"
                "recurya/db/novel"
+                "recurya/db/api-tokens"
                "recurya/db"
                ;; Models
                "recurya/models/users"
@@ -79,6 +81,7 @@
                "recurya/models/learn-cell-code"
                "recurya/models/learn-submission"
                "recurya/models/novel-state"
+                "recurya/models/api-token"
                ;; i18n（web/ui・routes・server より前にロード）
                "recurya/web/i18n/core"
                "recurya/web/i18n/en"
@@ -86,6 +89,9 @@
                ;; Web layer
                "recurya/web/app"
                "recurya/web/auth"
+               "recurya/web/http"
+               "recurya/web/api-auth"
+               "recurya/web/notebook-service"
                "recurya/web/ui/styles"
                "recurya/web/ui/csrf"
                "recurya/web/ui/layout"
@@ -113,6 +119,7 @@
                "recurya/web/ui/reference"
                "recurya/web/routes-wardlisp"
                "recurya/web/routes-novel"
+               "recurya/web/routes-api"
                "recurya/web/server"
                ;; Seed / bootstrap
                "recurya/seed/official-content"
@@ -144,6 +151,7 @@
                "recurya/tests/db/course-notebooks"
                "recurya/tests/db/learn"
                "recurya/tests/db/novel"
+                "recurya/tests/db/api-tokens"
                ;; Web tests
                "recurya/tests/web/i18n-core"
                "recurya/tests/web/i18n-catalog"
@@ -151,18 +159,22 @@
                "recurya/tests/web/oauth"
                "recurya/tests/web/onboarding"
                "recurya/tests/web/routes"
+               "recurya/tests/web/account-tokens"
                "recurya/tests/web/notebook-routes"
                "recurya/tests/web/course-routes"
                "recurya/tests/web/profile"
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
                "recurya/tests/web/dashboard-auth"
+                "recurya/tests/web/api-auth"
                "recurya/tests/web/novel-routes"
+               "recurya/tests/web/api-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
                "recurya/tests/game/notebook-parser"
+               "recurya/tests/game/notebook-gating"
                ;; Novel engine tests
                "recurya/tests/game/novel/interpreter"
                "recurya/tests/game/novel/value"

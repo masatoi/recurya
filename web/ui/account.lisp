@@ -15,7 +15,16 @@
   (:import-from #:recurya/web/i18n/core
                 #:tr
                 #:available-locales)
-  (:export #:render))
+  (:import-from #:recurya/models/api-token
+                #:api-token-id
+                #:api-token-name
+                #:api-token-token-prefix
+                #:api-token-created-at
+                #:api-token-last-used-at)
+  (:import-from #:recurya/db/core
+                #:null->nil)
+  (:export #:render
+           #:render-api-tokens))
 
 (in-package #:recurya/web/ui/account)
 
@@ -87,7 +96,61 @@ form.settings .button-primary {
     ("Pacific/Auckland" . "Auckland"))
   "Common timezone options for user preferences.")
 
-(defun render (&key user message error)
+(defun format-token-time (timestamp)
+  "TIMESTAMP as YYYY-MM-DD HH:MM (UTC), or NIL for NIL/:NULL."
+  (let ((ts (null->nil timestamp)))
+    (when ts
+      (local-time:format-timestring
+       nil ts :format '(:year "-" (:month 2) "-" (:day 2) " " (:hour 2) ":" (:min 2))
+              :timezone local-time:+utc-zone+))))
+
+(defun render-api-tokens (tokens &key new-token error)
+  "The API token section (#api-tokens): an HTMX form to issue a token, the
+just-issued NEW-TOKEN shown once, ERROR if any, and TOKENS (rows) with a
+revoke button each.  Returned as an HTML string; it is both part of the
+account page and the HTMX swap response."
+  (with-html-string
+    (:section :id "api-tokens" :class "card"
+      (:h2 (tr :account.tokens.heading))
+      (:p :class "muted" (tr :account.tokens.body))
+      (when error
+        (:div :class "message error" error))
+      (when new-token
+        (:div :class "message success"
+          (:p (tr :account.tokens.new_notice))
+          (:pre (:code new-token))))
+      (:form :class "settings" :hx-post "/account/tokens"
+             :hx-target "#api-tokens" :hx-swap "outerHTML"
+        (:raw (csrf-input))
+        (:div
+          (:label :for "api-token-name" (tr :account.tokens.name_label))
+          (:input :id "api-token-name" :name "name" :type "text" :maxlength "64"))
+        (:button :type "submit" :class "button-primary" (tr :account.tokens.create)))
+      (if (null tokens)
+          (:p :class "muted" (tr :account.tokens.empty))
+          (:table
+            (:thead
+              (:tr (:th (tr :account.tokens.col_name))
+                   (:th (tr :account.tokens.col_token))
+                   (:th (tr :account.tokens.col_created))
+                   (:th (tr :account.tokens.col_last_used))
+                   (:th "")))
+            (:tbody
+              (dolist (row tokens)
+                (:tr
+                  (:td (api-token-name row))
+                  (:td (:code (api-token-token-prefix row) "…"))
+                  (:td (or (format-token-time (api-token-created-at row)) ""))
+                  (:td (or (format-token-time (api-token-last-used-at row))
+                           (tr :account.tokens.never)))
+                  (:td
+                    (:form :hx-post (format nil "/account/tokens/~D/revoke" (api-token-id row))
+                           :hx-target "#api-tokens" :hx-swap "outerHTML"
+                      (:raw (csrf-input))
+                      (:button :type "submit" :class "button-danger"
+                               (tr :account.tokens.revoke))))))))))))
+
+(defun render (&key user message error tokens)
   "Render the account settings page."
   (let ((email (getf user :email))
         (display-name (or (getf user :name) ""))
@@ -146,6 +209,7 @@ form.settings .button-primary {
                            (:option :value code :selected t label)
                            (:option :value code label))))))))
            (:button :type "submit" :class "button-primary" (tr :account.save))))
+       (:raw (render-api-tokens tokens))
        (:div :class "card"
          (:h2 (tr :account.danger.heading))
          (:p :class "muted" (tr :account.danger.body))

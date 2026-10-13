@@ -13,18 +13,27 @@
                 #:*lack-middleware-csrf*)
   (:import-from #:recurya/web/app
                 #:make-recurya-app)
+  (:import-from #:recurya/web/api-auth
+                #:api-token-auth
+                #:api-body-limit
+                #:api-path-p)
+  (:import-from #:recurya/web/http
+                #:request-body-limit)
   (:import-from #:recurya/web/auth
                 #:require-dashboard-auth
                 #:require-real-handle)
   (:import-from #:recurya/web/i18n/core
                 #:bind-locale)
   (:import-from #:recurya/web/routes
-                #:setup-routes)
+                #:setup-routes
+                #:*learn-sync-max-body-bytes*)
   (:import-from #:recurya/web/ui/errors
                 #:csrf-failure)
   (:export #:start!
            #:stop!
            #:start-worker-app
+           #:csrf-with-skip
+           #:build-app
            #:*handler*))
 
 (in-package #:recurya/web/server)
@@ -69,9 +78,32 @@ inspection would interfere)."
          (funcall *lack-middleware-csrf*
                   app :block-app #'csrf-failure-handler)))
     (lambda (env)
-      (if (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
+      (if (or (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
+              ;; Defence in depth: BUILD-APP routes /api/ to its own stack
+              ;; (no CSRF middleware at all), so this branch is not reached
+              ;; in the running server.  It is kept because csrf-skips-api-posts
+              ;; (tests/web/api-auth.lisp) exercises it directly: /api/ is
+              ;; bearer-token only (see web/api-auth), never cookie-based.
+              (api-path-p (getf env :path-info)))
           (funcall app env)
           (funcall csrf-app env)))))
+
+(defun learn-sync-body-limit (app)
+  "Lack middleware: refuse a POST /learn/sync (or its legacy URL) body over
+*LEARN-SYNC-MAX-BODY-BYTES* with 413, and a chunked one without
+Content-Length with 411, before Lack parses it.  Other paths pass through."
+  (funcall (request-body-limit
+            *learn-sync-max-body-bytes*
+            (lambda (status)
+              (list status
+                    '(:content-type "application/json; charset=utf-8")
+                    (list (if (= status 413)
+                              "{\"error\":\"payload too large\"}"
+                              "{\"error\":\"length required\"}"))))
+            :applies-p (lambda (path)
+                         (member path '("/learn/sync" "/wardlisp/learn/sync")
+                                 :test #'equal)))
+           app))
 
 (defun ensure-sessions-table! ()
   "Create the DBI session-store backing table if it does not already exist.
@@ -92,50 +124,77 @@ application database, which is safe under Hunchentoot's worker threads."
                  (or (uiop:getenv "POSTGRES_DB") "recurya")))
    :disconnector (lambda (conn) (dbi:disconnect conn))))
 
-(defun build-app ()
-  "Build the complete Lack application with middleware."
+(defun build-app (&key (session-store (make-session-store)))
+  "Build the complete Lack application with middleware.
+Requests under /api/ go to a stack without :session (bearer-token auth only:
+no session row, no Set-Cookie, no cookie path into the API); every other
+request goes through the browser stack.  SESSION-STORE is the browser
+stack's session store (tests pass an in-memory one)."
   (let ((app (make-recurya-app)))
     (setup-routes app)
-    ;; Lack middleware stack (outermost listed first):
-    ;; 1. :static                  — serves /static/* from resources/static/ on disk
-    ;; 2. :session                 — cookie-keyed, DB-backed session store
-    ;;                               (persists logins across restarts; provides
-    ;;                               ningle/context:*session*)
-    ;; 3. #'bind-locale            — Binds *locale* from the session user's
-    ;;                               :language (anonymous/unsupported -> :en)
-    ;;                               for the request extent. Reads :lack.session,
-    ;;                               so must run after :session; wraps all render.
-    ;; 4. #'require-dashboard-auth — Login guard: redirects anonymous requests
-    ;;                               to /dashboard or /dashboard/* back to
-    ;;                               /login. Reads :lack.session, so must run
-    ;;                               after :session. Runs before
-    ;;                               require-real-handle so anonymous users go
-    ;;                               to /login (not /onboarding/handle).
-    ;; 5. #'csrf-with-skip         — CSRF token check on POST/PUT/DELETE/PATCH;
-    ;;                               bypassed for paths in *csrf-skip-paths*.
-    ;;                               Must run after :session because it reads
-    ;;                               :lack.session.
-    ;; 6. #'require-real-handle    — Onboarding guard: redirects users with
-    ;;                               placeholder handles to /onboarding/handle.
-    ;;                               Reads :lack.session, so must run after
-    ;;                               :session. Sits before :backtrace so its
-    ;;                               302 response is unaffected by error
-    ;;                               handling.
-    ;; 7. :backtrace               — renders a debug backtrace page on
-    ;;                               unhandled errors.
-    ;; 8. app                      — the Ningle router with all route handlers.
-    (lack/builder:builder
-     (:static :path "/static/"
-              :root (asdf:system-relative-pathname
-                     :recurya "resources/static/"))
-     (:session :store (make-session-store))
-     ;; セッション確定後に現在ロケールを *locale* へ束縛(全描画をカバー)
-     #'bind-locale
-     #'require-dashboard-auth
-     #'csrf-with-skip
-     #'require-real-handle
-     :backtrace
-     app)))
+    (let ((web-app
+            ;; Browser stack (outermost listed first):
+            ;; 1. :static                  — serves /static/* from resources/static/ on disk
+            ;; 1b. #'learn-sync-body-limit — 413/411 for an oversized or unsized
+            ;;                               POST /learn/sync body, before Lack
+            ;;                               parses it or a session is made; every
+            ;;                               other path passes straight through.
+            ;; 2. :session                 — cookie-keyed, DB-backed session store
+            ;;                               (persists logins across restarts; provides
+            ;;                               ningle/context:*session*)
+            ;; 3. #'bind-locale            — Binds *locale* from the session user's
+            ;;                               :language (anonymous/unsupported -> :en)
+            ;;                               for the request extent. Reads :lack.session,
+            ;;                               so must run after :session; wraps all render.
+            ;; 4. #'require-dashboard-auth — Login guard: redirects anonymous requests
+            ;;                               to /dashboard or /dashboard/* back to
+            ;;                               /login. Reads :lack.session, so must run
+            ;;                               after :session. Runs before
+            ;;                               require-real-handle so anonymous users go
+            ;;                               to /login (not /onboarding/handle).
+            ;; 5. #'csrf-with-skip         — CSRF token check on POST/PUT/DELETE/PATCH;
+            ;;                               bypassed for paths in *csrf-skip-paths*.
+            ;;                               Must run after :session because it reads
+            ;;                               :lack.session.
+            ;; 6. #'require-real-handle    — Onboarding guard: redirects users with
+            ;;                               placeholder handles to /onboarding/handle.
+            ;;                               Reads :lack.session, so must run after
+            ;;                               :session. Sits before :backtrace so its
+            ;;                               302 response is unaffected by error
+            ;;                               handling.
+            ;; 7. :backtrace               — renders a debug backtrace page on
+            ;;                               unhandled errors.
+            ;; 8. app                      — the Ningle router with all route handlers.
+            (lack/builder:builder
+             (:static :path "/static/"
+                      :root (asdf:system-relative-pathname
+                             :recurya "resources/static/"))
+             #'learn-sync-body-limit
+             (:session :store session-store)
+             ;; セッション確定後に現在ロケールを *locale* へ束縛(全描画をカバー)
+             #'bind-locale
+             #'require-dashboard-auth
+             #'csrf-with-skip
+             #'require-real-handle
+             :backtrace
+             app))
+          (api-app
+            ;; API stack: no :session, so no cookie is read or set and no
+            ;; session row is written.  bind-locale (no session -> :en) keeps
+            ;; *locale* request-scoped; api-body-limit refuses bodies over
+            ;; 1 MiB before Lack parses them (and before any token lookup);
+            ;; api-token-auth is the only credential check; CSRF does not
+            ;; apply to a bearer-token API.
+            (lack/builder:builder
+             #'api-body-limit
+             #'bind-locale
+             #'api-token-auth
+             :backtrace
+             app)))
+      (lambda (env)
+        (if (api-path-p (getf env :path-info))
+            (funcall api-app env)
+            (funcall web-app env))))))
 
 (defun start! (&key (port nil) (address "0.0.0.0"))
   "Start the web server.

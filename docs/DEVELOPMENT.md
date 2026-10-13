@@ -131,6 +131,41 @@ behaviour (CodeMirror editor, buttons, arena stepping, novel advance) — cover
 its logic with the `node` tests, and visual/CSS/layout correctness — a quick
 human glance. Everything else is server-side.
 
+## JSON API / CLI
+
+The learner CLI (`docs/CLI.md`) talks to `/api/v1/*`.
+
+- `/api/*` is Bearer-token only (`Authorization: Bearer rcy_...`). `build-app`
+  (`web/server.lisp`) dispatches `/api/` paths to their own Lack stack without
+  `:session` (bind-locale → api-token-auth → backtrace → app): no cookie is read
+  or set and no `sessions` row is written, and CSRF / the onboarding redirect do
+  not apply. Every other path keeps the browser stack. Tokens are issued on
+  `/account`.
+- Error codes: 401 `unauthorized`, 404 `not_found`, 400 `bad_json`, 411
+  `length_required` (chunked body without Content-Length), 413
+  `payload_too_large` (body over 1 MiB), 422 `invalid_request` (also: more codes
+  than cells, or one code over 64 KiB), 500 `internal` (logged with path and
+  user id, never the token), 503 `unavailable` (the token check itself failed,
+  e.g. the DB is down). Every handler also answers 401 if it is ever reached
+  without an authenticated user. Scene cells are returned with `body: null`.
+- Handler tests for the API use the `with-api-request` macro in
+  `tests/web/api-routes.lisp`, which puts the user in the request env under
+  `:recurya.api-user` and calls the handler directly.
+- CLI unit tests (Python stdlib only, no qlot): `python3 -m unittest discover -s tests/cli_py -v`.
+  They run in CI before the Lisp suite.
+- `./scripts/cli-e2e.sh` downloads the client from `$BASE/static/recurya` (and
+  checks it equals `resources/static/recurya`), then drives it
+  against the dev server (needs `python3` and `curl`, not qlot) (login, pull, run fail/pass, solution unlock, status,
+  browser page). Needs the dev server with `OAUTH_DEV_STUB` on and a stub user
+  with a real handle. It revokes the `cli-e2e` token it issues; the draft
+  notebook it creates is left as dev data (slug is printed).
+- **Applying the `api_token` table.** The dev/prod DBs were created from
+  `db/schema.sql` and have no Mito migration history, so `mito migrate` would
+  prompt about 7 "non-applied" migrations. Apply this change's table directly
+  instead: `psql -d recurya -f db/migrations/20261013124402.up.sql`, and the
+  same for the test DB: `psql -d recurya_test -f db/migrations/20261013124402.up.sql`
+  (e.g. `psql postgresql://postgres:postgres@localhost:15434/recurya_test -f ...`).
+
 ## Internationalization (i18n)
 
 The UI is rendered in the user's language via a message catalog. Currently

@@ -131,6 +131,7 @@ WITH-CONNECTION to the test database (as WITH-TEST-DB does)."
       (error "cleanup-all-test-data refused: active connection is on database ~
               ~S, not the test database ~S. Aborting to protect non-test data."
              db (test-database-name))))
+  (execute! "DELETE FROM api_token")
   (execute! "DELETE FROM novel_state")
   (execute! "DELETE FROM course_notebook")
   (execute! "DELETE FROM course")

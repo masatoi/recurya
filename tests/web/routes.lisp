@@ -307,6 +307,12 @@
     (ok (= 1 (parse-page-param '(("page" . "0")))))
     (ok (= 1 (parse-page-param '(("page" . "-1")))))))
 
+(deftest parse-page-param-bounds-huge-values
+  (testing "parse-page-param falls back to 1 above 10^9 instead of reaching PostgreSQL"
+    (ok (= 1 (parse-page-param '(("page" . "1000000001")))))
+    (ok (= 1 (parse-page-param '(("page" . "99999999999999999999999999")))))
+    (ok (= 1000000000 (parse-page-param '(("page" . "1000000000")))))))
+
 (deftest make-pagination-returns-correct-info
   (testing "make-pagination returns correct pagination info"
     (let ((pag (make-pagination 1 10 5 "/test")))

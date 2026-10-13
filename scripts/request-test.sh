@@ -101,6 +101,60 @@ rt_contains "result-ok" "run fragment renders a result panel"
 rt_contains "486" "run fragment shows the evaluated value (137+349=486)"
 rt_contains "Fuel:" "run fragment shows the resource metrics line"
 
+# rt_next_request_test_token_id -> id of the first "request-test" token row in
+# the last-fetched /account page ($BODY), or empty.
+rt_next_request_test_token_id() {
+  tr '\n' ' ' < "$BODY" | sed 's/<tr>/\n<tr>/g' | grep 'request-test' | head -1 \
+    | grep -oE 'tokens/[0-9]+/revoke' | grep -oE '[0-9]+' | head -1
+}
+
+echo "== /account API tokens (logged in via dev stub) =="
+rt_reset_session; rt_login
+# Self-cleaning: revoke leftover "request-test" tokens (e.g. from an aborted
+# run) so this block never runs into the 10-active-token cap.
+for _ in $(seq 1 12); do
+  rt_get /account >/dev/null
+  id="$(rt_next_request_test_token_id)"
+  [ -n "$id" ] || break
+  rt_hx_post "/account/tokens/$id/revoke" >/dev/null
+done
+rt_status 200 "$(rt_get /account)" "account page renders"
+rt_contains 'hx-post="/account/tokens"' "token form posts via HTMX"
+rt_contains '#api-tokens' "token form targets #api-tokens"
+rt_contains 'id=api-tokens' "target #api-tokens exists (both-sides)"
+rt_status 200 "$(rt_hx_post /account/tokens 'name=request-test')" "create token fragment"
+rt_contains 'id=api-tokens' "fragment is the #api-tokens section"
+grep -qE 'rcy_[0-9a-f]{64}' "$BODY" && _ok "fragment shows the new token once" \
+  || _bad "fragment shows the new token once"
+TOKEN="$(grep -oE 'rcy_[0-9a-f]{64}' "$BODY" | head -1)"
+code=$(curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me")
+rt_status 200 "$code" "the new token authenticates /api/v1/me"
+rt_contains '"handle"' "/api/v1/me returns the handle"
+# /api runs without the session middleware: no cookie is issued (and no
+# sessions row written), even for an authenticated call.
+if curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me" \
+     | grep -qi '^set-cookie:'; then
+  _bad "/api/v1/me sets no session cookie"
+else
+  _ok "/api/v1/me sets no session cookie"
+fi
+code=$( { printf '{"codes": ["'; head -c 1100000 /dev/zero | tr '\0' 'a'; printf '"]}'; } \
+       | curl -s -o "$BODY" -w '%{http_code}' -X POST -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' --data-binary @- \
+              "$BASE/api/v1/notebooks/recurya/sicp-1-1-1/cells/0/run")
+rt_status 413 "$code" "an API body over 1 MiB is refused"
+rt_contains 'payload_too_large' "413 carries the payload_too_large code"
+# Revoke the token this block issued and prove revocation end-to-end.
+PREFIX="${TOKEN:0:12}"
+rt_get /account >/dev/null
+grep -qF "$PREFIX" "$BODY" && _ok "issued token is listed by its prefix" \
+  || _bad "issued token is listed by its prefix"
+id="$(rt_next_request_test_token_id)"
+rt_status 200 "$(rt_hx_post "/account/tokens/$id/revoke")" "revoke token fragment"
+rt_not_contains "$PREFIX" "revoke fragment no longer lists the token"
+code=$(curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me")
+rt_status 401 "$code" "the revoked token is rejected by /api/v1/me"
+
 echo
 echo "=== request-test: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]

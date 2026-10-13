@@ -106,6 +106,22 @@ recurya production core listening (PORT=13000)
 
 ## 5. 更新デプロイ
 
+> **新しいイメージがスキーマ変更を含む場合は、`up -d` より前にマイグレーションを適用すること。**
+> 先に新イメージを起動すると、まだ無いテーブルへのアクセスで 500 になる。
+>
+> 学習者 CLI / JSON API を含むリリース(`api_token` テーブル)へ初めて更新するときは、
+> `pull` の後・`up -d` の前に一度だけ次を実行する(リポジトリの checkout から、コンテナ内の psql へ流し込む):
+>
+> ```bash
+> cd /opt/recurya
+> docker compose --env-file .env.prod -f docker-compose.prod.yml exec -T postgres \
+>   psql -U postgres -d recurya -v ON_ERROR_STOP=1 < db/migrations/20261013124402.up.sql
+> ```
+>
+> (`POSTGRES_USER` / `POSTGRES_DB` を既定値から変えている場合は `-U` / `-d` を合わせる。
+> 適用済みの DB で再実行すると `relation "api_token" already exists` で止まるだけで、データは変わらない。)
+> 以後のスキーマ変更も同じ順序(マイグレーション → `up -d`)で行う(§6)。
+
 ```bash
 # ローカル/CIで新イメージを push した後、VPS で:
 cd /opt/recurya
@@ -128,6 +144,11 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d recurya
 ```
 
 > 詳細は `/mito-migrate` スキルおよび CLAUDE.md を参照。
+
+> 注意: 本番 DB は `db/schema.sql` から作成されておりマイグレーション履歴が無いため、`mito migrate` は
+> 既存の 7 件を「未適用」として確認してくる。CLI 用の `api_token` テーブルは
+> §5 のコマンド(`exec -T postgres psql ... < db/migrations/20261013124402.up.sql`)で、
+> 新イメージの `up -d` より前に直接適用する (詳細は `docs/DEVELOPMENT.md` の「JSON API / CLI」)。
 
 ## 7. バックアップ / リストア
 

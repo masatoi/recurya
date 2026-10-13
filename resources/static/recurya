@@ -1,0 +1,770 @@
+#!/usr/bin/env python3
+"""recurya -- command-line client for Recurya notebooks.
+
+Install (the server serves this very file):
+
+    curl -fsSL https://<server>/static/recurya -o ~/.local/bin/recurya
+    chmod +x ~/.local/bin/recurya
+
+Usage:
+
+    recurya login --server URL [--token TOKEN]   save a token issued on /account
+    recurya list [--server URL] [--page N]       list notebooks
+    recurya pull @handle/slug [DIR] [--force]    fetch a notebook into DIR (default: slug)
+    recurya run NN                               run cell NN (03, 3 or 03-exercise.wl)
+    recurya status                               passed cells and local edits
+    recurya --version
+
+Exit codes: 0 pass/ok, 1 a run that failed or errored, 2 usage, auth,
+connection or unexpected problems.
+
+Configuration lives in $RECURYA_CONFIG_DIR, else $XDG_CONFIG_HOME/recurya,
+else ~/.config/recurya (config.json: server and token, mode 0600).  The token
+is bound to the server that issued it and is never sent anywhere else;
+redirects are not followed.  Only the Python 3.8+ standard library is used.
+"""
+import argparse
+import getpass
+import hashlib
+import http.client
+import json
+import os
+import re
+import socket
+import sys
+import urllib.error
+import urllib.parse
+import urllib.request
+
+VERSION = "1"
+USER_AGENT = "recurya-cli/" + VERSION
+MAX_RESPONSE_BYTES = 32 * 1024 * 1024
+SOLUTION_KIND = "code-solution"
+RUNNABLE_KINDS = ("code-eval", "code-exercise")
+KIND_SUFFIX = {"code-eval": "eval", "code-exercise": "exercise", "code-solution": "solution"}
+USAGE = """usage: recurya <command> [args]
+  login --server URL [--token TOKEN]   save a token issued on /account
+  list [--server URL] [--page N]       list notebooks
+  pull @handle/slug [DIR] [--force]    fetch a notebook into DIR (default: slug)
+  run NN                               run cell NN of the notebook in this directory
+  status                               show passed cells and local edits
+  --version                            print the version"""
+
+
+# ==========================================================================
+# Errors
+
+class UsageError(Exception):
+    """Wrong usage, missing login, refused server/token combination."""
+
+
+class WorkspaceError(Exception):
+    """The local notebook directory (or a server cell) is unusable."""
+
+
+class RequestFailed(Exception):
+    """The server could not be reached, or answered something unusable."""
+
+
+class ApiError(Exception):
+    """The API answered with an error status and a JSON error body."""
+
+    def __init__(self, status, code, message):
+        Exception.__init__(self, message)
+        self.status = status
+        self.code = code
+        self.message = message
+
+
+# ==========================================================================
+# Configuration and credentials
+
+def config_dir(env=None):
+    """Directory holding config.json."""
+    env = os.environ if env is None else env
+    if env.get("RECURYA_CONFIG_DIR"):
+        return env["RECURYA_CONFIG_DIR"]
+    if env.get("XDG_CONFIG_HOME"):
+        return os.path.join(env["XDG_CONFIG_HOME"], "recurya")
+    return os.path.join(os.path.expanduser("~"), ".config", "recurya")
+
+
+def _config_path():
+    return os.path.join(config_dir(), "config.json")
+
+
+def load_config():
+    """The saved {"server", "token"} dict, or None when never logged in."""
+    path = _config_path()
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+    except FileNotFoundError:
+        return None
+    except (OSError, ValueError) as e:
+        raise UsageError("Cannot read %s: %s" % (path, e))
+    if not (isinstance(data, dict) and isinstance(data.get("server"), str)
+            and isinstance(data.get("token"), str)):
+        raise UsageError("Corrupt config file %s; run: recurya login --server URL" % path)
+    return {"server": data["server"], "token": data["token"]}
+
+
+def save_config(server, token):
+    """Write the config; the directory is 0700 and the file 0600 from creation."""
+    directory = config_dir()
+    path = os.path.join(directory, "config.json")
+    try:
+        created = not os.path.isdir(directory)
+        os.makedirs(directory, mode=0o700, exist_ok=True)
+        if created:
+            os.chmod(directory, 0o700)
+        flags = os.O_WRONLY | os.O_CREAT | os.O_TRUNC | getattr(os, "O_NOFOLLOW", 0)
+        fd = os.open(path, flags, 0o600)
+        try:
+            os.fchmod(fd, 0o600)
+            with os.fdopen(fd, "w", encoding="utf-8") as f:
+                fd = None
+                json.dump({"server": server, "token": token}, f)
+                f.write("\n")
+        finally:
+            if fd is not None:
+                os.close(fd)
+    except OSError as e:
+        raise UsageError("Cannot write %s: %s" % (path, e))
+
+
+def normalize_server(url):
+    """Validate a server URL and drop trailing slashes.  Only https, or http
+    to localhost / 127.0.0.1 / ::1, is accepted."""
+    if not isinstance(url, str) or not url.strip():
+        raise UsageError("Server URL is empty")
+    url = url.strip()
+    try:
+        parts = urllib.parse.urlsplit(url)
+        host = parts.hostname
+        parts.port  # raises ValueError when malformed
+    except ValueError:
+        raise UsageError("Not a valid server URL: %s" % url)
+    if parts.scheme == "https":
+        pass
+    elif parts.scheme == "http":
+        if host not in ("localhost", "127.0.0.1", "::1"):
+            raise UsageError("Refusing plain http to %s; use https:// (http is only allowed for "
+                             "localhost)" % url)
+    else:
+        raise UsageError("Server URL must start with https:// : %s" % url)
+    if not host:
+        raise UsageError("Server URL has no host: %s" % url)
+    if parts.username is not None or parts.password is not None or parts.query or parts.fragment:
+        raise UsageError("Server URL must not contain credentials, query or fragment: %s" % url)
+    return url.rstrip("/")
+
+
+def resolve_credentials(server_flag, token_flag, env, config):
+    """(server, token) from flags, environment and the saved config.
+
+    A token read from the config is only ever paired with the server it was
+    issued for."""
+    raw = server_flag or env.get("RECURYA_SERVER") or (config and config.get("server"))
+    if token_flag:
+        if not raw:
+            raise UsageError("Give the server: --server URL")
+        return normalize_server(raw), token_flag
+    if not config:
+        raise UsageError("Not logged in. Run: recurya login --server URL")
+    server = normalize_server(raw)
+    saved = normalize_server(config["server"])
+    if server != saved:
+        raise UsageError("the saved token belongs to %s; run: recurya login --server %s"
+                         % (saved, server))
+    return server, config["token"]
+
+
+def check_token(token):
+    """A usable bearer token: non-empty, printable, no whitespace."""
+    if not token or not re.fullmatch(r"[\x21-\x7e]+", token):
+        raise UsageError("The token is empty or contains spaces or control characters")
+    return token
+
+
+# ==========================================================================
+# HTTP
+
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+class ApiClient:
+    """Minimal JSON client for /api/v1.  Never follows redirects."""
+
+    def __init__(self, server, token, timeout=60):
+        self.server = server
+        self.token = token
+        self.timeout = timeout
+        handlers = [_NoRedirect]
+        if urllib.parse.urlsplit(server).scheme == "http":
+            # Loopback http: never route the cleartext token through a proxy
+            # taken from http_proxy; https keeps proxies (CONNECT tunnel).
+            handlers.append(urllib.request.ProxyHandler({}))
+        self._opener = urllib.request.build_opener(*handlers)
+
+    def _request(self, method, path, payload=None):
+        headers = {"Authorization": "Bearer " + self.token,
+                   "Accept": "application/json",
+                   "User-Agent": USER_AGENT}
+        data = None
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib.request.Request(self.server + path, data=data, headers=headers,
+                                     method=method)
+        try:
+            with self._opener.open(req, timeout=self.timeout) as resp:
+                raw = resp.read(MAX_RESPONSE_BYTES + 1)
+        except urllib.error.HTTPError as e:
+            self._raise_http_error(e)
+        except (urllib.error.URLError, socket.timeout, http.client.HTTPException,
+                OSError) as e:
+            reason = getattr(e, "reason", e)
+            raise RequestFailed("Cannot reach %s: %s" % (self.server, reason))
+        if len(raw) > MAX_RESPONSE_BYTES:
+            raise RequestFailed("The server's response is too large")
+        try:
+            return json.loads(raw.decode("utf-8"))
+        except ValueError:
+            raise RequestFailed("The server did not answer with JSON (is %s a Recurya server?)"
+                                % self.server)
+
+    def _raise_http_error(self, e):
+        if 300 <= e.code < 400:
+            raise RequestFailed("server redirected to %s; use that URL with --server"
+                                % (e.headers.get("Location") or "another location"))
+        code, message = None, "HTTP %d %s" % (e.code, e.reason)
+        try:
+            body = json.loads(e.read(65536).decode("utf-8"))
+            err = body.get("error") if isinstance(body, dict) else None
+            if isinstance(err, dict):
+                code = err.get("code")
+                if isinstance(err.get("message"), str):
+                    message = err["message"]
+        except (ValueError, OSError):
+            pass
+        raise ApiError(e.code, code, message)
+
+    def me(self):
+        return self._request("GET", "/api/v1/me")
+
+    def notebooks(self, page=1):
+        return self._request("GET", "/api/v1/notebooks?page=%d" % int(page))
+
+    def notebook(self, handle, slug):
+        return self._request("GET", "/api/v1/notebooks/%s/%s" % (_q(handle), _q(slug)))
+
+    def run_cell(self, handle, slug, index, codes):
+        return self._request("POST", "/api/v1/notebooks/%s/%s/cells/%d/run"
+                             % (_q(handle), _q(slug), int(index)), {"codes": codes})
+
+
+def _q(part):
+    return urllib.parse.quote(part, safe="")
+
+
+# ==========================================================================
+# Workspace (pure functions)
+
+def _valid_index(index):
+    return isinstance(index, int) and not isinstance(index, bool) and index >= 0
+
+
+def index_width(n_cells):
+    """Digits used to number files in a notebook of N_CELLS cells (at least 2)."""
+    return max(2, len(str(max(0, n_cells - 1))))
+
+
+def cell_file_name(index, kind, width):
+    """File name of a code cell ("03-exercise.wl"), or None for other kinds.
+    The name is always built from an integer index, never from server text."""
+    if not _valid_index(index):
+        raise WorkspaceError("Invalid cell index: %r" % (index,))
+    suffix = KIND_SUFFIX.get(kind)
+    if suffix is None:
+        return None
+    if not (isinstance(width, int) and not isinstance(width, bool) and 1 <= width <= 12):
+        raise WorkspaceError("Invalid index width: %r" % (width,))
+    return "%0*d-%s.wl" % (width, index, suffix)
+
+
+def initial_code(cell):
+    """What a fresh pull writes for CELL: the reader's saved code, else the body."""
+    for key in ("saved_code", "body"):
+        if isinstance(cell.get(key), str):
+            return cell[key]
+    return ""
+
+
+def content_hash(text):
+    """SHA-256 of TEXT's UTF-8 bytes as lower-case hex."""
+    return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+
+def cell_file(cell, width):
+    """File name of CELL, or None (prose, scene, locked solution)."""
+    kind = cell.get("kind")
+    if kind == SOLUTION_KIND and cell.get("unlocked") is not True:
+        return None
+    return cell_file_name(cell.get("index"), kind, width)
+
+
+def _text(value):
+    return value if isinstance(value, str) else ""
+
+
+def render_readme(notebook, width):
+    """README.md: prose, exercise descriptions and tests, and a pointer to
+    each code cell's file, in cell order."""
+    out = ["# %s\n\n" % _text(notebook.get("title"))]
+    summary = _text(notebook.get("summary"))
+    if summary:
+        out.append(summary + "\n\n")
+    for cell in notebook.get("cells") or []:
+        kind = cell.get("kind")
+        file = cell_file(cell, width)
+        label = "%0*d" % (width, cell["index"])
+        if kind == "prose":
+            out.append(_text(cell.get("body")) + "\n\n")
+        elif kind == "code-exercise":
+            out.append("## [%s] Exercise\n\n" % label)
+            desc = _text(cell.get("description"))
+            if desc:
+                out.append(desc + "\n\n")
+            tests = cell.get("test_cases") or []
+            if tests:
+                out.append("Tests:\n\n")
+                for tc in tests:
+                    out.append("- `%s` => `%s`\n" % (_text(tc.get("input")),
+                                                    _text(tc.get("expected"))))
+                out.append("\n")
+            out.append("→ `%s` (run: `recurya run %s`)\n\n" % (file, label))
+        elif kind == "code-eval":
+            out.append("→ `%s` (run: `recurya run %s`)\n\n" % (file, label))
+        elif kind == SOLUTION_KIND:
+            if file:
+                out.append("→ `%s` (solution)\n\n" % file)
+            else:
+                out.append("_[%s] Solution locked — pass the exercise above to unlock it._"
+                           "\n\n" % label)
+        else:
+            out.append("_[%s] %s cell — not supported by the CLI; open it in the browser._"
+                       "\n\n" % (label, _text(kind)))
+    return "".join(out)
+
+
+def _old_hash(old_manifest, index, kind):
+    if not old_manifest:
+        return None
+    for c in old_manifest.get("cells") or []:
+        if isinstance(c, dict) and c.get("index") == index and c.get("kind") == kind:
+            h = c.get("hash")
+            return h if isinstance(h, str) else None
+    return None
+
+
+def plan_pull(notebook, width, old_manifest, existing, force):
+    """Decide what pulling NOTEBOOK writes.
+
+    EXISTING maps file name -> current content.  A file is written when it is
+    absent, already equal to the new content, unchanged since the last pull
+    (hash equals the old manifest's), or FORCE; otherwise it is kept.
+    Returns (actions, manifest): actions are ("write", file, content) and
+    ("keep", file) in cell order; the manifest stores no file names."""
+    actions = []
+    cells = []
+    for cell in notebook.get("cells") or []:
+        file = cell_file(cell, width)
+        old = _old_hash(old_manifest, cell["index"], cell["kind"])
+        digest = None
+        if file:
+            content = initial_code(cell)
+            current = existing.get(file)
+            if (current is None or force or current == content
+                    or content_hash(current) == old):
+                actions.append(("write", file, content))
+                digest = content_hash(content)
+            else:
+                actions.append(("keep", file))
+                digest = old
+        cells.append({"index": cell["index"], "cell_id": cell.get("cell_id"),
+                      "kind": cell["kind"], "hash": digest,
+                      "passed": cell.get("passed") is True,
+                      "unlocked": cell.get("unlocked") is True})
+    manifest = {"handle": notebook.get("handle"), "slug": notebook.get("slug"),
+                "title": notebook.get("title"), "width": width, "cells": cells}
+    return actions, manifest
+
+
+def validate_manifest(manifest):
+    """Check the manifest's shape; WorkspaceError when it is unusable."""
+    ok = (isinstance(manifest, dict)
+          and isinstance(manifest.get("handle"), str) and manifest["handle"]
+          and isinstance(manifest.get("slug"), str) and manifest["slug"]
+          and isinstance(manifest.get("width"), int)
+          and not isinstance(manifest.get("width"), bool)
+          and isinstance(manifest.get("cells"), list)
+          and all(isinstance(c, dict) and _valid_index(c.get("index"))
+                  and isinstance(c.get("kind"), str) for c in manifest["cells"]))
+    if not ok:
+        raise WorkspaceError("Corrupt manifest .recurya/notebook.json; pull the notebook again")
+    return manifest
+
+
+def manifest_cell(manifest, index):
+    """The manifest entry for cell INDEX, or None."""
+    found = None
+    for c in validate_manifest(manifest)["cells"]:
+        if c["index"] == index:
+            found = c
+    return found
+
+
+def collect_codes(manifest, index, read_file):
+    """Codes of cells 0..INDEX to submit.  Eval and exercise cells send the
+    content of their file (READ_FILE(name) -> text or None); everything else,
+    and a missing file, sends ""."""
+    width = validate_manifest(manifest)["width"]
+    codes = []
+    for i in range(index + 1):
+        cell = manifest_cell(manifest, i)
+        text = None
+        if cell is not None and cell["kind"] in RUNNABLE_KINDS:
+            text = read_file(cell_file_name(i, cell["kind"], width))
+        codes.append(text if isinstance(text, str) else "")
+    return codes
+
+
+def resolve_cell_arg(arg, manifest):
+    """The index of the runnable cell named by ARG: digits only ("03", "3")
+    or exactly that cell's file name.  Anything else is a WorkspaceError."""
+    width = validate_manifest(manifest)["width"]
+    if re.fullmatch(r"[0-9]+", arg):
+        cell = manifest_cell(manifest, int(arg))
+        if cell is None:
+            raise WorkspaceError("No cell %s in this notebook" % arg)
+        if cell["kind"] not in RUNNABLE_KINDS:
+            raise WorkspaceError("Cell %s is a %s cell and cannot be run" % (arg, cell["kind"]))
+        return cell["index"]
+    for cell in manifest["cells"]:
+        if cell["kind"] in RUNNABLE_KINDS and cell_file_name(cell["index"], cell["kind"],
+                                                             width) == arg:
+            return cell["index"]
+    raise WorkspaceError("Not a runnable cell number or file name: %s" % arg)
+
+
+# ==========================================================================
+# Reports
+
+def result_exit_code(result):
+    """0 when the run's status is pass or ok, else 1."""
+    return 0 if result.get("status") in ("pass", "ok") else 1
+
+
+def _plural(n, word):
+    return "%d %s%s" % (n, word, "" if n == 1 else "s")
+
+
+def format_run_result(result, width):
+    """Status line, per-test lines, output, error, resources, unlocked files."""
+    status = result.get("status")
+    tests = result.get("tests") or []
+    failed = sum(1 for t in tests if t.get("passed") is not True)
+    lines = []
+    if status == "pass":
+        lines.append("PASS  all %s passed" % _plural(len(tests), "test"))
+    elif status == "fail":
+        lines.append("FAIL  %d of %s failed" % (failed, _plural(len(tests), "test")))
+    elif status == "ok":
+        lines.append("OK    => %s" % _text(result.get("value")))
+    else:
+        lines.append("ERROR")
+    for t in tests:
+        actual = t.get("actual")
+        if not isinstance(actual, str):
+            actual = "error: %s" % (t["error"] if isinstance(t.get("error"), str) else "?")
+        lines.append("  %s %s  expected %s  got %s"
+                     % ("✓" if t.get("passed") is True else "✗",
+                        _text(t.get("input")), _text(t.get("expected")), actual))
+    out = _text(result.get("output"))
+    if out:
+        lines.append("output:")
+        lines.append(out.rstrip("\n"))
+    err = result.get("error")
+    cell = result.get("error_cell_index")
+    if isinstance(err, str):
+        if _valid_index(cell):
+            lines.append("error (cell %0*d): %s" % (width, cell, err))
+        else:
+            lines.append("error: %s" % err)
+    m = result.get("metrics")
+    if isinstance(m, dict):
+        lines.append("steps %s · cons %s · depth %s"
+                     % (m.get("steps"), m.get("cons"), m.get("depth")))
+    for rev in result.get("revealed_solutions") or []:
+        if _valid_index(rev.get("index")):
+            lines.append("unlocked: %s" % cell_file_name(rev["index"], SOLUTION_KIND, width))
+    return "\n".join(lines) + "\n"
+
+
+def format_notebook_list(data):
+    """One line per notebook of a GET /api/v1/notebooks response, plus paging."""
+    lines = ["@%s/%s  %s" % (i.get("handle"), i.get("slug"), _text(i.get("title")))
+             for i in data.get("items") or []]
+    total = data.get("total") if isinstance(data.get("total"), int) else 0
+    lines.append("-- page %s, %s in total" % (data.get("page"), _plural(total, "notebook")))
+    return "\n".join(lines) + "\n"
+
+
+def format_status(manifest, modified_files):
+    """One line per code file: passed and modified markers."""
+    width = manifest["width"]
+    lines = ["@%s/%s  %s" % (manifest["handle"], manifest["slug"], _text(manifest.get("title")))]
+    for cell in manifest["cells"]:
+        file = cell_file(cell, width)
+        if file:
+            lines.append("%s%s%s" % (("  " + file).ljust(30),
+                                     "passed  " if cell.get("passed") is True else "        ",
+                                     "modified" if file in modified_files else ""))
+    return "\n".join(lines) + "\n"
+
+
+# ==========================================================================
+# Files
+
+MANIFEST_REL = os.path.join(".recurya", "notebook.json")
+
+
+def read_text(path):
+    """File content as text, or None when absent."""
+    try:
+        with open(path, "rb") as f:
+            return f.read().decode("utf-8", errors="replace")
+    except FileNotFoundError:
+        return None
+
+
+def write_text(path, content):
+    """Write UTF-8 text, creating parent directories; never through a symlink."""
+    if os.path.islink(path):
+        raise WorkspaceError("Refusing to write through a symbolic link: %s" % path)
+    os.makedirs(os.path.dirname(path) or ".", exist_ok=True)
+    with open(path, "wb") as f:
+        f.write(content.encode("utf-8"))
+
+
+def load_manifest(directory):
+    """The validated manifest of the notebook pulled into DIRECTORY."""
+    text = read_text(os.path.join(directory, MANIFEST_REL))
+    if text is None:
+        raise UsageError("No pulled notebook here (.recurya/notebook.json is missing). "
+                         "Run recurya pull first.")
+    try:
+        data = json.loads(text)
+    except ValueError:
+        raise WorkspaceError("Corrupt manifest .recurya/notebook.json; pull the notebook again")
+    return validate_manifest(data)
+
+
+def save_manifest(directory, manifest):
+    write_text(os.path.join(directory, MANIFEST_REL),
+               json.dumps(manifest, indent=2, ensure_ascii=False) + "\n")
+
+
+# ==========================================================================
+# Commands
+
+def parse_notebook_ref(ref):
+    """"@handle/slug" (the @ is optional) -> (handle, slug)."""
+    s = ref[1:] if ref.startswith("@") else ref
+    handle, sep, slug = s.partition("/")
+    bad = (not sep or not handle or not slug or "/" in slug
+           or slug in (".", "..") or handle in (".", ".."))
+    if bad:
+        raise UsageError("Expected @handle/slug, got %s" % ref)
+    return handle, slug
+
+
+def apply_pull(notebook, server, directory, force, announce=True):
+    """Write NOTEBOOK into DIRECTORY per plan_pull and report kept files."""
+    if not isinstance(notebook, dict) or not isinstance(notebook.get("cells"), list):
+        raise RequestFailed("The server sent an unexpected notebook")
+    width = index_width(len(notebook["cells"]))
+    old = None
+    old_text = read_text(os.path.join(directory, MANIFEST_REL))
+    if old_text is not None:
+        try:
+            old = json.loads(old_text)
+        except ValueError:
+            old = None
+        if not isinstance(old, dict):
+            old = None
+    existing = {}
+    for cell in notebook["cells"]:
+        file = cell_file(cell, width)
+        if file:
+            text = read_text(os.path.join(directory, file))
+            if text is not None:
+                existing[file] = text
+    actions, manifest = plan_pull(notebook, width, old, existing, force)
+    manifest["server"] = server
+    write_text(os.path.join(directory, "README.md"), render_readme(notebook, width))
+    for action in actions:
+        if action[0] == "write":
+            write_text(os.path.join(directory, action[1]), action[2])
+        else:
+            print("kept (edited locally): %s" % action[1])
+    save_manifest(directory, manifest)
+    if announce:
+        print("Pulled @%s/%s into %s" % (notebook.get("handle"), notebook.get("slug"), directory))
+
+
+def cmd_login(args, env):
+    config = load_config()
+    raw = args.server or env.get("RECURYA_SERVER") or (config and config.get("server"))
+    if not raw:
+        raise UsageError("Give the server once: recurya login --server URL")
+    server = normalize_server(raw)
+    token = args.token
+    if token is None:
+        token = getpass.getpass("Token (create one at %s/account): " % server)
+    token = check_token(token.strip())
+    me = ApiClient(server, token).me()
+    save_config(server, token)
+    print("Logged in to %s as @%s" % (server, me.get("handle")))
+    return 0
+
+
+def _client(args, env):
+    server, token = resolve_credentials(getattr(args, "server", None), None, env, load_config())
+    return server, ApiClient(server, token)
+
+
+def cmd_list(args, env):
+    server, client = _client(args, env)
+    sys.stdout.write(format_notebook_list(client.notebooks(args.page)))
+    return 0
+
+
+def cmd_pull(args, env):
+    handle, slug = parse_notebook_ref(args.ref)
+    server, client = _client(args, env)
+    directory = args.dir or slug
+    apply_pull(client.notebook(handle, slug), server, directory, args.force)
+    return 0
+
+
+def cmd_run(args, env):
+    directory = os.getcwd()
+    manifest = load_manifest(directory)
+    index = resolve_cell_arg(args.cell, manifest)
+    codes = collect_codes(manifest, index,
+                          lambda name: read_text(os.path.join(directory, name)))
+    server, client = _client(args, env)
+    pulled_from = manifest.get("server")
+    if not isinstance(pulled_from, str) or normalize_server(pulled_from) != server:
+        raise UsageError("This notebook was pulled from %s but the configured server is %s; "
+                         "not sending your token there. Pull it again from %s."
+                         % (pulled_from, server, server))
+    result = client.run_cell(manifest["handle"], manifest["slug"], index, codes)
+    sys.stdout.write(format_run_result(result, manifest["width"]))
+    if result.get("revealed_solutions"):
+        notebook = client.notebook(manifest["handle"], manifest["slug"])
+        apply_pull(notebook, server, directory, False, announce=False)
+    else:
+        if result.get("status") == "pass":
+            manifest_cell(manifest, index)["passed"] = True
+        save_manifest(directory, manifest)
+    return result_exit_code(result)
+
+
+def cmd_status(args, env):
+    directory = os.getcwd()
+    manifest = load_manifest(directory)
+    modified = []
+    for cell in manifest["cells"]:
+        file = cell_file(cell, manifest["width"])
+        text = read_text(os.path.join(directory, file)) if file else None
+        if text is not None and content_hash(text) != cell.get("hash"):
+            modified.append(file)
+    sys.stdout.write(format_status(manifest, modified))
+    return 0
+
+
+# ==========================================================================
+# Entry point
+
+class _Parser(argparse.ArgumentParser):
+    def error(self, message):
+        raise UsageError(message)
+
+
+def build_parser():
+    p = _Parser(prog="recurya", add_help=True)
+    p.add_argument("--version", action="version", version="recurya " + VERSION)
+    sub = p.add_subparsers(dest="command", parser_class=_Parser)
+    s = sub.add_parser("login")
+    s.add_argument("--server")
+    s.add_argument("--token")
+    s = sub.add_parser("list")
+    s.add_argument("--server")
+    s.add_argument("--page", type=int, default=1)
+    s = sub.add_parser("pull")
+    s.add_argument("ref")
+    s.add_argument("dir", nargs="?")
+    s.add_argument("--force", action="store_true")
+    s.add_argument("--server")
+    s = sub.add_parser("run")
+    s.add_argument("cell")
+    s.add_argument("--server")
+    sub.add_parser("status")
+    return p
+
+
+COMMANDS = {"login": "cmd_login", "list": "cmd_list", "pull": "cmd_pull",
+            "run": "cmd_run", "status": "cmd_status"}
+
+
+def _err(text):
+    print(text, file=sys.stderr)
+
+
+def main(argv, env=os.environ, stdin=None):
+    """Run the CLI on ARGV; return the exit code (0 ok, 1 failed run, 2 problem)."""
+    try:
+        if not argv:
+            _err(USAGE)
+            return 2
+        try:
+            args = build_parser().parse_args(argv)
+        except SystemExit as e:  # --version / --help
+            return e.code if isinstance(e.code, int) else 0
+        if not args.command:
+            _err(USAGE)
+            return 2
+        return globals()[COMMANDS[args.command]](args, env)
+    except (UsageError, WorkspaceError, RequestFailed) as e:
+        _err(str(e))
+        return 2
+    except ApiError as e:
+        if e.status == 401:
+            _err("Not authorized: %s\nRun: recurya login" % e.message)
+        else:
+            _err("Server said: %s" % e.message)
+        return 2
+    except KeyboardInterrupt:
+        return 130
+    except Exception as e:  # noqa: BLE001 - last-resort mapping to exit code 2
+        _err("unexpected error: %s: %s" % (type(e).__name__, e))
+        return 2
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

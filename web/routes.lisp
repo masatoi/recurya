@@ -13,10 +13,23 @@
                 #:get-user-by-id
                 #:get-user-by-handle
                 #:find-or-create-oauth-user
-                #:placeholder-handle-p)
+                #:placeholder-handle-p
+                #:user-dao->plist)
+  (:import-from #:recurya/db/api-tokens
+                #:issue-api-token
+                #:list-api-tokens
+                #:revoke-api-token
+                #:api-token-limit-exceeded
+                #:*max-active-tokens*)
+  (:import-from #:recurya/web/http
+                #:json-response
+                #:read-request-body
+                #:request-body-too-large
+                #:parse-bounded-positive-integer)
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
-  (:import-from #:recurya/web/ui/account)
+  (:import-from #:recurya/web/ui/account
+                #:render-api-tokens)
   (:import-from #:recurya/web/ui/onboarding)
   (:import-from #:recurya/web/ui/csrf)
   (:import-from #:recurya/utils/handle)
@@ -92,23 +105,18 @@
                 #:course-notebook-notebook
                 #:course-notebook-notebook-id)
   (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
-  (:import-from #:recurya/game/notebook
-                #:cell-id
-                #:cell-kind
-                #:make-notebook
-                #:notebook-cells
-                #:run-cell
-                #:notebook-cell-result-status)
   (:import-from #:recurya/web/ui/notebook)
+  (:import-from #:recurya/web/notebook-service
+                #:notebook-row->notebook-struct
+                #:run-notebook-cell
+                #:cell-run-refused
+                #:cell-run-refused-reason)
   (:import-from #:recurya/game/notebook-jsonb
                 #:cell->jsonb-form
                 #:jsonb-hash->cell)
   (:import-from #:recurya/db/learn
-                #:upsert-cell-code
                 #:user-cell-codes
                 #:user-passed-cells
-                #:mark-cell-passed
-                #:record-submission
                 #:merge-localstorage)
   (:import-from #:recurya/utils/common #:parse-json #:json->string)
   (:import-from #:recurya/web/i18n/core
@@ -117,6 +125,8 @@
            #:dashboard-home-handler
            #:account-confirm-delete-handler
            #:account-delete-handler
+           #:account-token-create-handler
+           #:account-token-revoke-handler
            #:onboarding-handle-page-handler
            #:onboarding-handle-create-handler
            #:notebooks-handler
@@ -146,6 +156,7 @@
            #:public-course-by-handle-handler
            #:courses-public-handler
            #:learn-sync-handler
+           #:*learn-sync-max-body-bytes*
            #:sicp-learn-redirect-handler
            #:sicp-notebook-redirect-handler
            #:sicp-cell-run-redirect-handler
@@ -163,25 +174,6 @@
 (defun redirect (location)
   "Create a redirect response."
   (list 302 (list :location location) (list "")))
-
-(defun json-response (data &key (status 200))
-  "Return a Clack ring response with JSON content."
-  (list status
-        '(:content-type "application/json; charset=utf-8")
-        (list (json->string data))))
-
-(defun %read-request-body ()
-  "Read the raw POST body as a UTF-8 string, or empty string if unavailable."
-  (let* ((env (lack/request:request-env ningle/context:*request*))
-         (stream (getf env :raw-body))
-         (content-length (or (getf env :content-length) 0)))
-    (cond
-      ((and stream (plusp content-length))
-       (handler-case (file-position stream 0) (error () nil))
-       (let ((buf (make-array content-length :element-type '(unsigned-byte 8))))
-         (read-sequence buf stream)
-         (babel:octets-to-string buf :encoding :utf-8)))
-      (t ""))))
 
 (defun get-session ()
   "Get the session hash table from the context."
@@ -213,12 +205,9 @@
 
 
 (defun parse-page-param (params)
-  "Parse the page parameter from query params. Returns 1 if invalid or missing."
-  (let* ((page-str (get-param params "page"))
-         (page (when page-str (parse-integer page-str :junk-allowed t))))
-    (if (and page (plusp page))
-        page
-        1)))
+  "Parse the page parameter from query params. Returns 1 if invalid, missing
+or absurdly large (over *MAX-REQUEST-INTEGER*)."
+  (or (parse-bounded-positive-integer (get-param params "page")) 1))
 
 
 
@@ -279,17 +268,6 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
   (and email
        (let ((lc (string-downcase email)))
          (member lc (parse-admin-emails) :test #'string=))))
-
-(defun user-dao->plist (user)
-  "Convert a USER mito instance to the session plist used elsewhere."
-  (list :id (recurya/models/users:users-id user)
-        :email (recurya/models/users:users-email user)
-        :name (recurya/models/users:users-display-name user)
-        :handle (recurya/models/users:users-handle user)
-        :role (intern (string-upcase (recurya/models/users:users-role user)) :keyword)
-        :provider (recurya/models/users:users-provider user)
-        :language (recurya/models/users:users-language user)
-        :timezone (recurya/models/users:users-timezone user)))
 
 (defun oauth-start-handler (params)
   "Handle GET /auth/:provider/start - generate state and redirect to provider."
@@ -1272,20 +1250,6 @@ No authentication required."
      (recurya/web/ui/notebook-list:render
       :notebooks notebooks :pagination pagination :user user))))
 
-(defun notebook-row->notebook-struct (nb-row)
-  "Convert a notebook DAO into a recurya/game/notebook:notebook struct
-that the existing notebook UI and run-cell logic can consume.
-Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
-  (let* ((cells-data (recurya/db/notebooks:notebook-cells-parsed nb-row))
-         (cells-list (mapcar #'jsonb-hash->cell
-                             (coerce (or cells-data #()) 'list))))
-    (make-notebook
-     :id (princ-to-string (notebook-id nb-row))
-     :chapter ""
-     :title (or (notebook-title nb-row) "")
-     :summary (or (notebook-summary nb-row) "")
-     :cells cells-list)))
-
 (defun %render-public-notebook-response (nb-row params)
   "Render the public notebook page for NB-ROW given the request PARAMS.
 
@@ -1541,28 +1505,11 @@ No authentication required."
                                         :pagination pagination
                                         :user user))))
 
-(defun %maybe-persist-notebook-cell-run (uid nb-uuid cell result code)
-  "Persist saved code, submission, and progress for a notebook cell run.
-Anonymous users (UID NIL) are skipped silently; DB errors are logged but
-do not poison the response."
-  (when uid
-    (handler-case
-        (let* ((cell-id-str (string (or (cell-id cell) "")))
-               (status      (notebook-cell-result-status result))
-               (kind        (cell-kind cell))
-               (status-str  (string-downcase (symbol-name status))))
-          (upsert-cell-code uid nb-uuid cell-id-str (or code ""))
-          (when (eq kind :code-exercise)
-            (record-submission uid nb-uuid cell-id-str (or code "") status-str)
-            (when (eq status :pass)
-              (mark-cell-passed uid nb-uuid cell-id-str))))
-      (error (e) (log:warn "Failed to persist notebook cell run: ~A" e)))))
-
 (defun %run-public-cell (nb-row params)
   "Execute a cell on NB-ROW and render the HTMX result fragment.
 
-Encapsulates the access check, index parsing, codes[] collection, and
-optional persistence used by the handle-aware cell-run handler.
+Encapsulates the access check, codes[] collection and the shared
+run-notebook-cell service (validation, execution, persistence).
 
 Returns a Clack response list. Returns 404 when NB-ROW is NIL or the
 viewer cannot view it; 400 on bad index/cell-kind."
@@ -1573,37 +1520,26 @@ viewer cannot view it; 400 on bad index/cell-kind."
       ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response (tr :server.errors.notebook_not_found) :status 404))
       (t
-       (let* ((notebook (notebook-row->notebook-struct nb-row))
-              (cells (notebook-cells notebook))
-              (index-raw (get-path-param params :index))
-              (index (typecase index-raw
-                       (string (parse-integer index-raw :junk-allowed t))
-                       (integer index-raw)
-                       (t nil)))
-              (codes-list (loop for (k . v) in params
-                                when (and (stringp k) (string= k "codes[]"))
-                                collect v)))
-         (cond
-           ((null index) (html-response (tr :server.errors.invalid_index) :status 400))
-           ((or (< index 0) (>= index (length cells)))
-            (html-response (tr :server.errors.index_out_of_range) :status 400))
-           ((member (cell-kind (nth index cells))
-                    '(:prose :code-solution))
-            (html-response (tr :server.errors.cannot_run_cell) :status 400))
-           (t
-            (let* ((nb-uuid (princ-to-string (notebook-id nb-row)))
-                   (result (run-cell notebook index codes-list))
-                   (base (recurya/web/ui/notebook:render-cell-result result))
-                   (reveals
-                     (if (and (eq (cell-kind (nth index cells)) :code-exercise)
-                              (eq (notebook-cell-result-status result) :pass))
-                         (recurya/web/ui/notebook:render-solution-oob-reveals
-                          cells index)
-                         ""))
-                   (body (concatenate 'string base reveals)))
-              (%maybe-persist-notebook-cell-run
-               uid nb-uuid (nth index cells) result (nth index codes-list))
-              (html-response body)))))))))
+       (let ((codes-list (loop for (k . v) in params
+                               when (and (stringp k) (string= k "codes[]"))
+                                 collect v)))
+         (handler-case
+             (multiple-value-bind (result cells revealed index)
+                 (run-notebook-cell nb-row uid (get-path-param params :index) codes-list)
+               (html-response
+                (concatenate 'string
+                             (recurya/web/ui/notebook:render-cell-result result)
+                             (if revealed
+                                 (recurya/web/ui/notebook:render-solution-oob-reveals
+                                  cells index)
+                                 ""))))
+           (cell-run-refused (c)
+             (html-response
+              (tr (ecase (cell-run-refused-reason c)
+                    (:invalid-index :server.errors.invalid_index)
+                    (:index-out-of-range :server.errors.index_out_of_range)
+                    (:cannot-run-cell :server.errors.cannot_run_cell)))
+              :status 400))))))))
 
 (defun public-notebook-cell-run-by-handle-handler (params)
   "Handle POST /@:handle/:slug/cells/:index/run - HTMX fragment for
@@ -1690,6 +1626,7 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
               (error   (resolve-flash (get-param params "err"))))
           (html-response
            (recurya/web/ui/account:render :user user
+                                          :tokens (list-api-tokens (getf user :id))
                                           :message message :error error))))))
 
 (defun account-update-handler (params)
@@ -1712,6 +1649,37 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
                 (setf (getf user :timezone) timezone)
                 (set-session-user! user)
                 (redirect "/account?msg=account.saved")))))))
+
+(defun account-token-create-handler (params)
+  "Handle POST /account/tokens - issue an API token and return the
+#api-tokens section showing it once (HTMX swap)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let ((uid (getf user :id)))
+          (handler-case
+              (let ((plaintext (issue-api-token uid (get-param params "name"))))
+                (html-response
+                 (render-api-tokens (list-api-tokens uid) :new-token plaintext)))
+            (api-token-limit-exceeded ()
+              (html-response
+               (render-api-tokens
+                (list-api-tokens uid)
+                :error (tr :account.tokens.limit *max-active-tokens*)))))))))
+
+(defun account-token-revoke-handler (params)
+  "Handle POST /account/tokens/:id/revoke - revoke one of the user's tokens
+and return the refreshed #api-tokens section (HTMX swap)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((uid (getf user :id))
+               (raw (get-path-param params :id))
+               ;; Out-of-range ids (over 10^9) are a no-op re-render, not a
+               ;; PostgreSQL integer-overflow 500.
+               (token-id (parse-bounded-positive-integer raw)))
+          (when token-id (revoke-api-token uid token-id))
+          (html-response (render-api-tokens (list-api-tokens uid)))))))
 
 (defun account-confirm-delete-handler (params)
   "Handle GET /account/confirm-delete - return modal fragment for account deletion."
@@ -1838,6 +1806,10 @@ session plist, and redirects to /."
                                            codes-ht)
                                   acc))))))))
 
+(defparameter *learn-sync-max-body-bytes* (* 5 1024 1024)
+  "Cap on a POST /learn/sync body.  The payload is the browser's localStorage
+progress, whose quota is about 5 MB, so a legitimate sync always fits.")
+
 (defun learn-sync-handler (params)
   "POST /learn/sync — merge localStorage payload into DB.
    Auth required."
@@ -1852,13 +1824,18 @@ session plist, and redirects to /."
          (json-response h :status 401)))
       (t
        (handler-case
-           (let* ((raw (%read-request-body))
+           (let* ((raw (read-request-body :max-bytes *learn-sync-max-body-bytes*))
                   (notebooks (%parse-sync-payload raw))
                   (summary (merge-localstorage uid notebooks))
                   (out (make-hash-table :test 'equal)))
              (loop for (k v) on summary by #'cddr
                    do (setf (gethash (string-downcase (symbol-name k)) out) v))
              (json-response out))
+         (request-body-too-large (e)
+           (log:warn "Refused /learn/sync: ~A" e)
+           (let ((h (make-hash-table :test 'equal)))
+             (setf (gethash "error" h) "payload too large")
+             (json-response h :status 413)))
          (error (e)
            (log:warn "Failed /learn/sync: ~A" e)
            (let ((h (make-hash-table :test 'equal)))
@@ -2026,6 +2003,10 @@ The captured groups arrive in the handler's PARAMS alist under
           (make-dynamic-handler 'account-confirm-delete-handler))
   (setf (ningle/app:route app "/account/delete" :method :post)
           (make-dynamic-handler 'account-delete-handler))
+  (setf (ningle/app:route app "/account/tokens" :method :post)
+          (make-dynamic-handler 'account-token-create-handler))
+  (setf (ningle/app:route app "/account/tokens/:id/revoke" :method :post)
+          (make-dynamic-handler 'account-token-revoke-handler))
   (setf (ningle/app:route app "/learn/sync" :method :post)
           (make-dynamic-handler 'learn-sync-handler))
   app)

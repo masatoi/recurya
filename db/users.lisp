@@ -53,6 +53,7 @@
            #:update-user!
            #:delete-user!
            #:list-users
+           #:user-dao->plist
            #:placeholder-handle-p))
 
 (in-package #:recurya/db/users)
@@ -235,3 +236,15 @@ Returns:
 
 Note: For production use, consider pagination for large user bases."
   (select-dao 'users (order-by (:desc :created-at))))
+
+(defun user-dao->plist (user)
+  "Convert a USER mito instance to the session plist used by handlers:
+(:id :email :name :handle :role :provider :language :timezone)."
+  (list :id (users-id user)
+        :email (users-email user)
+        :name (users-display-name user)
+        :handle (users-handle user)
+        :role (intern (string-upcase (users-role user)) :keyword)
+        :provider (users-provider user)
+        :language (users-language user)
+        :timezone (users-timezone user)))
