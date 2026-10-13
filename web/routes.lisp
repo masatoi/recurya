@@ -13,7 +13,11 @@
                 #:get-user-by-id
                 #:get-user-by-handle
                 #:find-or-create-oauth-user
-                #:placeholder-handle-p)
+                #:placeholder-handle-p
+                #:user-dao->plist)
+  (:import-from #:recurya/web/http
+                #:json-response
+                #:read-request-body)
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
   (:import-from #:recurya/web/ui/account)
@@ -164,25 +168,6 @@
   "Create a redirect response."
   (list 302 (list :location location) (list "")))
 
-(defun json-response (data &key (status 200))
-  "Return a Clack ring response with JSON content."
-  (list status
-        '(:content-type "application/json; charset=utf-8")
-        (list (json->string data))))
-
-(defun %read-request-body ()
-  "Read the raw POST body as a UTF-8 string, or empty string if unavailable."
-  (let* ((env (lack/request:request-env ningle/context:*request*))
-         (stream (getf env :raw-body))
-         (content-length (or (getf env :content-length) 0)))
-    (cond
-      ((and stream (plusp content-length))
-       (handler-case (file-position stream 0) (error () nil))
-       (let ((buf (make-array content-length :element-type '(unsigned-byte 8))))
-         (read-sequence buf stream)
-         (babel:octets-to-string buf :encoding :utf-8)))
-      (t ""))))
-
 (defun get-session ()
   "Get the session hash table from the context."
   ningle/context:*session*)
@@ -279,17 +264,6 @@ Returns plist with :current-page :total-pages :total-count :has-prev :has-next
   (and email
        (let ((lc (string-downcase email)))
          (member lc (parse-admin-emails) :test #'string=))))
-
-(defun user-dao->plist (user)
-  "Convert a USER mito instance to the session plist used elsewhere."
-  (list :id (recurya/models/users:users-id user)
-        :email (recurya/models/users:users-email user)
-        :name (recurya/models/users:users-display-name user)
-        :handle (recurya/models/users:users-handle user)
-        :role (intern (string-upcase (recurya/models/users:users-role user)) :keyword)
-        :provider (recurya/models/users:users-provider user)
-        :language (recurya/models/users:users-language user)
-        :timezone (recurya/models/users:users-timezone user)))
 
 (defun oauth-start-handler (params)
   "Handle GET /auth/:provider/start - generate state and redirect to provider."
@@ -1852,7 +1826,7 @@ session plist, and redirects to /."
          (json-response h :status 401)))
       (t
        (handler-case
-           (let* ((raw (%read-request-body))
+           (let* ((raw (read-request-body))
                   (notebooks (%parse-sync-payload raw))
                   (summary (merge-localstorage uid notebooks))
                   (out (make-hash-table :test 'equal)))

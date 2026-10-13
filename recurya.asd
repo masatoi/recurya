@@ -88,6 +88,8 @@
                ;; Web layer
                "recurya/web/app"
                "recurya/web/auth"
+               "recurya/web/http"
+               "recurya/web/api-auth"
                "recurya/web/ui/styles"
                "recurya/web/ui/csrf"
                "recurya/web/ui/layout"
@@ -160,6 +162,7 @@
                "recurya/tests/web/learn-routes"
                "recurya/tests/web/csrf"
                "recurya/tests/web/dashboard-auth"
+                "recurya/tests/web/api-auth"
                "recurya/tests/web/novel-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"

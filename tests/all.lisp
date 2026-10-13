@@ -31,6 +31,7 @@
     :recurya/tests/web/learn-routes
     :recurya/tests/web/csrf
     :recurya/tests/web/dashboard-auth
+    :recurya/tests/web/api-auth
     :recurya/tests/web/novel-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration

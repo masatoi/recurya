@@ -13,6 +13,9 @@
                 #:*lack-middleware-csrf*)
   (:import-from #:recurya/web/app
                 #:make-recurya-app)
+  (:import-from #:recurya/web/api-auth
+                #:api-token-auth
+                #:api-path-p)
   (:import-from #:recurya/web/auth
                 #:require-dashboard-auth
                 #:require-real-handle)
@@ -25,6 +28,7 @@
   (:export #:start!
            #:stop!
            #:start-worker-app
+           #:csrf-with-skip
            #:*handler*))
 
 (in-package #:recurya/web/server)
@@ -69,7 +73,9 @@ inspection would interfere)."
          (funcall *lack-middleware-csrf*
                   app :block-app #'csrf-failure-handler)))
     (lambda (env)
-      (if (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
+      (if (or (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
+              ;; /api/ authenticates by bearer token only (see web/api-auth).
+              (api-path-p (getf env :path-info)))
           (funcall app env)
           (funcall csrf-app env)))))
 
@@ -111,19 +117,21 @@ application database, which is safe under Hunchentoot's worker threads."
     ;;                               after :session. Runs before
     ;;                               require-real-handle so anonymous users go
     ;;                               to /login (not /onboarding/handle).
-    ;; 5. #'csrf-with-skip         — CSRF token check on POST/PUT/DELETE/PATCH;
+    ;; 5. #'api-token-auth         — Authenticates /api/* by Bearer token (no
+    ;;                               cookie use); runs before CSRF.
+    ;; 6. #'csrf-with-skip         — CSRF token check on POST/PUT/DELETE/PATCH;
     ;;                               bypassed for paths in *csrf-skip-paths*.
     ;;                               Must run after :session because it reads
     ;;                               :lack.session.
-    ;; 6. #'require-real-handle    — Onboarding guard: redirects users with
+    ;; 7. #'require-real-handle    — Onboarding guard: redirects users with
     ;;                               placeholder handles to /onboarding/handle.
     ;;                               Reads :lack.session, so must run after
     ;;                               :session. Sits before :backtrace so its
     ;;                               302 response is unaffected by error
     ;;                               handling.
-    ;; 7. :backtrace               — renders a debug backtrace page on
+    ;; 8. :backtrace               — renders a debug backtrace page on
     ;;                               unhandled errors.
-    ;; 8. app                      — the Ningle router with all route handlers.
+    ;; 9. app                      — the Ningle router with all route handlers.
     (lack/builder:builder
      (:static :path "/static/"
               :root (asdf:system-relative-pathname
@@ -132,6 +140,7 @@ application database, which is safe under Hunchentoot's worker threads."
      ;; セッション確定後に現在ロケールを *locale* へ束縛(全描画をカバー)
      #'bind-locale
      #'require-dashboard-auth
+     #'api-token-auth
      #'csrf-with-skip
      #'require-real-handle
      :backtrace
