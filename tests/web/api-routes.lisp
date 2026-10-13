@@ -18,9 +18,19 @@
                 #:api-me-handler
                 #:api-notebooks-handler
                 #:api-notebook-handler
-                #:api-cell-run-handler)
+                #:api-cell-run-handler
+                #:parse-page
+                #:with-api-errors)
+  ;; Bare import: the error-log test adds a log4cl appender by qualified name.
+  (:import-from #:log4cl)
+  (:import-from #:recurya/web/http
+                #:*max-request-body-bytes*
+                #:read-request-body
+                #:request-body-too-large
+                #:parse-bounded-positive-integer)
   (:import-from #:recurya/web/routes
-                #:public-notebook-by-handle-handler))
+                #:public-notebook-by-handle-handler
+                #:learn-sync-handler))
 
 (in-package #:recurya/tests/web/api-routes)
 
@@ -183,3 +193,99 @@ USER (a session plist) as :RECURYA.API-USER and BODY as the raw request body."
         (ok (= 422 (status-of (run "9" (run-body "" "" "")))) "index out of range")
         (ok (= 404 (status-of (with-api-request (user :body (run-body "" "3"))
                                 (api-cell-run-handler '((:handle . "nobody-xyz") (:slug . "g") (:index . "1")))))))))))
+
+(deftest handlers-refuse-without-api-user
+  ;; Defence in depth: should a request reach a handler without the token
+  ;; middleware having set :RECURYA.API-USER, every handler answers 401.
+  (with-api-request (nil :body (run-body "" "3"))
+    (dolist (res (list (api-me-handler nil)
+                       (api-notebooks-handler '(("page" . "1")))
+                       (api-notebook-handler '((:handle . "a") (:slug . "b")))
+                       (api-cell-run-handler '((:handle . "a") (:slug . "b") (:index . "1")))))
+      (ok (= 401 (status-of res)))
+      (ok (string= "unauthorized" (jget (json-of res) "error" "code"))))))
+
+(deftest api-error-log-names-path-and-user
+  (let* ((out (make-string-output-stream))
+         (appender (make-instance 'log4cl:fixed-stream-appender :stream out)))
+    (log4cl:add-appender log4cl:*root-logger* appender)
+    (unwind-protect
+         (let* ((env (list :request-method :get :path-info "/api/v1/boom"
+                           :headers (make-hash-table :test 'equal)
+                           :recurya.api-user (list :id "user-42")))
+                (ningle/context:*request* (lack/request:make-request env))
+                (res (with-api-errors (error "kaboom"))))
+           (ok (= 500 (status-of res)))
+           (ok (string= "internal" (jget (json-of res) "error" "code")))
+           (let ((logged (get-output-stream-string out)))
+             (ok (search "/api/v1/boom" logged) "the log line names the path")
+             (ok (search "user-42" logged) "and the user id")
+             (ok (search "kaboom" logged))))
+      (log4cl:remove-appender log4cl:*root-logger* appender))))
+
+(deftest run-caps-body-and-codes
+  (with-test-db
+    (let* ((author (create-test-user :email-prefix "api"))
+           (handle (users-handle author))
+           (user (user-dao->plist author))
+           (path `((:handle . ,handle) (:slug . "g") (:index . "1"))))
+      (make-nb author "g")
+      (let ((res (with-api-request (user :body (run-body ""
+                                                         (make-string (1+ *max-request-body-bytes*)
+                                                                      :initial-element #\a)))
+                   (api-cell-run-handler path))))
+        (ok (= 413 (status-of res)) "a body over 1 MiB is refused")
+        (ok (string= "payload_too_large" (jget (json-of res) "error" "code"))))
+      (let ((res (with-api-request (user :body (run-body "" "3" "" ""))
+                   (api-cell-run-handler path))))
+        (ok (= 422 (status-of res)) "more codes than the notebook's 3 cells")
+        (ok (string= "invalid_request" (jget (json-of res) "error" "code"))))
+      (let ((res (with-api-request (user :body (run-body "" (make-string (1+ (* 64 1024))
+                                                                         :initial-element #\a)))
+                   (api-cell-run-handler path))))
+        (ok (= 422 (status-of res)) "a code over 64 KiB is refused"))
+      (with-api-request (user :body (run-body "" "3" ""))
+        (ok (= 200 (status-of (api-cell-run-handler path)))
+            "one code per cell is still accepted")))))
+
+(deftest page-numbers-are-bounded
+  (ok (= 1 (parse-page "1000000001")) "over 10^9 falls back to page 1")
+  (ok (= 1 (parse-page "99999999999999999999999999")))
+  (ok (= 1000000000 (parse-page "1000000000")))
+  (ok (= 3 (parse-page "3")))
+  (ok (= 1 (parse-page "0")))
+  (ok (= 1 (parse-page nil))))
+
+(deftest read-request-body-is-capped
+  (with-api-request (nil :body "{\"a\": 1}")
+    (ok (string= "{\"a\": 1}" (read-request-body)) "a normal body reads as before")
+    (ok (signals (read-request-body :max-bytes 3) 'request-body-too-large)))
+  (ok (null (parse-bounded-positive-integer "1000000001")))
+  (ok (= 7 (parse-bounded-positive-integer "7")))
+  (ok (null (parse-bounded-positive-integer nil))))
+
+(deftest learn-sync-refuses-oversized-body
+  (let ((ningle/context:*session* (make-hash-table)))
+    (setf (gethash :user ningle/context:*session*) (list :id "00000000-0000-0000-0000-000000000000"))
+    (let* ((env (list :request-method :post :path-info "/learn/sync"
+                      :headers (make-hash-table :test 'equal)
+                      :raw-body (flexi-streams:make-in-memory-input-stream
+                                 (make-array 0 :element-type '(unsigned-byte 8)))
+                      ;; Declared size only: the cap is checked before reading.
+                      :content-length (1+ (* 5 1024 1024))))
+           (ningle/context:*request* (lack/request:make-request env))
+           (res (learn-sync-handler nil)))
+      (ok (= 413 (status-of res)))
+      (ok (string= "payload too large" (jget (json-of res) "error"))))))
+
+(deftest scene-cell-body-is-withheld
+  (with-test-db
+    (let ((author (create-test-user :email-prefix "api")))
+      (make-nb author "sc" :body (format nil "===prose===~%hi~%~%===scene===~%SCENE-SECRET-BRANCH"))
+      (with-api-request ((user-dao->plist author))
+        (let* ((res (api-notebook-handler `((:handle . ,(users-handle author)) (:slug . "sc"))))
+               (cells (jget (json-of res) "cells")))
+          (ok (= 200 (status-of res)))
+          (ok (string= "scene" (jget cells 1 "kind")))
+          (ok (eq 'null (jget cells 1 "body")) "scene source is not exposed")
+          (ok (search "hi" (jget cells 0 "body")) "other cells keep their body"))))))

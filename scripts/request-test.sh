@@ -130,6 +130,20 @@ TOKEN="$(grep -oE 'rcy_[0-9a-f]{64}' "$BODY" | head -1)"
 code=$(curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me")
 rt_status 200 "$code" "the new token authenticates /api/v1/me"
 rt_contains '"handle"' "/api/v1/me returns the handle"
+# /api runs without the session middleware: no cookie is issued (and no
+# sessions row written), even for an authenticated call.
+if curl -s -D - -o /dev/null -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me" \
+     | grep -qi '^set-cookie:'; then
+  _bad "/api/v1/me sets no session cookie"
+else
+  _ok "/api/v1/me sets no session cookie"
+fi
+code=$( { printf '{"codes": ["'; head -c 1100000 /dev/zero | tr '\0' 'a'; printf '"]}'; } \
+       | curl -s -o "$BODY" -w '%{http_code}' -X POST -H "Authorization: Bearer $TOKEN" \
+              -H 'Content-Type: application/json' --data-binary @- \
+              "$BASE/api/v1/notebooks/recurya/sicp-1-1-1/cells/0/run")
+rt_status 413 "$code" "an API body over 1 MiB is refused"
+rt_contains 'payload_too_large' "413 carries the payload_too_large code"
 # Revoke the token this block issued and prove revocation end-to-end.
 PREFIX="${TOKEN:0:12}"
 rt_get /account >/dev/null

@@ -23,7 +23,9 @@
                 #:*max-active-tokens*)
   (:import-from #:recurya/web/http
                 #:json-response
-                #:read-request-body)
+                #:read-request-body
+                #:request-body-too-large
+                #:parse-bounded-positive-integer)
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
   (:import-from #:recurya/web/ui/account
@@ -154,6 +156,7 @@
            #:public-course-by-handle-handler
            #:courses-public-handler
            #:learn-sync-handler
+           #:*learn-sync-max-body-bytes*
            #:sicp-learn-redirect-handler
            #:sicp-notebook-redirect-handler
            #:sicp-cell-run-redirect-handler
@@ -202,12 +205,9 @@
 
 
 (defun parse-page-param (params)
-  "Parse the page parameter from query params. Returns 1 if invalid or missing."
-  (let* ((page-str (get-param params "page"))
-         (page (when page-str (parse-integer page-str :junk-allowed t))))
-    (if (and page (plusp page))
-        page
-        1)))
+  "Parse the page parameter from query params. Returns 1 if invalid, missing
+or absurdly large (over *MAX-REQUEST-INTEGER*)."
+  (or (parse-bounded-positive-integer (get-param params "page")) 1))
 
 
 
@@ -1675,7 +1675,9 @@ and return the refreshed #api-tokens section (HTMX swap)."
         (redirect "/login")
         (let* ((uid (getf user :id))
                (raw (get-path-param params :id))
-               (token-id (and (stringp raw) (parse-integer raw :junk-allowed t))))
+               ;; Out-of-range ids (over 10^9) are a no-op re-render, not a
+               ;; PostgreSQL integer-overflow 500.
+               (token-id (parse-bounded-positive-integer raw)))
           (when token-id (revoke-api-token uid token-id))
           (html-response (render-api-tokens (list-api-tokens uid)))))))
 
@@ -1804,6 +1806,10 @@ session plist, and redirects to /."
                                            codes-ht)
                                   acc))))))))
 
+(defparameter *learn-sync-max-body-bytes* (* 5 1024 1024)
+  "Cap on a POST /learn/sync body.  The payload is the browser's localStorage
+progress, whose quota is about 5 MB, so a legitimate sync always fits.")
+
 (defun learn-sync-handler (params)
   "POST /learn/sync — merge localStorage payload into DB.
    Auth required."
@@ -1818,13 +1824,18 @@ session plist, and redirects to /."
          (json-response h :status 401)))
       (t
        (handler-case
-           (let* ((raw (read-request-body))
+           (let* ((raw (read-request-body :max-bytes *learn-sync-max-body-bytes*))
                   (notebooks (%parse-sync-payload raw))
                   (summary (merge-localstorage uid notebooks))
                   (out (make-hash-table :test 'equal)))
              (loop for (k v) on summary by #'cddr
                    do (setf (gethash (string-downcase (symbol-name k)) out) v))
              (json-response out))
+         (request-body-too-large (e)
+           (log:warn "Refused /learn/sync: ~A" e)
+           (let ((h (make-hash-table :test 'equal)))
+             (setf (gethash "error" h) "payload too large")
+             (json-response h :status 413)))
          (error (e)
            (log:warn "Failed /learn/sync: ~A" e)
            (let ((h (make-hash-table :test 'equal)))

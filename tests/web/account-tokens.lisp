@@ -72,6 +72,17 @@
           (ng (search "alice-token" html) "revoked token disappears from the list")))
       (ok (null (list-api-tokens (users-id alice)))))))
 
+(deftest revoke-with-huge-id-is-a-no-op
+  (with-test-db
+    (let ((alice (create-test-user :email-prefix "acct")))
+      (issue-api-token (users-id alice) "keep-me")
+      (with-user-session ((user-dao->plist alice))
+        (dolist (raw '("99999999999999999999999999" "1000000001" "-5" "abc"))
+          (let ((res (account-token-revoke-handler `((:id . ,raw)))))
+            (ok (= 200 (first res)) (format nil "id ~A re-renders instead of a 500" raw))
+            (ok (search "keep-me" (html-of res))))))
+      (ok (= 1 (length (list-api-tokens (users-id alice)))) "nothing was revoked"))))
+
 (deftest token-routes-require-login
   (with-user-session (nil)
     (ok (= 302 (first (account-token-create-handler '(("name" . "x"))))))
