@@ -15,12 +15,19 @@
                 #:find-or-create-oauth-user
                 #:placeholder-handle-p
                 #:user-dao->plist)
+  (:import-from #:recurya/db/api-tokens
+                #:issue-api-token
+                #:list-api-tokens
+                #:revoke-api-token
+                #:api-token-limit-exceeded
+                #:*max-active-tokens*)
   (:import-from #:recurya/web/http
                 #:json-response
                 #:read-request-body)
   (:import-from #:recurya/web/ui/login)
   (:import-from #:recurya/web/ui/errors)
-  (:import-from #:recurya/web/ui/account)
+  (:import-from #:recurya/web/ui/account
+                #:render-api-tokens)
   (:import-from #:recurya/web/ui/onboarding)
   (:import-from #:recurya/web/ui/csrf)
   (:import-from #:recurya/utils/handle)
@@ -116,6 +123,8 @@
            #:dashboard-home-handler
            #:account-confirm-delete-handler
            #:account-delete-handler
+           #:account-token-create-handler
+           #:account-token-revoke-handler
            #:onboarding-handle-page-handler
            #:onboarding-handle-create-handler
            #:notebooks-handler
@@ -1617,6 +1626,7 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
               (error   (resolve-flash (get-param params "err"))))
           (html-response
            (recurya/web/ui/account:render :user user
+                                          :tokens (list-api-tokens (getf user :id))
                                           :message message :error error))))))
 
 (defun account-update-handler (params)
@@ -1639,6 +1649,35 @@ where the confirm response is swapped. CONFIRM-LABEL defaults to \"Delete\"."
                 (setf (getf user :timezone) timezone)
                 (set-session-user! user)
                 (redirect "/account?msg=account.saved")))))))
+
+(defun account-token-create-handler (params)
+  "Handle POST /account/tokens - issue an API token and return the
+#api-tokens section showing it once (HTMX swap)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let ((uid (getf user :id)))
+          (handler-case
+              (let ((plaintext (issue-api-token uid (get-param params "name"))))
+                (html-response
+                 (render-api-tokens (list-api-tokens uid) :new-token plaintext)))
+            (api-token-limit-exceeded ()
+              (html-response
+               (render-api-tokens
+                (list-api-tokens uid)
+                :error (tr :account.tokens.limit *max-active-tokens*)))))))))
+
+(defun account-token-revoke-handler (params)
+  "Handle POST /account/tokens/:id/revoke - revoke one of the user's tokens
+and return the refreshed #api-tokens section (HTMX swap)."
+  (let ((user (get-current-user)))
+    (if (null user)
+        (redirect "/login")
+        (let* ((uid (getf user :id))
+               (raw (get-path-param params :id))
+               (token-id (and (stringp raw) (parse-integer raw :junk-allowed t))))
+          (when token-id (revoke-api-token uid token-id))
+          (html-response (render-api-tokens (list-api-tokens uid)))))))
 
 (defun account-confirm-delete-handler (params)
   "Handle GET /account/confirm-delete - return modal fragment for account deletion."
@@ -1953,6 +1992,10 @@ The captured groups arrive in the handler's PARAMS alist under
           (make-dynamic-handler 'account-confirm-delete-handler))
   (setf (ningle/app:route app "/account/delete" :method :post)
           (make-dynamic-handler 'account-delete-handler))
+  (setf (ningle/app:route app "/account/tokens" :method :post)
+          (make-dynamic-handler 'account-token-create-handler))
+  (setf (ningle/app:route app "/account/tokens/:id/revoke" :method :post)
+          (make-dynamic-handler 'account-token-revoke-handler))
   (setf (ningle/app:route app "/learn/sync" :method :post)
           (make-dynamic-handler 'learn-sync-handler))
   app)

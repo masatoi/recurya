@@ -159,6 +159,7 @@
                "recurya/tests/web/oauth"
                "recurya/tests/web/onboarding"
                "recurya/tests/web/routes"
+               "recurya/tests/web/account-tokens"
                "recurya/tests/web/notebook-routes"
                "recurya/tests/web/course-routes"
                "recurya/tests/web/profile"

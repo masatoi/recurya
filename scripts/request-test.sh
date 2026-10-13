@@ -101,6 +101,21 @@ rt_contains "result-ok" "run fragment renders a result panel"
 rt_contains "486" "run fragment shows the evaluated value (137+349=486)"
 rt_contains "Fuel:" "run fragment shows the resource metrics line"
 
+echo "== /account API tokens (logged in via dev stub) =="
+rt_reset_session; rt_login
+rt_status 200 "$(rt_get /account)" "account page renders"
+rt_contains 'hx-post="/account/tokens"' "token form posts via HTMX"
+rt_contains '#api-tokens' "token form targets #api-tokens"
+rt_contains 'id=api-tokens' "target #api-tokens exists (both-sides)"
+rt_status 200 "$(rt_hx_post /account/tokens 'name=request-test')" "create token fragment"
+rt_contains 'id=api-tokens' "fragment is the #api-tokens section"
+grep -qE 'rcy_[0-9a-f]{64}' "$BODY" && _ok "fragment shows the new token once" \
+  || _bad "fragment shows the new token once"
+TOKEN="$(grep -oE 'rcy_[0-9a-f]{64}' "$BODY" | head -1)"
+code=$(curl -s -o "$BODY" -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "$BASE/api/v1/me")
+rt_status 200 "$code" "the new token authenticates /api/v1/me"
+rt_contains '"handle"' "/api/v1/me returns the handle"
+
 echo
 echo "=== request-test: $PASS passed, $FAIL failed ==="
 [ "$FAIL" -eq 0 ]
