@@ -96,23 +96,18 @@
                 #:course-notebook-notebook
                 #:course-notebook-notebook-id)
   (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
-  (:import-from #:recurya/game/notebook
-                #:cell-id
-                #:cell-kind
-                #:make-notebook
-                #:notebook-cells
-                #:run-cell
-                #:notebook-cell-result-status)
   (:import-from #:recurya/web/ui/notebook)
+  (:import-from #:recurya/web/notebook-service
+                #:notebook-row->notebook-struct
+                #:run-notebook-cell
+                #:cell-run-refused
+                #:cell-run-refused-reason)
   (:import-from #:recurya/game/notebook-jsonb
                 #:cell->jsonb-form
                 #:jsonb-hash->cell)
   (:import-from #:recurya/db/learn
-                #:upsert-cell-code
                 #:user-cell-codes
                 #:user-passed-cells
-                #:mark-cell-passed
-                #:record-submission
                 #:merge-localstorage)
   (:import-from #:recurya/utils/common #:parse-json #:json->string)
   (:import-from #:recurya/web/i18n/core
@@ -1246,20 +1241,6 @@ No authentication required."
      (recurya/web/ui/notebook-list:render
       :notebooks notebooks :pagination pagination :user user))))
 
-(defun notebook-row->notebook-struct (nb-row)
-  "Convert a notebook DAO into a recurya/game/notebook:notebook struct
-that the existing notebook UI and run-cell logic can consume.
-Cells come from the JSONB cache (parsed via jsonb-hash->cell)."
-  (let* ((cells-data (recurya/db/notebooks:notebook-cells-parsed nb-row))
-         (cells-list (mapcar #'jsonb-hash->cell
-                             (coerce (or cells-data #()) 'list))))
-    (make-notebook
-     :id (princ-to-string (notebook-id nb-row))
-     :chapter ""
-     :title (or (notebook-title nb-row) "")
-     :summary (or (notebook-summary nb-row) "")
-     :cells cells-list)))
-
 (defun %render-public-notebook-response (nb-row params)
   "Render the public notebook page for NB-ROW given the request PARAMS.
 
@@ -1515,28 +1496,11 @@ No authentication required."
                                         :pagination pagination
                                         :user user))))
 
-(defun %maybe-persist-notebook-cell-run (uid nb-uuid cell result code)
-  "Persist saved code, submission, and progress for a notebook cell run.
-Anonymous users (UID NIL) are skipped silently; DB errors are logged but
-do not poison the response."
-  (when uid
-    (handler-case
-        (let* ((cell-id-str (string (or (cell-id cell) "")))
-               (status      (notebook-cell-result-status result))
-               (kind        (cell-kind cell))
-               (status-str  (string-downcase (symbol-name status))))
-          (upsert-cell-code uid nb-uuid cell-id-str (or code ""))
-          (when (eq kind :code-exercise)
-            (record-submission uid nb-uuid cell-id-str (or code "") status-str)
-            (when (eq status :pass)
-              (mark-cell-passed uid nb-uuid cell-id-str))))
-      (error (e) (log:warn "Failed to persist notebook cell run: ~A" e)))))
-
 (defun %run-public-cell (nb-row params)
   "Execute a cell on NB-ROW and render the HTMX result fragment.
 
-Encapsulates the access check, index parsing, codes[] collection, and
-optional persistence used by the handle-aware cell-run handler.
+Encapsulates the access check, codes[] collection and the shared
+run-notebook-cell service (validation, execution, persistence).
 
 Returns a Clack response list. Returns 404 when NB-ROW is NIL or the
 viewer cannot view it; 400 on bad index/cell-kind."
@@ -1547,37 +1511,26 @@ viewer cannot view it; 400 on bad index/cell-kind."
       ((not (recurya/utils/access-control:can-view-notebook-p user nb-row))
        (html-response (tr :server.errors.notebook_not_found) :status 404))
       (t
-       (let* ((notebook (notebook-row->notebook-struct nb-row))
-              (cells (notebook-cells notebook))
-              (index-raw (get-path-param params :index))
-              (index (typecase index-raw
-                       (string (parse-integer index-raw :junk-allowed t))
-                       (integer index-raw)
-                       (t nil)))
-              (codes-list (loop for (k . v) in params
-                                when (and (stringp k) (string= k "codes[]"))
-                                collect v)))
-         (cond
-           ((null index) (html-response (tr :server.errors.invalid_index) :status 400))
-           ((or (< index 0) (>= index (length cells)))
-            (html-response (tr :server.errors.index_out_of_range) :status 400))
-           ((member (cell-kind (nth index cells))
-                    '(:prose :code-solution))
-            (html-response (tr :server.errors.cannot_run_cell) :status 400))
-           (t
-            (let* ((nb-uuid (princ-to-string (notebook-id nb-row)))
-                   (result (run-cell notebook index codes-list))
-                   (base (recurya/web/ui/notebook:render-cell-result result))
-                   (reveals
-                     (if (and (eq (cell-kind (nth index cells)) :code-exercise)
-                              (eq (notebook-cell-result-status result) :pass))
-                         (recurya/web/ui/notebook:render-solution-oob-reveals
-                          cells index)
-                         ""))
-                   (body (concatenate 'string base reveals)))
-              (%maybe-persist-notebook-cell-run
-               uid nb-uuid (nth index cells) result (nth index codes-list))
-              (html-response body)))))))))
+       (let ((codes-list (loop for (k . v) in params
+                               when (and (stringp k) (string= k "codes[]"))
+                                 collect v)))
+         (handler-case
+             (multiple-value-bind (result cells revealed index)
+                 (run-notebook-cell nb-row uid (get-path-param params :index) codes-list)
+               (html-response
+                (concatenate 'string
+                             (recurya/web/ui/notebook:render-cell-result result)
+                             (if revealed
+                                 (recurya/web/ui/notebook:render-solution-oob-reveals
+                                  cells index)
+                                 ""))))
+           (cell-run-refused (c)
+             (html-response
+              (tr (ecase (cell-run-refused-reason c)
+                    (:invalid-index :server.errors.invalid_index)
+                    (:index-out-of-range :server.errors.index_out_of_range)
+                    (:cannot-run-cell :server.errors.cannot_run_cell)))
+              :status 400))))))))
 
 (defun public-notebook-cell-run-by-handle-handler (params)
   "Handle POST /@:handle/:slug/cells/:index/run - HTMX fragment for

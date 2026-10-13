@@ -25,6 +25,7 @@
                 #:add-notebook-to-course!
                 #:list-course-notebooks
                 #:course-notebook-notebook)
+  (:import-from #:recurya/web/notebook-service #:notebook-row->notebook-struct)
   (:import-from #:recurya/game/notebook-parser #:parse-notebook-body)
   (:import-from #:recurya/game/notebook
                 #:notebook-cells
@@ -161,8 +162,7 @@ The codes vector is built up to and including the exercise cell index:
         (dolist (cn cns)
           (let* ((nb-row (course-notebook-notebook cn))
                  (slug (notebook-slug nb-row))
-                 (notebook (recurya/web/routes::notebook-row->notebook-struct
-                            nb-row))
+                 (notebook (notebook-row->notebook-struct nb-row))
                  (cells (notebook-cells notebook))
                  (exercises (remove-if-not (lambda (c)
                                              (eq (cell-kind c) :code-exercise))

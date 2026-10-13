@@ -52,6 +52,7 @@
                "recurya/game/novel/value"
                "recurya/game/novel/eval"
                "recurya/game/notebook-jsonb"
+               "recurya/game/notebook-gating"
                ;; Arena
                "recurya/game/arena"
                "recurya/game/scenario"
@@ -90,6 +91,7 @@
                "recurya/web/auth"
                "recurya/web/http"
                "recurya/web/api-auth"
+               "recurya/web/notebook-service"
                "recurya/web/ui/styles"
                "recurya/web/ui/csrf"
                "recurya/web/ui/layout"
@@ -169,6 +171,7 @@
                "recurya/tests/game/arena"
                "recurya/tests/game/notebook"
                "recurya/tests/game/notebook-parser"
+               "recurya/tests/game/notebook-gating"
                ;; Novel engine tests
                "recurya/tests/game/novel/interpreter"
                "recurya/tests/game/novel/value"

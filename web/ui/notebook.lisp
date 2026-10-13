@@ -20,6 +20,9 @@
                 #:notebook-cell-result-error-cell-id
                 #:notebook-cell-result-metrics
                 #:notebook-cell-result-test-results)
+  (:import-from #:recurya/game/notebook-gating
+                #:solution-unlocked-p
+                #:gated-solution-indices)
   (:import-from #:recurya/game/notebook-parser #:render-cell-prose-html)
   (:import-from #:recurya/web/ui/layout #:header #:header-styles)
   (:import-from #:recurya/web/ui/editor #:editor-head-tags #:editor-textarea
@@ -265,18 +268,6 @@ inline so a bad scene never breaks the page."
         (:div :class "cell cell--prose"
           (:p (tr :notebook.cell.scene_error_prefix) (princ-to-string e) (tr :notebook.cell.scene_error_suffix)))))))
 
-(defun preceding-exercise-passed-p (index)
-  "True when the nearest :code-exercise cell before INDEX in *cells* has been
-passed (its cell-id is in *passed-cells*). NIL when there is no preceding
-exercise."
-  (loop for i from (1- index) downto 0
-        for c = (nth i *cells*)
-        when (eq (cell-kind c) :code-exercise)
-          do (return (and (member (%cell-id->string (cell-id c)) *passed-cells*
-                                   :test #'string=)
-                          t))
-        finally (return nil)))
-
 (defun %render-solution-unlocked (cell index &key oob)
   "Render the unlocked (revealed) DOM for a :code-solution CELL at INDEX: the
 container <div id=\"cell-<index>-solution\"> wrapping a collapsible <details>
@@ -304,7 +295,7 @@ exercise is passed; otherwise only a locked placeholder (the body is never
 emitted). Always emits the empty hidden codes[] placeholder for index
 alignment. The container id cell-<index>-solution is the HTMX OOB target."
   (let ((unlocked (or (not (cell-gated-p cell))
-                      (preceding-exercise-passed-p index))))
+                      (solution-unlocked-p *cells* index *passed-cells*))))
     (if unlocked
         (%render-solution-unlocked cell index)
         (let ((container-id (format nil "cell-~D-solution" index)))
@@ -322,11 +313,8 @@ to the exercise at EXERCISE-INDEX (appears after it, before the next
 exercise). Empty string when there are none. Appended to a Run response after
 a :pass so the solution unlocks instantly."
   (with-html-string
-    (loop for i from (1+ exercise-index) below (length cells)
-          for c = (nth i cells)
-          until (eq (cell-kind c) :code-exercise)
-          when (and (eq (cell-kind c) :code-solution) (cell-gated-p c))
-            do (%render-solution-unlocked c i :oob t))))
+    (dolist (i (gated-solution-indices cells exercise-index))
+      (%render-solution-unlocked (nth i cells) i :oob t))))
 
 (defun render-cell (cell index nb-id)
   (declare (ignorable cell index nb-id))
