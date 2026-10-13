@@ -69,6 +69,7 @@
                "recurya/db/course-notebooks"
                "recurya/db/learn"
                "recurya/db/novel"
+                "recurya/db/api-tokens"
                "recurya/db"
                ;; Models
                "recurya/models/users"
@@ -79,6 +80,7 @@
                "recurya/models/learn-cell-code"
                "recurya/models/learn-submission"
                "recurya/models/novel-state"
+                "recurya/models/api-token"
                ;; i18n（web/ui・routes・server より前にロード）
                "recurya/web/i18n/core"
                "recurya/web/i18n/en"
@@ -144,6 +146,7 @@
                "recurya/tests/db/course-notebooks"
                "recurya/tests/db/learn"
                "recurya/tests/db/novel"
+                "recurya/tests/db/api-tokens"
                ;; Web tests
                "recurya/tests/web/i18n-core"
                "recurya/tests/web/i18n-catalog"

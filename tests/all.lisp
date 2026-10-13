@@ -18,6 +18,7 @@
     :recurya/tests/db/course-notebooks
     :recurya/tests/db/learn
     :recurya/tests/db/novel
+    :recurya/tests/db/api-tokens
     :recurya/tests/web/i18n-core
     :recurya/tests/web/i18n-catalog
     :recurya/tests/web/i18n-render
