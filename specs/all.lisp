@@ -21,6 +21,7 @@
   (:import-from #:recurya/specs/db/learn)
   (:import-from #:recurya/specs/db/notebooks)
   (:import-from #:recurya/specs/db/users)
-  (:import-from #:recurya/specs/db/novel))
+  (:import-from #:recurya/specs/db/novel)
+  (:import-from #:recurya/specs/db/api-tokens))
 
 (in-package #:recurya/specs/all)
