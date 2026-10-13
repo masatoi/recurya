@@ -3293,3 +3293,172 @@ git commit -m "docs(cli): usage guide, API/CLI dev notes and end-to-end script"
 - [ ] **Step 6: 報告**
 
 ユーザーへ: 変更概要、テスト件数 (前後)、spec-check の seed / digest / verification_gaps、E2E 結果、**`/account` のトークン欄の見た目確認 (CSS) の依頼**、未対応 (パズル・novel・レート制限・device flow・有効期限) と、本番適用時に `api_token` マイグレーションを `docs/DEPLOYMENT.md` §6 の手順で流す必要があること。
+
+---
+
+## 改訂 (2026-10-13): CLI を Python 単一ファイルに置き換える
+
+ユーザー決定により Task 7・8 の Common Lisp 製 CLI を、配布の容易な Python 3 単一ファイルに置き換える
+(spec §4「配置と配布 (改訂)」「トークンの扱い」)。サーバ側 (Task 1〜6) と API は変更しない。
+最終レビューで出た CLI 側の指摘 (トークンのサーバ紐付け、リダイレクト、manifest のファイル名、
+`.ros` の起動、`main` の catch-all) は Python 版の設計に最初から含める。
+
+### Python 版の追加制約
+
+- 本体 `resources/static/recurya` (拡張子なし、実行ビット付き、`#!/usr/bin/env python3`)。
+  Python 3.8+、**標準ライブラリのみ**。1 ファイルで完結 (import するローカルモジュール無し)。
+- コマンド・ローカル構成・出力・終了コードは spec §4 と Task 7/8 の Lisp 版と同じ意味
+  (0 = pass/ok、1 = run の fail/error、2 = 使い方・認証・通信・想定外エラー)。
+- テストは `tests/cli_py/test_recurya.py` (unittest)。本体を `importlib.machinery.SourceFileLoader`
+  で読み込む。ネットワークは使わず、HTTP は `http.server` のスタブをスレッドで立てて検証。
+- 実行: `python3 -m unittest discover -s tests/cli_py -v`。
+
+---
+
+### Task 10: Python 製 CLI 本体とテスト
+
+**Files:**
+- Create: `resources/static/recurya`, `tests/cli_py/test_recurya.py`
+
+**Interfaces (テストから呼ぶ関数名。モジュール内のトップレベル関数として定義する):**
+- 設定: `config_dir()`, `load_config()` → dict か None, `save_config(server, token)`,
+  `normalize_server(url)` → 末尾 `/` を落とした URL。`https://` か、ホストが
+  `localhost` / `127.0.0.1` / `[::1]` の `http://` 以外は `UsageError`。
+- 認証解決: `resolve_credentials(server_flag, token_flag, env, config)` → `(server, token)`。
+  規則: server = `server_flag` > `env["RECURYA_SERVER"]` > `config["server"]`;
+  token = `token_flag` があればそれ、無ければ config のトークン。ただし token を config から取る場合、
+  解決した server が `config["server"]` と異なれば `UsageError`
+  ("the saved token belongs to <config server>; run: recurya login --server <server>")。
+  config も token_flag も無ければ `UsageError("Not logged in. Run: recurya login --server URL")`。
+- HTTP: `ApiClient(server, token, timeout=60)` と `.me()`, `.notebooks(page)`, `.notebook(handle, slug)`,
+  `.run_cell(handle, slug, index, codes)`。リダイレクトを追わない opener を使い、3xx は
+  `RequestFailed("server redirected to <Location>; use that URL with --server")`。HTTPError は
+  JSON 本体の `error.code` / `error.message` から `ApiError(status, code, message)`、
+  接続失敗・タイムアウトは `RequestFailed`。`handle` / `slug` は `urllib.parse.quote(..., safe="")`。
+  ヘッダ: `Authorization: Bearer`, `Accept: application/json`, `User-Agent: recurya-cli/1`、
+  POST は `Content-Type: application/json`。
+- ワークスペース (純粋関数):
+  - `index_width(n_cells)` → `max(2, len(str(max(0, n_cells-1))))`
+  - `cell_file_name(index, kind, width)` → `"03-exercise.wl"` 等。kind が eval/exercise/solution 以外なら None。
+    `index` が `bool` でない `int` かつ 0 以上でなければ `WorkspaceError`。
+  - `initial_code(cell)` → `saved_code` が str ならそれ、次に `body` が str ならそれ、他は `""`。
+  - `content_hash(text)` → UTF-8 の SHA-256 hex。
+  - `render_readme(notebook, width)` → Lisp 版 `render-readme` と同じ構成の Markdown
+    (タイトル、summary、prose 本文、演習は説明・テスト一覧・`→ \`NN-exercise.wl\` (run: \`recurya run NN\`)`、
+    eval は同様、解放済み解答は `→ \`NN-solution.wl\` (solution)`、未解放は
+    `_[NN] Solution locked — pass the exercise above to unlock it._`、scene 等は
+    `_[NN] <kind> cell — not supported by the CLI; open it in the browser._`)。null は出力しない。
+  - `cell_file(cell, width)` → prose/scene と未解放 (`unlocked` が True でない) 解答は None。
+  - `plan_pull(notebook, width, old_manifest, existing, force)` → `(actions, manifest)`。
+    `existing` は `{file: 現在内容}`。ファイルは「無い / 新内容と同一 / 旧 manifest のハッシュと一致 / force」で
+    `("write", file, content)`、それ以外 `("keep", file)`。順序はセル順。
+    manifest = `{"handle","slug","title","width","cells":[{"index","cell_id","kind","hash","passed","unlocked"}]}`
+    (**ファイル名は保存しない**。必要時に `cell_file_name` で再計算する)。keep したファイルの hash は旧 manifest の値を引き継ぐ。
+  - `manifest_cell(manifest, index)`、`collect_codes(manifest, index, read_file)` → セル 0..index の
+    コード列。eval/exercise は `read_file(再計算したファイル名)` (None なら `""`)、他は `""`。
+    manifest の `index` が不正なら `WorkspaceError`。
+  - `resolve_cell_arg(arg, manifest)` → index。`arg` は数字のみ (`"03"`, `"3"`) か、
+    実行可能セルの再計算ファイル名と完全一致する文字列のみ受理。それ以外・実行不可セル・範囲外は `WorkspaceError`。
+- 出力: `format_run_result(result, width)` → 文字列 (Lisp 版 `format-run-result` と同じ行構成:
+  `PASS  all N tests passed` / `FAIL  K of N tests failed` / `OK    => value` / `ERROR`、
+  テスト行 `  ✓|✗ <input>  expected <e>  got <a|error: ...>`、`output:`、`error (cell NN): ...`、
+  `steps S · cons C · depth D`、`unlocked: NN-solution.wl`)。`result_exit_code(result)`、
+  `format_notebook_list(json)`、`format_status(manifest, modified_files)`。
+- コマンド: `main(argv, env=os.environ, stdin=None)` → 終了コード。サブコマンド
+  `login [--server URL] [--token TOKEN]`、`list [--server URL] [--page N]`、
+  `pull @handle/slug [DIR] [--force] [--server URL]`、`run NN [--server URL]`、`status`、`--version`。
+  - `login`: server を `normalize_server` → token は `--token` か `getpass.getpass()` (エコー無し) →
+    `/api/v1/me` で検証 → `save_config` → `Logged in to <server> as @<handle>`。
+  - `pull`: DIR 既定は slug。README・コードファイル・`.recurya/notebook.json` (manifest に `"server"` を追加) を書く。
+    keep したファイルは `kept (edited locally): <file>` を表示。
+  - `run`: カレントの manifest を読み、`manifest["server"]` と解決した server が異なれば `UsageError`。
+    結果を表示。合格で `revealed_solutions` があれば notebook を取り直して pull と同じ処理で反映、
+    無ければ manifest の `passed` だけ更新して保存。終了コードは `result_exit_code`。
+  - `status`: manifest とファイルのハッシュ比較で modified を出す。
+  - 例外写像: `UsageError`/`WorkspaceError` → stderr に 1 行・2、`ApiError` 401 → `Not authorized: ... Run: recurya login` ・2、
+    他の `ApiError` → `Server said: ...`・2、`RequestFailed` → 2、`KeyboardInterrupt` → 130、その他の例外 → `unexpected error: ...`・2。
+- `save_config`: ディレクトリを `os.makedirs(mode=0o700)` 後 `os.chmod(dir, 0o700)`(新規作成時)、
+  ファイルは `os.open(path, O_WRONLY|O_CREAT|O_TRUNC, 0o600)` で開き `os.fchmod(fd, 0o600)` してから書く。
+
+- [ ] **Step 1: 失敗するテストを書く** — `tests/cli_py/test_recurya.py` に少なくとも次を書く
+  (モジュールは `ROOT/resources/static/recurya` を SourceFileLoader で `recurya` として読み込む):
+  1. `index_width` (5→2, 100→2, 101→3)、`cell_file_name` (03-exercise.wl, 001-eval.wl, prose/scene → None,
+     `index` が `"3"`/`-1`/`True`/`"../x"` → WorkspaceError)。
+  2. `initial_code` (saved 優先 / body / None→"")。
+  3. `render_readme` が title・prose・各ファイル名・説明・テスト入力・"locked"・"not supported" を含み "None"/"null" を含まない。
+  4. `plan_pull`: 新規 pull は eval/exercise だけ write、未解放解答はファイル無し、manifest に "file" キーが無い。
+     再 pull: 未編集 (hash 一致) は write、編集済みは keep、force で write、旧 manifest 無しの既存異内容は keep、既存同内容は write。
+     解放済み解答は `01-solution.wl` を write。
+  5. `collect_codes`: eval/exercise はファイル内容、他・欠落は ""; manifest の index を `"../../etc"` に
+     改ざんしても WorkspaceError になり任意パスを読まない。
+  6. `resolve_cell_arg`: "02"/"2"/"02-exercise.wl" → 2、"0"(prose)・"3"(solution)・"99"・"abc"・"3abc"・"01-solution.wl"(eval セル 1 に対し) → WorkspaceError。
+  7. `format_run_result`: FAIL 行と "1 of 2"、"expected 4"・"got 3"、"steps 12"、PASS、ERROR と "cell 01"、OK "=> 3"、"unlocked: 04-solution.wl"。`result_exit_code`。
+  8. `normalize_server`: https OK・末尾 / 除去、http://localhost:13000 OK、http://example.com → UsageError、ftp → UsageError。
+  9. `resolve_credentials`: 優先順位、config と異なる server を token 無しで → UsageError、--token 明示なら OK、未ログイン → UsageError。
+  10. `save_config`: ファイル 0600・新規ディレクトリ 0700、`load_config` で往復 (一時ディレクトリ + `RECURYA_CONFIG_DIR`)。
+  11. スタブ HTTP サーバ (スレッドの `http.server`) で:
+      - `main(["login","--server",URL,"--token",T])` → 0、config 保存、Authorization ヘッダが届く。
+      - `main(["list"])` → 0、一覧出力。
+      - `main(["pull","@alice/nb", dir])` → ファイルと README・manifest。
+      - `main(["run","1"])` (cwd=dir) → スタブが fail を返せば 1、pass + revealed を返せば 0 かつ解答ファイル出現・manifest passed。
+      - 302 を返すエンドポイント → RequestFailed で 2、リダイレクト先にリクエストが**届かない**。
+      - 401 → 2 と "recurya login" の案内。
+      - `RECURYA_SERVER` を別サーバにして `list` → 2、別サーバへリクエストが届かない。
+      - manifest の server と設定の server が違うディレクトリで `run` → 2、リクエスト無し。
+  12. `main([])` / 未知コマンド → 2、`main(["--version"])` → 0。
+
+- [ ] **Step 2: 失敗を確認** — `python3 -m unittest discover -s tests/cli_py -v` (本体が無いので ImportError / FileNotFoundError)。
+
+- [ ] **Step 3: 実装** — `resources/static/recurya` を上記インターフェースどおりに書く。`chmod +x`。
+  モジュール docstring に使い方を書く。`if __name__ == "__main__": sys.exit(main(sys.argv[1:]))`。
+
+- [ ] **Step 4: テストを通す** — 同コマンドで全 PASS。加えて `python3 resources/static/recurya` (使い方・2)、
+  `RECURYA_CONFIG_DIR=$(mktemp -d) python3 resources/static/recurya list` (2) を確認。
+
+- [ ] **Step 5: 配信確認** — 稼働 dev サーバで `curl -s -o /tmp/... -w '%{http_code}' http://localhost:13000/static/recurya` が 200 で、
+  ダウンロードしたファイルが本体と同一 (`cmp`)。(Docker イメージに `resources/static` が含まれることを
+  Dockerfile で確認し、含まれなければ報告。)
+
+- [ ] **Step 6: Commit** — `git add resources/static/recurya tests/cli_py/test_recurya.py` →
+  `git commit -m "feat(cli): Python single-file recurya client served at /static/recurya"`。
+
+---
+
+### Task 11: Lisp 版 CLI の撤去、CI・E2E・ドキュメントの切り替え
+
+**Files:**
+- Delete: `cli/workspace.lisp`, `cli/report.lisp`, `cli/config.lisp`, `cli/client.lisp`, `cli/main.lisp`,
+  `roswell/recurya.ros`, `tests/cli/workspace.lisp`, `tests/cli/report.lisp`, `tests/cli/main.lisp`
+- Modify: `recurya.asd` (`recurya/tests` から `recurya/tests/cli/*` を削除)、`tests/all.lisp` (同 package 削除)、
+  `.gitignore` (`/roswell/recurya` 削除)、`.github/workflows/ci.yml` (Python テスト追加)、
+  `scripts/cli-e2e.sh`、`docs/CLI.md`、`docs/DEVELOPMENT.md`、`README.md`
+
+- [ ] **Step 1: 撤去** — `git rm` で上記 Lisp/ros ファイルを削除。asd と `tests/all.lisp` から
+  `recurya/tests/cli/*` を `lisp-patch-form` で削除。`clgrep-search "recurya/cli"` でプロジェクト内の残参照が無いこと。
+  ワーカーに古い package が残るので `pool-kill-worker {"reset": true}` → `load-system recurya`。
+
+- [ ] **Step 2: CI** — `.github/workflows/ci.yml` の test job に (Lisp テストの前でよい) 次を追加:
+  ```yaml
+      - name: Python CLI tests
+        run: python3 -m unittest discover -s tests/cli_py -v
+  ```
+
+- [ ] **Step 3: E2E を Python 版に** — `scripts/cli-e2e.sh` の CLI 構築部を置き換える:
+  `qlot exec ros build` を削除し、`curl -fsS "$BASE/static/recurya" -o "$WORK/recurya"` で**配信物をダウンロード**して
+  `chmod +x`、`CLI=("$WORK/recurya")` とする (配布経路そのものを検証)。ダウンロードしたものが
+  `resources/static/recurya` と同一であることも assert。以降のフロー
+  (login → pull → run fail(1) → 編集 → run pass(0) → 解答ファイル → status → ブラウザ側で解放確認 → トークン失効) は維持。
+  `login` は `--server "$BASE" --token "$TOKEN"` (BASE は http://localhost:13000 なので許可される)。
+
+- [ ] **Step 4: ドキュメント** — `docs/CLI.md` の導入を
+  `curl -fsSL https://<server>/static/recurya -o ~/.local/bin/recurya && chmod +x ~/.local/bin/recurya`
+  (前提: Python 3.8+) に書き換え、Roswell/clone/ros build の記述を削除。トークンのサーバ紐付け、
+  `RECURYA_SERVER` と `--token` の関係、リダイレクト非追従・`http://` は localhost のみ、`login` の非エコー入力を記載。
+  `docs/DEVELOPMENT.md` の JSON API / CLI 節の CLI テスト手順を `python3 -m unittest discover -s tests/cli_py` に、
+  E2E の前提 (qlot 不要) を更新。`README.md` の CLI 行を更新。
+
+- [ ] **Step 5: 全体検証** — `run-tests recurya/tests` (CLI の Lisp テスト分だけ件数が減る)、
+  `python3 -m unittest discover -s tests/cli_py -v`、mallet (変更した Lisp ファイル)、
+  `./scripts/request-test.sh`、`./scripts/cli-e2e.sh` すべて緑。
+
+- [ ] **Step 6: Commit** — `git commit -m "refactor(cli): replace the Lisp CLI with the Python client; CI, e2e and docs"`。

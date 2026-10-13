@@ -124,16 +124,38 @@ prose は空文字)。レスポンス:
 
 401 `unauthorized` (トークン無し・無効・失効)、404 `not_found`、422 `invalid_request`、
 400 `bad_json`、500 `internal` (固定文言、バックトレースは出さない)。
+追加 (最終レビュー対応): 413 `payload_too_large` (API 本文 1 MiB 超、`/learn/sync` は 5 MiB)、
+411 `length_required` (Content-Length 無しのチャンク送信)、503 `unavailable` (認証処理自体の DB 障害)。
+`/api/*` はセッションミドルウェアを通らない専用スタックで処理する (Set-Cookie しない)。
 
 ## 4. CLI クライアント
 
-### 配置と配布
+### 配置と配布 (2026-10-13 改訂: Python 単一ファイル)
 
-- `cli/recurya-cli.asd` の独立 ASDF システム `recurya-cli`。サーバ系 (Mito/Postgres 等)
-  には依存しない。依存は `dexador`, `com.inuoe.jzon`, `uiop` のみ。
-- エントリ: `cli/roswell/recurya.ros`。学習者は `ros install masatoi/recurya` で導入する。
-- 設定: `~/.config/recurya/config.json` (`server`, `token`、パーミッション 0600)。
-  既定サーバは本番。`--server` / 環境変数 `RECURYA_SERVER` で上書き。
+当初は Common Lisp (Roswell) 製だったが、配布の容易さを優先して Python 3 の単一ファイルに
+置き換える (ユーザー決定 2026-10-13)。シェルスクリプト案は JSON 処理に jq が必須で、
+ハッシュ・パーミッション操作に OS 差があるため採らない。
+
+- 本体: `resources/static/recurya` (拡張子なし、`#!/usr/bin/env python3`、Python 3.8+、
+  **標準ライブラリのみ**: `urllib`, `json`, `hashlib`, `argparse`, `getpass`, `os` 等)。
+- 配布: アプリの静的ファイルとして `/static/recurya` で配信する。学習者は
+  `curl -fsSL https://<server>/static/recurya -o ~/.local/bin/recurya && chmod +x ~/.local/bin/recurya`。
+  サーバ更新で CLI も最新になる。Roswell・clone 不要。
+- 設定: `$RECURYA_CONFIG_DIR`、なければ `$XDG_CONFIG_HOME/recurya/`、なければ
+  `~/.config/recurya/` の `config.json` (`server`, `token`)。ディレクトリ 0700、ファイルは
+  作成時点から 0600 (トークンを緩いパーミッションのファイルに書かない)。
+- 既定サーバは持たない。初回 `login` は `--server` か `RECURYA_SERVER` が必須。
+
+### トークンの扱い (最終レビューの指摘を設計に反映)
+
+- トークンは発行元サーバと組で保存し、**そのサーバ以外には送らない**。`--server` /
+  `RECURYA_SERVER` で解決したサーバが設定のサーバと異なる場合は、その呼び出しで
+  `--token` を明示しない限り拒否 (終了コード 2、`recurya login --server ...` を案内)。
+- HTTP リダイレクトは追わない (3xx はエラー)。`http://` は localhost / 127.0.0.1 / ::1 のみ許可。
+- `login` のトークン入力はエコーしない (`getpass`)。`--token` は非対話用。
+- pull 済みディレクトリの manifest に記録されたサーバと、解決したサーバが異なる場合 `run` は拒否。
+- manifest や サーバ応答のファイル名は信用しない。ファイル名は常に整数 index と kind から
+  再計算し、整数でない・負の index は拒否する (ワークスペース外への書き込み・任意ファイル送信を防ぐ)。
 
 ### コマンド
 
@@ -186,8 +208,9 @@ sicp-1/
 - **共有関数抽出**: 既存の notebook ルートテストが無変更で緑のまま。
 - **トークン管理 UI**: ハンドラテスト + `scripts/request-test.sh` で HTMX 両側
   (`hx-target` と対応 `id`、差し替え断片)。
-- **CLI**: 純粋部分 (ファイル名生成、manifest 往復、再 pull のハッシュ判定、結果整形) を
-  Rove 単体テスト。dev サーバ相手に E2E: login → pull → 編集 → run (fail → pass) →
+- **CLI**: Python 標準 `unittest` (`tests/cli_py/`)。純粋部分 (ファイル名生成、manifest 往復、
+  再 pull のハッシュ判定、結果整形、引数解決) に加え、スタブ HTTP サーバ相手に
+  login/list/pull/run/status、トークンのサーバ紐付け、リダイレクト拒否、エラー写像を検証。CI で実行。dev サーバ相手に E2E: login → pull → 編集 → run (fail → pass) →
   解答ファイル出現 → Web 側 (request-test) で合格・解放を確認。
 - 仕上げ: 全スイート、mallet、CI 緑。
 
