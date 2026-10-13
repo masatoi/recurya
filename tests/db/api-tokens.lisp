@@ -12,7 +12,9 @@
   (:import-from #:recurya/db/core
                 #:null->nil)
   (:import-from #:recurya/models/api-token
+                #:api-token
                 #:api-token-id
+                #:api-token-revoked-at
                 #:api-token-name
                 #:api-token-token-hash
                 #:api-token-token-prefix
@@ -92,3 +94,16 @@
   (ok (string= "cli" (normalize-token-name "   ")))
   (ok (string= "ci box" (normalize-token-name "  ci box  ")))
   (ok (= 64 (length (normalize-token-name (make-string 80 :initial-element #\a))))))
+
+(deftest authenticate-does-not-resurrect-revoked-token
+  (with-test-db
+    (let* ((user (create-test-user :email-prefix "tok"))
+           (uid (users-id user)))
+      (multiple-value-bind (plain row) (issue-api-token uid "a")
+        (let ((stale (mito:find-dao 'api-token :id (api-token-id row))))
+          (ok (revoke-api-token uid (api-token-id row)))
+          (ng (authenticate-api-token plain) "refused after revocation")
+          (let ((fresh (mito:find-dao 'api-token :id (api-token-id stale))))
+            (ok (null->nil (api-token-revoked-at fresh)) "revoked_at is still set")
+            (ng (null->nil (api-token-last-used-at fresh))
+                "a refused attempt does not record last_used_at")))))))

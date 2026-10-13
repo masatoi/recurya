@@ -14,7 +14,8 @@
   (:import-from #:recurya/db/users
                 #:get-user-by-id)
   (:import-from #:recurya/db/core
-                #:null->nil)
+                #:null->nil
+                #:execute-query)
   (:import-from #:local-time
                 #:now)
   (:import-from #:ironclad
@@ -105,9 +106,12 @@ an existing user, recording the use in last_used_at; NIL otherwise."
     (let ((row (find-dao 'api-token :token-hash (hash-token plaintext))))
       (when (and row (null (null->nil (api-token-revoked-at row))))
         (let ((user (get-user-by-id (api-token-user-id row))))
-          (when user
-            (setf (api-token-last-used-at row) (now))
-            (save-dao row)
+          ;; Touch only last_used_at, and only while the token is still live:
+          ;; a full-row save-dao would overwrite a concurrent revocation.
+          (when (and user
+                     (execute-query
+                      "UPDATE api_token SET last_used_at = now() WHERE id = $1 AND revoked_at IS NULL RETURNING id"
+                      (object-id row)))
             user))))))
 
 (defun revoke-api-token (user-id token-id)
