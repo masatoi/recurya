@@ -5,6 +5,8 @@
 # a private draft notebook with a gated solution, then drives the CLI:
 # login -> pull -> run (fail) -> edit -> run (pass, solution unlocked) ->
 # status, and finally checks the browser page shows the unlocked solution.
+# The client is downloaded from $BASE/static/recurya (the real distribution
+# path); needs python3, not qlot.
 # Needs the dev server (OAUTH_DEV_STUB on) and a stub user with a real handle.
 # The "cli-e2e" token it issues is revoked at the end (and leftovers from
 # aborted runs are revoked at the start); the draft notebook is kept as dev data.
@@ -31,9 +33,14 @@ e2e_revoke_all() {
   done
 }
 
-qlot exec ros build roswell/recurya.ros >/dev/null 2>&1 \
-  && _ok "built roswell/recurya" || { _bad "built roswell/recurya"; exit 1; }
-CLI=("$ROOT/roswell/recurya")   # a binary, so it runs from any directory
+curl -fsS "$BASE/static/recurya" -o "$WORK/recurya" \
+  && _ok "downloaded the client from $BASE/static/recurya" \
+  || { _bad "downloaded the client from $BASE/static/recurya"; exit 1; }
+chmod +x "$WORK/recurya"
+cmp -s "$WORK/recurya" "$ROOT/resources/static/recurya" \
+  && _ok "served client is identical to resources/static/recurya" \
+  || { _bad "served client is identical to resources/static/recurya"; exit 1; }
+CLI=("$WORK/recurya")
 SLUG="cli-e2e-$(date +%s)"
 
 echo "== setup: token and notebook =="

@@ -79,7 +79,11 @@ inspection would interfere)."
                   app :block-app #'csrf-failure-handler)))
     (lambda (env)
       (if (or (member (getf env :path-info) *csrf-skip-paths* :test #'string=)
-              ;; /api/ authenticates by bearer token only (see web/api-auth).
+              ;; Defence in depth: BUILD-APP routes /api/ to its own stack
+              ;; (no CSRF middleware at all), so this branch is not reached
+              ;; in the running server.  It is kept because csrf-skips-api-posts
+              ;; (tests/web/api-auth.lisp) exercises it directly: /api/ is
+              ;; bearer-token only (see web/api-auth), never cookie-based.
               (api-path-p (getf env :path-info)))
           (funcall app env)
           (funcall csrf-app env)))))

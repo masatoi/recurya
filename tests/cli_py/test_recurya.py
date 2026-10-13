@@ -17,11 +17,15 @@ import tempfile
 import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
+import importlib.util
 from importlib.machinery import SourceFileLoader
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-recurya = SourceFileLoader("recurya", str(ROOT / "resources/static/recurya")).load_module()
+_loader = SourceFileLoader("recurya", str(ROOT / "resources/static/recurya"))
+_spec = importlib.util.spec_from_loader("recurya", _loader)
+recurya = importlib.util.module_from_spec(_spec)
+_loader.exec_module(recurya)
 
 
 # --------------------------------------------------------------------------
@@ -737,6 +741,18 @@ class CommandTests(EnvCase):
         code, out, err = self.cli("list")
         self.assertEqual(code, 2)
         self.assertTrue(err.strip())
+
+    def test_http_loopback_ignores_proxy_env(self):
+        s = self.stub()
+        api_routes(s)
+        self.login(s)
+        os.environ["http_proxy"] = "http://127.0.0.1:9"   # nothing listens there
+        os.environ.pop("no_proxy", None)
+        os.environ.pop("NO_PROXY", None)
+        before = len(s.requests)
+        code, out, err = self.cli("list")
+        self.assertEqual(code, 0, err)
+        self.assertGreater(len(s.requests), before)
 
     def test_env_server_other_than_saved_blocks_token(self):
         saved = self.stub()

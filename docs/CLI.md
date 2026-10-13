@@ -5,14 +5,11 @@
 
 ## 導入
 
-前提: Roswell (`ros`)。
+前提: Python 3.8 以上 (標準ライブラリのみ。追加インストール不要)。サーバが配信する単一ファイルを取得する:
 
-    git clone https://github.com/masatoi/recurya.git
-    cd recurya
-    ./roswell/recurya.ros                 # 使い方を表示。初回は依存 (dexador, jzon, ironclad, babel) を取得
-    ros build roswell/recurya.ros         # 任意: roswell/recurya バイナリを作る
-
-`roswell/recurya.ros` (またはビルドしたバイナリ) を PATH の通った場所にリンクする。
+    curl -fsSL https://<server>/static/recurya -o ~/.local/bin/recurya
+    chmod +x ~/.local/bin/recurya
+    recurya --version
 
 ## ログイン
 
@@ -23,6 +20,14 @@
 組み込みの既定サーバは無い。最初の `login` では `--server URL` か環境変数 `RECURYA_SERVER` の
 どちらかが必須で、ログインに成功するとサーバとトークンが設定ファイルに保存され、以後は省略できる。
 サーバの優先順位は `--server` > `RECURYA_SERVER` > 設定ファイル。
+
+- トークンは発行したサーバに紐付けて保存され、そのサーバにしか送られない。`RECURYA_SERVER` で
+  保存済みと別のサーバを指すと、そのサーバへ `login` し直さない限り拒否される (終了コード 2)。
+- `--token` は `login` にだけある。省略するとプロンプトで入力でき、入力は画面に表示されない (非エコー)。
+- リダイレクトは追従しない (トークンを別ホストへ送らないため)。
+- `http://` は `localhost` / `127.0.0.1` / `::1` のみ許可。それ以外は `https://` が必須。
+- プロキシ: `https://` サーバでは `https_proxy` 等の環境変数に従う (CONNECT トンネル)。
+  `http://` (ループバック) では平文のトークンがプロキシに渡らないよう、プロキシ設定を常に無視して直接接続する。
 
 設定ファイルは `~/.config/recurya/config.json` (パーミッション 600)。場所は環境変数で変えられる:
 `RECURYA_CONFIG_DIR` (そのディレクトリ)、なければ `$XDG_CONFIG_HOME/recurya/`、
@@ -40,7 +45,7 @@
 - `README.md` に本文・演習の説明・テストケースが並ぶ。
 - `run NN` はセル 0..NN のコードファイルの内容をまとめて送る (ブラウザと同じ)。
 - 再 `pull` は、前回の pull 以降に編集していないファイルだけを更新する。`--force` で上書き。
-- 終了コード: 0 合格/成功、1 不合格/エラー、2 使い方・認証・通信の問題。
+- 終了コード: 0 合格/成功、1 不合格/エラー、2 使い方・認証・通信の問題、130 Ctrl-C で中断。
 - `run` は、ワークスペースを pull したサーバと現在のサーバ設定が異なる場合は終了コード 2 で拒否する
   (トークンを別サーバへ送らないため)。
 

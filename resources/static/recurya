@@ -202,7 +202,12 @@ class ApiClient:
         self.server = server
         self.token = token
         self.timeout = timeout
-        self._opener = urllib.request.build_opener(_NoRedirect)
+        handlers = [_NoRedirect]
+        if urllib.parse.urlsplit(server).scheme == "http":
+            # Loopback http: never route the cleartext token through a proxy
+            # taken from http_proxy; https keeps proxies (CONNECT tunnel).
+            handlers.append(urllib.request.ProxyHandler({}))
+        self._opener = urllib.request.build_opener(*handlers)
 
     def _request(self, method, path, payload=None):
         headers = {"Authorization": "Bearer " + self.token,

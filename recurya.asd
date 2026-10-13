@@ -169,10 +169,6 @@
                 "recurya/tests/web/api-auth"
                "recurya/tests/web/novel-routes"
                "recurya/tests/web/api-routes"
-               ;; CLI tests
-               "recurya/tests/cli/workspace"
-               "recurya/tests/cli/report"
-                "recurya/tests/cli/main"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"

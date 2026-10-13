@@ -19,9 +19,6 @@
     :recurya/tests/db/learn
     :recurya/tests/db/novel
     :recurya/tests/db/api-tokens
-    :recurya/tests/cli/workspace
-    :recurya/tests/cli/report
-    :recurya/tests/cli/main
     :recurya/tests/web/i18n-core
     :recurya/tests/web/i18n-catalog
     :recurya/tests/web/i18n-render

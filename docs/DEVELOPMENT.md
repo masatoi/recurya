@@ -141,7 +141,8 @@ The learner CLI (`docs/CLI.md`) talks to `/api/v1/*`.
   or set and no `sessions` row is written, and CSRF / the onboarding redirect do
   not apply. Every other path keeps the browser stack. Tokens are issued on
   `/account`.
-- Error codes: 401 `unauthorized`, 404 `not_found`, 400 `bad_json`, 413
+- Error codes: 401 `unauthorized`, 404 `not_found`, 400 `bad_json`, 411
+  `length_required` (chunked body without Content-Length), 413
   `payload_too_large` (body over 1 MiB), 422 `invalid_request` (also: more codes
   than cells, or one code over 64 KiB), 500 `internal` (logged with path and
   user id, never the token), 503 `unavailable` (the token check itself failed,
@@ -150,8 +151,11 @@ The learner CLI (`docs/CLI.md`) talks to `/api/v1/*`.
 - Handler tests for the API use the `with-api-request` macro in
   `tests/web/api-routes.lisp`, which puts the user in the request env under
   `:recurya.api-user` and calls the handler directly.
-- `./scripts/cli-e2e.sh` builds `roswell/recurya`, then drives the real CLI
-  against the dev server (login, pull, run fail/pass, solution unlock, status,
+- CLI unit tests (Python stdlib only, no qlot): `python3 -m unittest discover -s tests/cli_py -v`.
+  They run in CI before the Lisp suite.
+- `./scripts/cli-e2e.sh` downloads the client from `$BASE/static/recurya` (and
+  checks it equals `resources/static/recurya`), then drives it
+  against the dev server (needs `python3` and `curl`, not qlot) (login, pull, run fail/pass, solution unlock, status,
   browser page). Needs the dev server with `OAUTH_DEV_STUB` on and a stub user
   with a real handle. It revokes the `cli-e2e` token it issues; the draft
   notebook it creates is left as dev data (slug is printed).
