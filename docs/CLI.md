@@ -18,11 +18,19 @@
 
 1. ブラウザで `<server>/account` を開き、「API tokens」でトークンを発行する (一度しか表示されない)。
 2. `recurya login --server https://<server>` を実行してトークンを貼り付ける。
-   設定は `~/.config/recurya/config.json` (パーミッション 600) に保存される。
+   非対話で行うなら `recurya login --server https://<server> --token rcy_...`。
+
+組み込みの既定サーバは無い。最初の `login` では `--server URL` か環境変数 `RECURYA_SERVER` の
+どちらかが必須で、ログインに成功するとサーバとトークンが設定ファイルに保存され、以後は省略できる。
+サーバの優先順位は `--server` > `RECURYA_SERVER` > 設定ファイル。
+
+設定ファイルは `~/.config/recurya/config.json` (パーミッション 600)。場所は環境変数で変えられる:
+`RECURYA_CONFIG_DIR` (そのディレクトリ)、なければ `$XDG_CONFIG_HOME/recurya/`、
+なければ `~/.config/recurya/`。ディレクトリを新規作成するときはパーミッション 700 で作る。
 
 ## 使い方
 
-    recurya list                      # ノートブック一覧
+    recurya list                      # ノートブック一覧 (--page N でページ指定)
     recurya pull @alice/sicp-1-1-1    # ./sicp-1-1-1/ に展開
     cd sicp-1-1-1
     $EDITOR 03-exercise.wl
