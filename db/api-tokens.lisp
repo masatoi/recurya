@@ -9,8 +9,7 @@
   (:import-from #:recurya/models/api-token
                 #:api-token
                 #:api-token-user-id
-                #:api-token-revoked-at
-                #:api-token-last-used-at)
+                #:api-token-revoked-at)
   (:import-from #:recurya/db/users
                 #:get-user-by-id)
   (:import-from #:recurya/db/core

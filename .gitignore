@@ -24,3 +24,4 @@
 .env.local
 .env.*.local
 .env.prod
+/roswell/recurya

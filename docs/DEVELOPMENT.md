@@ -131,6 +131,27 @@ behaviour (CodeMirror editor, buttons, arena stepping, novel advance) — cover
 its logic with the `node` tests, and visual/CSS/layout correctness — a quick
 human glance. Everything else is server-side.
 
+## JSON API / CLI
+
+The learner CLI (`docs/CLI.md`) talks to `/api/v1/*`.
+
+- `/api/*` is Bearer-token only (`Authorization: Bearer rcy_...`); it is exempt
+  from CSRF and the onboarding redirect. Tokens are issued on `/account`.
+- Handler tests for the API use the `with-api-request` macro in
+  `tests/web/api-routes.lisp`, which puts the user in the request env under
+  `:recurya.api-user` and calls the handler directly.
+- `./scripts/cli-e2e.sh` builds `roswell/recurya`, then drives the real CLI
+  against the dev server (login, pull, run fail/pass, solution unlock, status,
+  browser page). Needs the dev server with `OAUTH_DEV_STUB` on and a stub user
+  with a real handle. It revokes the `cli-e2e` token it issues; the draft
+  notebook it creates is left as dev data (slug is printed).
+- **Applying the `api_token` table.** The dev/prod DBs were created from
+  `db/schema.sql` and have no Mito migration history, so `mito migrate` would
+  prompt about 7 "non-applied" migrations. Apply this change's table directly
+  instead: `psql -d recurya -f db/migrations/20261013124402.up.sql`, and the
+  same for the test DB: `psql -d recurya_test -f db/migrations/20261013124402.up.sql`
+  (e.g. `psql postgresql://postgres:postgres@localhost:15434/recurya_test -f ...`).
+
 ## Internationalization (i18n)
 
 The UI is rendered in the user's language via a message catalog. Currently

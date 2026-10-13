@@ -129,6 +129,10 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml up -d recurya
 
 > 詳細は `/mito-migrate` スキルおよび CLAUDE.md を参照。
 
+> 注意: 本番 DB は `db/schema.sql` から作成されておりマイグレーション履歴が無いため、`mito migrate` は
+> 既存の 7 件を「未適用」として確認してくる。CLI 用の `api_token` テーブルは
+> `psql ... -f db/migrations/20261013124402.up.sql` で直接適用する (詳細は `docs/DEVELOPMENT.md` の「JSON API / CLI」)。
+
 ## 7. バックアップ / リストア
 
 日次 cron(初回設定):

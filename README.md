@@ -37,6 +37,11 @@ A Lisp learning game web system built with Common Lisp. Includes wardlisp, a saf
    docker compose down -v   # Stop and remove data
    ```
 
+## CLI client
+
+Solve notebook exercises from a terminal and your own editor, with progress
+shared with the web UI: `recurya login / list / pull / run / status`. See [docs/CLI.md](docs/CLI.md).
+
 ## Running Tests
 
 ```bash

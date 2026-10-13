@@ -62,8 +62,8 @@
 
 (deftest revoke-disables-and-is-owner-only
   (with-test-db
-    (let* ((alice (create-test-user :email-prefix "tok-a"))
-           (bob (create-test-user :email-prefix "tok-b")))
+    (let ((alice (create-test-user :email-prefix "tok-a"))
+          (bob (create-test-user :email-prefix "tok-b")))
       (multiple-value-bind (plain row) (issue-api-token (users-id alice) "a")
         (ng (revoke-api-token (users-id bob) (api-token-id row)) "bob cannot revoke alice's token")
         (ok (authenticate-api-token plain) "still valid after bob's attempt")

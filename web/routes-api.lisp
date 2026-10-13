@@ -130,9 +130,9 @@
 (defun cell-json (cell index cells saved passed)
   "CELL at INDEX as the API shows it to a reader with SAVED codes (alist of
 cell-id . code) and PASSED cell ids.  A locked gated solution has body null."
-  (let* ((id (cell-id-string (cell-id cell)))
-         (kind (cell-kind cell))
-         (unlocked (solution-unlocked-p cells index passed)))
+  (let ((id (cell-id-string (cell-id cell)))
+        (kind (cell-kind cell))
+        (unlocked (solution-unlocked-p cells index passed)))
     (obj "index" index
          "cell_id" id
          "kind" (string-downcase (symbol-name kind))

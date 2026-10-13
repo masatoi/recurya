@@ -8,7 +8,6 @@
   (:import-from #:recurya/db/users
                 #:users-id
                 #:users-handle
-                #:users-display-name
                 #:user-dao->plist)
   (:import-from #:recurya/db/notebooks
                 #:create-notebook!
