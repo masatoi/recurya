@@ -9,6 +9,8 @@
                 #:setup-wardlisp-routes)
   (:import-from #:recurya/web/routes-novel
                 #:setup-novel-routes)
+  (:import-from #:recurya/web/routes-api
+                #:setup-api-routes)
   (:export #:*app*
            #:make-recurya-app))
 
@@ -22,4 +24,5 @@
   (setf *app* (make-instance 'ningle:app))
   (setup-wardlisp-routes *app*)
   (setup-novel-routes *app*)
+  (setup-api-routes *app*)
   *app*)

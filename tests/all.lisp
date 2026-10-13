@@ -33,6 +33,7 @@
     :recurya/tests/web/dashboard-auth
     :recurya/tests/web/api-auth
     :recurya/tests/web/novel-routes
+    :recurya/tests/web/api-routes
     ;; WardLisp integration tests
     :recurya/tests/wardlisp-integration
     ;; Game tests

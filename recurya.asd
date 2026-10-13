@@ -119,6 +119,7 @@
                "recurya/web/ui/reference"
                "recurya/web/routes-wardlisp"
                "recurya/web/routes-novel"
+               "recurya/web/routes-api"
                "recurya/web/server"
                ;; Seed / bootstrap
                "recurya/seed/official-content"
@@ -166,6 +167,7 @@
                "recurya/tests/web/dashboard-auth"
                 "recurya/tests/web/api-auth"
                "recurya/tests/web/novel-routes"
+               "recurya/tests/web/api-routes"
                ;; Game tests
                "recurya/tests/game/puzzle"
                "recurya/tests/game/arena"
