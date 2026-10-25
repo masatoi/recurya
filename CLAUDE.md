@@ -36,7 +36,7 @@ All Lisp operations go through cl-mcp tools as defined in `repl-driven-developme
 
 **Allowed shell commands**: `git`, `gh`, `mallet`, and user-requested commands only.
 
-**First-time setup**: Call `fs-set-project-root` with `{"path": "."}` before file operations.
+**First-time setup**: Call `fs-set-project-root` with the absolute path of the repository root (e.g. `{"path": "/home/wiz/recurya"}`) before file operations. A relative path such as `"."` resolves on the server's side; the dev container mounts the repo at the same path, but pass the absolute path anyway.
 
 ## Core Architecture
 
